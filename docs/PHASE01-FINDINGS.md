@@ -104,3 +104,86 @@ anywhere the expected delta holds, a match is nearly certain.
 
 The v1.0 `codeseg` ROM base is **not** `0xA95D0`; that value is Rev A's and must
 be re-derived from our own disassembly before any splat config uses it.
+
+---
+
+# Addendum: switched to Rev A
+
+A Rev A dump became available, and it is byte-identical to the one LLONSIT's
+decomp pins:
+
+```
+sha1 508dfc2d4caa42b6f6de5263d0aed5e44ac7966a
+```
+
+Everything above about v1.0 is therefore superseded as a build target. It is
+kept because it remains the only measurement of how the two revisions relate,
+which matters if v1.0 support is ever wanted, and because it is the evidence
+that switching was right: porting the corpus to v1.0 would have meant sequence
+alignment across piecewise offsets, for no benefit now that the revision the
+corpus was written for is in hand.
+
+The project is re-pinned to Rev A (revision 1, CRC `0x492F4B61 0x04E5146A`).
+
+## What now works
+
+| | |
+|---|---|
+| splat | 0.37.1 vendored by the decomp, on spimdisasm 1.42.4 |
+| disassembly | 1,537 `.s` files, **1,346 functions** |
+| asm-only config | `recomp/wr64.us.rev1.asm.yaml`, 157 `c` subsegments rewritten to `asm` |
+| objects | 380 built, 0 failures |
+| link | succeeds |
+| ELF | 10.3 MB, **1,346 FUNC** symbols, 7,205 OBJECT symbols, 83 sections |
+| relocations | **22 `.rel.*` sections** — `.rel.main_segment`, `.rel.codeseg`, one per overlay |
+
+The relocation sections are the part that matters most for what comes next:
+they are exactly what N64Recomp's `relocatable_sections_path` consumes, and
+their absence is what forced both prior Wave Race 64 attempts to disable
+overlay relocation.
+
+## The gate is NOT met
+
+The phase 01 gate is an ELF whose code is byte-identical to the ROM. It is not.
+
+Comparing each code section against its known ROM offset:
+
+| section | size | differing bytes |
+|---|---:|---:|
+| `.entry` | `0x50` | 4 (5.0%) |
+| `.main_segment` | `0xa5500` | 59,611 (8.8%) |
+| `.codeseg` | `0x4c600` | 6,654 (2.1%) |
+| `.segment_1B1FB0` | `0x1f00` | 38 (0.48%) |
+| `.ovl_i0` | `0x16a0` | 93 (1.6%) |
+| `.ovl_i1` | `0x3d80` | 550 (3.5%) |
+
+So 91-99% correct, which means the segment map and section placement are right
+and something narrower is wrong.
+
+### What the difference is not
+
+The first two samples inspected differed by exactly `0x3080` in their immediate
+fields, suggesting a single constant offset in synthesized symbol values. Across
+all 24,287 differing instruction words that hypothesis fails:
+
+- `+0x3080` accounts for only 13.4% of deltas; `-0xcf80` for 6.5%; the rest
+  scatter.
+- **24.7% of differing words are opcode `0x00`** — R-type instructions, which
+  have no immediate field at all.
+
+A wrong relocation value cannot change an R-type instruction. So this is not
+purely a symbol-address problem, and the constant-offset lead is dead.
+
+### Prime suspect
+
+The link needed 1,180 symbols that no assembled object defines: 1,126 were
+synthesized from the addresses encoded in their own names, and 54 looked up in
+the decomp's corpus. Those synthesized definitions are the least trustworthy
+thing in the build, and they are worth eliminating before anything else --
+preferably by having splat emit real definitions for the data and rodata that
+currently arrives as opaque `bin` blobs, rather than by inventing addresses.
+
+The R-type differences need a separate explanation and should be chased first,
+by dumping one small differing region side by side rather than in aggregate.
+`.segment_1B1FB0` at 0.48% and `.entry` at 4 bytes are the right places to look:
+small enough to read by hand.

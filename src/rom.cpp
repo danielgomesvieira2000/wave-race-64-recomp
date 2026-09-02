@@ -117,7 +117,7 @@ bool verify(const RomHeader& header, std::vector<std::string>& problems) {
         problems.push_back(
             "revision is " + std::to_string(header.revision) + ", expected " +
             std::to_string(kTargetRevision) +
-            " (v1.0) -- other revisions have different code addresses");
+            " (Rev A / v1.1) -- other revisions have different code addresses");
     }
 
     if (kTargetCrc1 != 0 || kTargetCrc2 != 0) {
