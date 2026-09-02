@@ -1,4 +1,4 @@
-# N64Recomp configuration for Wave Race 64 (USA) (Rev A).
+# N64Recomp configuration for Wave Race 64 (USA) v1.0 (revision 0).
 #
 # NOT YET USABLE. This is the phase 02 skeleton; the values marked TODO come out
 # of phase 01 (see docs/PLAN.md). Running the recompiler against this file today
@@ -11,9 +11,11 @@
 # outside elf input mode.
 elf_path = "wr64.elf"
 
-# TODO(phase 01): read the real entry point from the ROM header at offset 0x08.
-# Do not assume the usual 0x80000400 -- verify it.
-entrypoint = 0x80000400
+# Verified by reading offset 0x08 of the pinned v1.0 dump. Note that this is
+# NOT the usual 0x80000400, which is why it was worth checking: the decomp's
+# Rev A `entry` segment sits at this same address, which is the evidence that
+# the two revisions share a link layout.
+entrypoint = 0x80046800
 
 # Where the generated C goes. Regenerated from the user's ROM; gitignored.
 output_func_path = "RecompiledFuncs"
@@ -27,6 +29,14 @@ functions_per_output_file = 50
 # This is the line both prior public Wave Race 64 attempts disabled, and it is
 # why neither of them boots. Do not disable it to make the build go green --
 # find out what the overlay tables actually contain first.
+#
+# Reconnaissance from the Rev A decomp's splat config (34 segments total):
+# there are 16 overlays, ovl_i0 through ovl_i15, and they all load to the same
+# vram address, 0x802C5800, from rom 0x1B1FB0 onward. Same-address swap-in
+# overlays are the straightforward case -- one live overlay at a time, no
+# address arbitration -- but it does mean the recompiler must be told these
+# sections are relocatable, and that overlay dispatch has to consult which one
+# is currently resident.
 # relocatable_sections_path = "recomp/overlays.txt"
 
 # TODO(phase 01): libultra functions identified by byte-matching against a known

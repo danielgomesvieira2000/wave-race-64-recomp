@@ -85,3 +85,33 @@ Later phases turn on what they earn:
 Exit code 0 means the dump matches the pinned target. Anything else means stop
 and fix that before continuing — a mismatched revision produces failures later
 that look like tooling bugs.
+
+## Known issues
+
+### CMake 4.x and old vendored dependencies
+
+CMake 4 removed compatibility with `cmake_minimum_required(VERSION <3.5)` and
+hard-errors on it. Six files under `lib/RT64/src/contrib` still declare a lower
+minimum:
+
+```
+imgui/examples/example_glfw_vulkan   2.8
+implot/.github                       3.0
+mupen64plus-win32-deps/SDL2*/cmake   3.0
+re-spirv/external/SPIRV-Headers/...  3.0
+```
+
+All six are example, CI, or `find_package` config files that RT64's build does
+not normally descend into, so this is expected to be harmless. If configure
+fails naming one of them, the workaround is:
+
+```
+cmake -B build -G Ninja -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ...
+```
+
+Do not "fix" this by editing the submodules.
+
+### Clang is not added to PATH by its installer
+
+`winget install LLVM.LLVM` installs to `C:\Program Files\LLVM\bin` without
+registering it. Add that directory to your user PATH.

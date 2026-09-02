@@ -1,5 +1,26 @@
 # Build plan
 
+## Target revision
+
+This project targets **Wave Race 64 (USA) v1.0** (revision 0, entry point
+`0x80046800`, header CRC `0x7DE11F53 0x74872F9D`).
+
+All existing Wave Race 64 reverse engineering targets Rev A instead:
+LLONSIT's decomp declares support for "US, Rev1" only, and both public
+recompilation attempts use Rev A. Targeting v1.0 therefore means no one has
+walked this exact path before.
+
+We do it anyway, on evidence rather than hope: the decomp's Rev A `entry`
+segment is at vram `0x80046800`, and that is exactly the entry point in the
+v1.0 cartridge header. The two revisions agree on where code is loaded, which
+makes the Rev A symbol corpus a *donor* rather than a dead end -- symbols get
+ported across by matching function bodies, not rediscovered.
+
+This is a measurable assumption, and phase 01 measures it. If the segment map
+turns out to diverge substantially beyond the entry point, the cost is bounded
+and visible early: either absorb the extra symbol recovery, or re-pin to Rev A.
+Do not let it stay an assumption past phase 01.
+
 ## The decision this project is built on
 
 N64Recomp needs symbols and section metadata, not just a ROM. Its config

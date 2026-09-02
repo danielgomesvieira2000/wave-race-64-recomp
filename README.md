@@ -1,6 +1,6 @@
 # Wave Race 64: Recompiled
 
-An in-progress native PC port of **Wave Race 64 (USA) (Rev A)**, built by
+An in-progress native PC port of **Wave Race 64 (USA) v1.0**, built by
 statically recompiling the game's MIPS code to C with
 [N64Recomp](https://github.com/N64Recomp/N64Recomp) and running it on
 [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime) with
@@ -35,12 +35,22 @@ generated function — is pinned to one dump:
 
 | | |
 |---|---|
-| Title | Wave Race 64 (USA) (Rev A), a.k.a. v1.1 |
-| Cartridge ID | `WR`, region `E`, revision `1` |
+| Title | Wave Race 64 (USA), v1.0 -- the original US release |
+| Cartridge ID | `WR`, region `E`, revision `0` |
 | Size | 8 MiB |
 | Format | `.z64`, big endian |
+| Entry point | `0x80046800` |
+| Header CRC | `0x7DE11F53 0x74872F9D` |
+| sha1 | `887ab588c2ecc64c52fb2065f06b0a1ee4af13dc` |
 
-A Rev 0 or PAL dump will configure, build, and then fail in ways that look like
+**This is not the revision the existing Wave Race 64 reverse engineering
+targets.** LLONSIT's decomp supports "US, Rev1" only, and both prior
+recompilation attempts use Rev A. We target v1.0 anyway, because the evidence
+says the revisions share a link layout: the decomp's Rev A `entry` segment sits
+at vram `0x80046800`, which is exactly the entry point in the v1.0 header. Rev A
+stays useful as a symbol donor. See [docs/PLAN.md](docs/PLAN.md).
+
+A Rev A or PAL dump will configure, build, and then fail in ways that look like
 recompiler bugs. Check yours before starting:
 
 ```
