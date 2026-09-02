@@ -1,0 +1,49 @@
+# N64Recomp configuration for Wave Race 64 (USA) (Rev A).
+#
+# NOT YET USABLE. This is the phase 02 skeleton; the values marked TODO come out
+# of phase 01 (see docs/PLAN.md). Running the recompiler against this file today
+# will fail, and that is the intended state.
+
+[input]
+
+# Elf input mode. See docs/PLAN.md for why this project does not use
+# symbols_file_path: reference symbol files and the patch workflow are rejected
+# outside elf input mode.
+elf_path = "wr64.elf"
+
+# TODO(phase 01): read the real entry point from the ROM header at offset 0x08.
+# Do not assume the usual 0x80000400 -- verify it.
+entrypoint = 0x80000400
+
+# Where the generated C goes. Regenerated from the user's ROM; gitignored.
+output_func_path = "RecompiledFuncs"
+
+# One file per 50 functions keeps incremental rebuilds tolerable. With ~1,200
+# functions expect roughly two dozen output files.
+functions_per_output_file = 50
+
+# TODO(phase 01): list the relocatable overlay sections here.
+#
+# This is the line both prior public Wave Race 64 attempts disabled, and it is
+# why neither of them boots. Do not disable it to make the build go green --
+# find out what the overlay tables actually contain first.
+# relocatable_sections_path = "recomp/overlays.txt"
+
+# TODO(phase 01): libultra functions identified by byte-matching against a known
+# SDK build, renamed so the runtime's implementations are used instead of
+# recompiling hardware register access.
+# [[patches.func]]
+
+# Functions to stub out (return immediately). Typically hardware probes that
+# have no meaning off the console.
+# stubs = []
+
+# Functions to skip entirely, because the runtime provides them.
+# ignored = []
+
+# Functions splat could not size correctly, given explicit bounds.
+# [[manual_funcs]]
+# name = ""
+# section = ".text"
+# vram = 0x0
+# size = 0x0

@@ -1,0 +1,56 @@
+# ============================================================
+#  NO GAME DATA IN THIS REPOSITORY. EVER.
+#  Wave Race 64 is Nintendo's. This project ships tooling and
+#  original code only; the user supplies their own ROM.
+# ============================================================
+*.z64
+*.n64
+*.v64
+*.rom
+baserom*
+*.elf
+*.o
+*.a
+*.bin
+*.sym
+*.map
+
+# Recompiler output (regenerated from the user's ROM)
+/RecompiledFuncs/
+/RecompiledPatches/
+recomp_overlays.inl
+funcs.h
+dump.toml
+data_dump.toml
+
+# splat / disassembly output
+/asm/
+/bin/
+/expected/
+/context/
+
+# Build
+/build/
+/out/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+*.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+
+# Tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors / OS
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.user
+Thumbs.db
+desktop.ini
