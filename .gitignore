@@ -54,3 +54,6 @@ venv/
 *.user
 Thumbs.db
 desktop.ini
+
+# Read-only upstream checkouts used as reference (never built, never shipped)
+/reference/
