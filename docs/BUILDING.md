@@ -258,3 +258,28 @@ assets cannot simply be copied in without changing the licence of this one.
 
 Lato and Noto Emoji are not in `assets/`: the build copies them out of the RmlUi
 submodule, which this repository already has.
+
+## Display resolution and aspect ratio
+
+The port opens fullscreen at the display's own resolution and aspect ratio, and
+the game is rendered widescreen rather than pillarboxed.
+
+Most of that is RT64's, exposed through the Graphics tab: **Resolution: Auto**
+renders at the window's true pixel size instead of upscaling 320x240, and
+**Aspect Ratio: Expand** widens the frustum to the window's shape. Both are
+already the library's defaults. Two things had to change here.
+
+**Window Mode** defaults to Windowed upstream. It is set to Fullscreen on a
+first run only -- after `finalize()` has loaded the player's settings, and only
+when no `graphics.json` exists -- so choosing Windowed in the menu sticks.
+
+**The window is created at the display's size when fullscreen.** This is the one
+that actually made widescreen work. RT64 derives the aspect ratio it expands
+into from the swap chain's dimensions, and the window was being created at a
+whole multiple of 320x240 -- a 4:3 swap chain, into which "Expand" expands
+nothing. The menu said Expand and the game stayed 4:3.
+
+**HUD Placement** is set to Original rather than the library's Expand. Expand
+spreads the readouts to the edges of the widened frame, which in this game
+pushes the speed readout off the right-hand side. The frustum is still widened;
+this only decides where the 2D overlay sits inside it.

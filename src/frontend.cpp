@@ -11,6 +11,7 @@
 #include "wr64/frontend.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <vector>
 
 #include <recompui/recompui.h>
@@ -18,6 +19,7 @@
 #include <recompui/program_config.h>
 #include <recompui/renderer.h>
 
+#include <librecomp/config.hpp>
 #include <ultramodern/config.hpp>
 
 #include "wr64/rom.h"
@@ -36,6 +38,18 @@ std::vector<recomp::GameEntry> supported_games;
 SDL_Window* window = nullptr;
 
 namespace {
+
+// Where recompui keeps its settings: beside the executable, which is where
+// general.json and the rest appear.
+std::filesystem::path config_directory() {
+    char* base = SDL_GetBasePath();
+    std::filesystem::path path = base != nullptr ? std::filesystem::path{ base }
+                                                 : std::filesystem::current_path();
+    if (base != nullptr) {
+        SDL_free(base);
+    }
+    return path;
+}
 
 // Adapts RecompFrontend's renderer to the callback ultramodern asks for.
 //
@@ -120,6 +134,47 @@ void init() {
 
     // Loads the player's saved settings from disk. Must come after every tab.
     recompui::config::finalize();
+
+    // Play fullscreen at the display's own resolution and aspect ratio.
+    //
+    // Two thirds of that are already the library's defaults: resolution is Auto,
+    // which renders at the window's true pixel size rather than upscaling
+    // 320x240, and aspect ratio is Expand, which widens the frustum to whatever
+    // shape the window is. Only the window mode defaults to Windowed.
+    //
+    // This runs after finalize() and only when the player has no saved graphics
+    // settings, which is what makes it a first-run default rather than an
+    // override: choose Windowed in the menu and that choice is written to
+    // graphics.json and respected from then on. Setting it before finalize()
+    // does not work -- the option map does not exist until it has loaded, and
+    // writing into it faults.
+    //
+    // Both copies are set. recompui owns the value the menu shows, ultramodern
+    // owns the one the renderer reads, and the graphics tab syncs the two on
+    // change; setting only one leaves the menu and the window disagreeing.
+    if (!std::filesystem::exists(config_directory() / "graphics.json")) {
+        recompui::config::get_graphics_config().set_option_value(
+            recompui::config::graphics::options::wm_option,
+            static_cast<uint32_t>(ultramodern::renderer::WindowMode::Fullscreen));
+
+        // The HUD stays where the cartridge put it, in the middle 4:3 of the
+        // screen. The library defaults it to Expand, which spreads the readouts
+        // to the edges of a widened frame -- and in this game that pushes the
+        // speed readout off the right-hand side entirely. Keeping it Original is
+        // both correct-looking and the setting that does not lose information.
+        // The frustum is still widened; this is only about where the 2D overlay
+        // sits inside it.
+        recompui::config::get_graphics_config().set_option_value(
+            recompui::config::graphics::options::hr_option,
+            static_cast<uint32_t>(ultramodern::renderer::HUDRatioMode::Original));
+
+        ultramodern::renderer::GraphicsConfig gfx = ultramodern::renderer::get_graphics_config();
+        gfx.wm_option = ultramodern::renderer::WindowMode::Fullscreen;
+        gfx.hr_option = ultramodern::renderer::HUDRatioMode::Original;
+        ultramodern::renderer::set_graphics_config(gfx);
+
+        std::fprintf(stderr, "[wr64] no saved graphics settings; defaulting to fullscreen at the display\'s size\n");
+    }
 
     std::fprintf(stderr, "[wr64] frontend ready: launcher, ROM picker and config menu\n");
     std::fflush(stderr);

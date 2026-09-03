@@ -26,6 +26,7 @@
 #include <ultramodern/rsp.hpp>
 #include <ultramodern/events.hpp>
 #include <ultramodern/error_handling.hpp>
+#include <ultramodern/config.hpp>
 #include <ultramodern/threads.hpp>
 #include <librecomp/rsp.hpp>
 
@@ -529,30 +530,53 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
 }
 
 ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
-    // Pick the largest whole multiple of the N64's 320x240 that fits the
-    // display, rather than hardcoding one. A fixed 640x480 doubled is 1280x960,
-    // which is taller than a 1536x864 laptop panel: Windows then places the
-    // window partly off-screen, and the game is cropped with no indication that
-    // anything is wrong. Whole multiples keep the upscale clean.
+    // Size the window, and decide whether it opens fullscreen.
+    //
+    // Fullscreen is not just a flag here: RT64 derives the aspect ratio it
+    // expands the game into from the swap chain's dimensions. A window created
+    // at a 4:3 multiple gives it a 4:3 swap chain, and "Expand" then has
+    // nothing to expand into -- the game stays pillarboxed however wide the
+    // display is. Opening at the display's own size means the swap chain is the
+    // display's shape from the first frame.
+    //
+    // Windowed, the largest whole multiple of 320x240 that fits is used rather
+    // than a hardcoded size. A fixed 2x of 640x480 is 1280x960, taller than a
+    // 1536x864 laptop panel: Windows then places the window partly off-screen
+    // and the game is cropped with no indication anything is wrong.
+    const bool fullscreen = ultramodern::renderer::get_graphics_config().wm_option ==
+                            ultramodern::renderer::WindowMode::Fullscreen;
+
     int width = 320 * 4;
     int height = 240 * 4;
-    SDL_Rect usable{};
-    if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
-        int scale = 4;
-        while (scale > 1 && (320 * scale > usable.w || 240 * scale > usable.h)) {
-            --scale;
-        }
-        width = 320 * scale;
-        height = 240 * scale;
-        std::fprintf(stderr, "[wr64] window %dx%d (%dx upscale; display has %dx%d usable)\n",
-                     width, height, scale, usable.w, usable.h);
+    Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+
+    SDL_Rect display{};
+    if (fullscreen && SDL_GetDisplayBounds(0, &display) == 0) {
+        width = display.w;
+        height = display.h;
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        std::fprintf(stderr, "[wr64] window %dx%d fullscreen (the display's own size)\n",
+                     width, height);
         std::fflush(stderr);
+    }
+    else {
+        SDL_Rect usable{};
+        if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+            int scale = 4;
+            while (scale > 1 && (320 * scale > usable.w || 240 * scale > usable.h)) {
+                --scale;
+            }
+            width = 320 * scale;
+            height = 240 * scale;
+            std::fprintf(stderr, "[wr64] window %dx%d (%dx upscale; display has %dx%d usable)\n",
+                         width, height, scale, usable.w, usable.h);
+            std::fflush(stderr);
+        }
     }
 
     g_window = SDL_CreateWindow("Wave Race 64: Recompiled",
                                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                width, height,
-                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+                                width, height, flags);
     if (g_window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         return {};
