@@ -24,6 +24,7 @@ endif()
 option(WR64_WITH_RUNTIME    "Link ultramodern + librecomp + RT64 (phase 03)" OFF)
 option(WR64_WITH_RECOMPILED "Compile generated code in RecompiledFuncs/ (phase 02)" OFF)
 option(WR64_BUILD_RECOMPILER "Also build the N64Recomp tool from lib/ (phase 02)" OFF)
+option(WR64_WITH_FRONTEND   "Link RecompFrontend for menus and input (phase 06)" OFF)
 
 # ---------------------------------------------------------------------------
 #  Compiler policy
@@ -56,6 +57,60 @@ if(WR64_WITH_RUNTIME)
     set(RT64_STATIC ON CACHE BOOL "" FORCE)
     add_subdirectory("${WR64_LIB_DIR}/RT64" EXCLUDE_FROM_ALL)
     add_subdirectory("${WR64_LIB_DIR}/N64ModernRuntime" EXCLUDE_FROM_ALL)
+endif()
+
+# RecompFrontend supplies the pieces every N64: Recompiled port needs and none
+# of which are game-specific: recompinput for controller mapping, rebindable
+# keys and per-device profiles, and recompui for the config and mod menus, built
+# on RmlUi and drawn through RT64. It takes the paths to the two libraries it
+# sits on top of, which this project already has, so it is added after them.
+if(WR64_WITH_FRONTEND)
+    if(NOT WR64_WITH_RUNTIME)
+        message(FATAL_ERROR
+            "WR64_WITH_FRONTEND needs WR64_WITH_RUNTIME: the frontend draws "
+            "through RT64 and reads the runtime's config.")
+    endif()
+    if(NOT EXISTS "${WR64_LIB_DIR}/RecompFrontend/recompui/lib/RmlUi/CMakeLists.txt")
+        message(FATAL_ERROR
+            "RecompFrontend's own submodules are missing. Run: "
+            "git submodule update --init --recursive")
+    endif()
+
+    # On Windows the frontend expects SDL2 at ${sdl2_SOURCE_DIR}, which is what
+    # FetchContent would have set had it fetched SDL2 itself. This project takes
+    # SDL2 from the copy RT64 already vendors -- two SDL2s in one process is not
+    # a thing that ends well -- so the variable is pointed at that instead.
+    set(sdl2_SOURCE_DIR
+        "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3")
+
+    # SDL 2.26's SDL_endian.h defines _m_prefetch as a workaround for an old
+    # Clang bug, guarded only by __PRFCHWINTRIN_H. Current Clang has _m_prefetch
+    # as a builtin, so that definition is now an error rather than a fix. RT64
+    # already defines the guard for its own targets; the frontend is a separate
+    # directory scope and does not inherit it, so it is set here for everything
+    # added below.
+    add_compile_definitions(__PRFCHWINTRIN_H)
+
+    # recompui compiles its own HLSL through RT64's build_vertex_shader and
+    # build_pixel_shader. Those functions are global, but the variables they
+    # expand -- the DXC binary and its option lists -- are set with plain set()
+    # inside RT64's own directory, so a sibling directory calling them gets an
+    # empty compiler and a command line that begins with the .hlsl file. The
+    # shader step then "succeeds" while producing nothing, and the failure
+    # surfaces one step later as an empty file. Re-declaring them here is what
+    # makes the functions usable from outside RT64.
+    set(WR64_RT64_DIR "${WR64_LIB_DIR}/RT64")
+    set(DXC "${WR64_RT64_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+    set(DXC_COMMON_OPTS "-I${WR64_RT64_DIR}/src")
+    set(DXC_DXIL_OPTS "-Wno-ignored-attributes")
+    set(DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
+    set(DXC_PS_OPTS "${DXC_COMMON_OPTS}" "-E" "PSMain" "-T ps_6_3")
+    set(DXC_VS_OPTS "${DXC_COMMON_OPTS}" "-E" "VSMain" "-T vs_6_3" "-fvk-invert-y")
+
+    set(RECOMP_FRONTEND_N64MODERNRUNTIME_PATH "${WR64_LIB_DIR}/N64ModernRuntime"
+        CACHE PATH "" FORCE)
+    set(RECOMP_FRONTEND_RT64_PATH "${WR64_LIB_DIR}/RT64" CACHE PATH "" FORCE)
+    add_subdirectory("${WR64_LIB_DIR}/RecompFrontend" EXCLUDE_FROM_ALL)
 endif()
 
 # The recompiler tool lives inside N64ModernRuntime as its own submodule. Using
@@ -223,6 +278,7 @@ message(STATUS "WaveRace64Recomp configuration:")
 message(STATUS "  compiler          ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  runtime + RT64    ${WR64_WITH_RUNTIME}")
 message(STATUS "  recompiled code   ${WR64_WITH_RECOMPILED}")
+message(STATUS "  frontend UI       ${WR64_WITH_FRONTEND}")
 message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILER}")
 
 

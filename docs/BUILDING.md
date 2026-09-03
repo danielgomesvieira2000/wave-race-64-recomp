@@ -181,3 +181,35 @@ powershell -ExecutionPolicy Bypass -File tools/capture_window.ps1 -OutDir shots 
 For a repeatable session without touching the pad, `WR64_INPUT_SCRIPT` points at
 a file of timed inputs; `tools/scripts/race.txt` drives the game from boot into
 a race. Leave the variable unset and nothing is injected.
+
+## The frontend UI (phase 06, in progress)
+
+`lib/RecompFrontend` is the shared library every N64: Recompiled port uses for
+the parts that are not game-specific: `recompinput` for controller mapping,
+rebindable keys and per-device profiles, and `recompui` for the config and mod
+menus, built on RmlUi and drawn through RT64. It is off by default:
+
+```
+cmake -B build-fe -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON -DWR64_WITH_FRONTEND=ON
+cmake --build build-fe
+```
+
+Three things were needed to build it outside the tree it was written in, all in
+this project's `CMakeLists.txt` rather than as submodule patches:
+
+- `sdl2_SOURCE_DIR` points at the SDL2 that RT64 already vendors. The frontend
+  expects the variable FetchContent would have set, and two SDL2s in one process
+  is not a thing that ends well.
+- `__PRFCHWINTRIN_H` is defined for the frontend's directory. SDL 2.26 works
+  around an old Clang bug by defining `_m_prefetch`; current Clang has it as a
+  builtin, so the workaround is now the error. RT64 defines this guard for its
+  own targets and the frontend does not inherit it.
+- RT64's `DXC` variable and its option lists are re-declared. `recompui`
+  compiles its own HLSL through RT64's shader functions, which are global, but
+  the variables they expand are set inside RT64's directory -- so from a sibling
+  directory the shader command line begins with the `.hlsl` file and no
+  compiler, produces nothing, and fails a step later on an empty file.
+
+`patches/ui_funcs.h` exists because `recompui` includes it by a hardcoded
+relative path out of the library and into the port. Upstream marks it "TODO:
+Forced game includes".
