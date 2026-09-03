@@ -80,7 +80,12 @@ if(WR64_WITH_RECOMPILED)
 
     add_library(wr64_recompiled STATIC ${WR64_RECOMPILED_SOURCES})
     target_include_directories(wr64_recompiled PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        # recomp.h and the librecomp headers the generated code includes, plus
+        # RecompiledFuncs itself for funcs.h and reimplemented_decls.h.
+        "${WR64_LIB_DIR}/N64ModernRuntime/N64Recomp/include"
+        "${WR64_LIB_DIR}/N64ModernRuntime/librecomp/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs")
 
     # Recompiled code is machine-generated: its warnings are noise, and it must
     # never be built with strict aliasing or signed-overflow assumptions.
@@ -109,9 +114,11 @@ if(WR64_WITH_RUNTIME)
 endif()
 
 if(WR64_WITH_RECOMPILED)
-    # Recompiled code and the runtime call into each other, so on ld/lld the
-    # link order alone cannot resolve the cycle.
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT APPLE AND NOT MSVC)
+    # The archive-group flags exist to break the cycle between the recompiled
+    # code and librecomp, so they are only meaningful when both are in the link.
+    # They are also ld/lld-ELF syntax: lld-link ignores them with a warning, so
+    # they must not be emitted for an MSVC-style link at all.
+    if(WR64_WITH_RUNTIME AND UNIX AND NOT APPLE)
         target_link_libraries(WaveRace64Recomp PRIVATE
             -Wl,--start-group wr64_recompiled librecomp -Wl,--end-group)
     else()

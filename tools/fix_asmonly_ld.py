@@ -34,6 +34,49 @@ REMAP = {
 }
 
 
+def prune_spurious_undefined_funcs():
+    """Drop entries from splat's undefined_funcs_auto.ld that we actually define.
+
+    A linker script assignment wins over an object's own definition and produces
+    an ABS symbol -- one with no section. N64Recomp cannot resolve a call to an
+    ABS symbol, because it has no way to know which section the target lives in,
+    so a single stale entry here fails a whole function with a misleading "no
+    function found for jal target".
+
+    splat lists a function as undefined when it cannot attribute it, which is
+    correct for the overlay entry points that genuinely live at an address
+    several sections share. It is wrong for anything our assembly defines, and
+    those are the entries removed here.
+    """
+    auto = LD.parent / "auto-asmonly" / "undefined_funcs_auto.ld"
+    if not auto.exists():
+        return
+
+    defined = set()
+    for source in ASM_ROOT.rglob("*.s"):
+        for line in source.read_text(errors="replace").splitlines():
+            m = re.match(r"glabel\s+([A-Za-z_]\w*)", line)
+            if m:
+                defined.add(m.group(1))
+
+    kept, dropped = [], []
+    for line in auto.read_text().splitlines(keepends=True):
+        m = re.match(r"\s*([A-Za-z_]\w*)\s*=", line)
+        if m and m.group(1) in defined:
+            dropped.append(m.group(1))
+        else:
+            kept.append(line)
+
+    if dropped:
+        auto.write_text("".join(kept))
+        print(f"\ndropped {len(dropped)} spurious undefined-function assignment(s) "
+              f"that our objects define:")
+        for name in dropped:
+            print(f"  {name}")
+    else:
+        print("\nno spurious undefined-function assignments")
+
+
 def place_bss_absolutely(text):
     """Pin each bss object to the address splat recorded for it.
 
@@ -102,6 +145,7 @@ def main():
             print(f"  {old}\n    -> {new}")
 
     text = place_bss_absolutely(text)
+    prune_spurious_undefined_funcs()
 
     LD.write_text(text)
     after = len(re.findall(r"build/src/[^\s)]*\.o", text))
