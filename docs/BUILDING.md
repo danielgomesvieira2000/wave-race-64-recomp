@@ -237,6 +237,24 @@ called before anything is built. The launcher throws from its constructor
 otherwise, and the process dies with nothing on stderr but `abort() has been
 called`.
 
-Not yet done: PromptFont, which recompui uses for controller glyphs, is not
-vendored anywhere in this tree. Button prompts will show as missing glyphs until
-it is added to `assets/promptfont/promptfont.ttf`.
+### Assets the port owns
+
+`assets/` holds what recompui asks the port for and does not ship itself:
+
+- `recomp.rcss`, the stylesheet, which is the font rule and nothing else.
+- `promptfont/promptfont.ttf`, the controller and keyboard glyphs recompui draws
+  input prompts with. PromptFont by Yukari "Shinmera" Hafner, v1.10, SIL Open
+  Font License 1.1. Committed rather than fetched during the build, because a
+  build that needs the network is a build that fails without one. See
+  `assets/promptfont/README.md`.
+- `icons/`, eleven SVGs recompui loads by name: Caret, Cont, Keyboard,
+  PlusKeyboard, Question, Quit, RecordBorder, RecordSpinner, Reset, Trash, X.
+  A missing icon is easy to miss and confusing when noticed: the control that
+  uses it is still laid out, focusable and clickable, and draws nothing.
+
+The icons are drawn for this project rather than taken from another port. The
+other N64: Recompiled ports are GPL-3.0 and this repository is MIT, so their
+assets cannot simply be copied in without changing the licence of this one.
+
+Lato and Noto Emoji are not in `assets/`: the build copies them out of the RmlUi
+submodule, which this repository already has.

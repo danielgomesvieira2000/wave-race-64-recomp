@@ -266,12 +266,21 @@ endif()
 # The frontend's own assets. recompui reads them from <executable>/assets, and
 # ships none itself: the port supplies the stylesheet and the fonts.
 #
-# The fonts are copied from RmlUi's samples rather than committed. They are SIL
-# Open Font License faces that this repository already has through a submodule,
-# and a second copy of a binary is worth avoiding. Note that PromptFont, which
-# recompui uses for controller glyphs, is not among them -- it is not vendored
-# anywhere in this tree, so button prompts will show as missing glyphs until it
-# is added.
+# Lato and Noto Emoji are copied out of the RmlUi submodule rather than
+# committed. They are SIL Open Font License faces this repository already has,
+# and a second copy of a binary is worth avoiding.
+#
+# PromptFont -- the controller and keyboard glyphs recompui draws input prompts
+# with -- is committed under assets/, because it is not vendored anywhere in
+# this tree and the alternative was a build that reaches the network to
+# succeed. See assets/promptfont/README.md. recompui asks for it by the
+# relative path "promptfont/promptfont.ttf", so it keeps its subdirectory.
+#
+# assets/icons holds the eleven SVGs recompui asks for by name. Without them the
+# buttons that use them are still there and still work -- they are laid out,
+# focusable and clickable -- and draw nothing at all, which is how their absence
+# was noticed. They are drawn for this project rather than taken from another
+# port, whose assets are GPL-3.0 while this repository is MIT.
 if(WR64_WITH_FRONTEND)
     target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_FRONTEND=1)
     target_link_libraries(WaveRace64Recomp PRIVATE recompui recompinput)
@@ -290,6 +299,15 @@ if(WR64_WITH_FRONTEND)
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Italic.ttf"
                 "${WR64_RMLUI_ASSETS}/NotoEmoji-Regular.ttf"
                 "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
+                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/icons"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/promptfont"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/promptfont/promptfont.ttf"
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/promptfont/LICENSE.txt"
+                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/promptfont"
         COMMENT "Staging the frontend's stylesheet and fonts")
 endif()
 
