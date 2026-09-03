@@ -194,34 +194,53 @@ What is established:
 - librecomp's vector stores mask DMEM addresses exactly as the hardware does, so
   the wrap is faithful; what reaches it is wrong, not how it is applied.
 
-**Update: the overrunning command is now identified.** `src/callbacks.cpp`
-carries a standing diagnostic (`bisect_audio_task`, active for the first six
-dropped frames of a run) that re-runs a failed task from a fresh DMEM with
-1, 2, 3... of its commands, comparing the constant pool against a pristine
-copy after each, so the culprit is whichever prefix first disturbs it -- no
-guessing from where the corrupted bytes land.
+**Update: the overrunning command is ENVMIXER, but not the way this document
+first concluded.** `src/callbacks.cpp` carries a standing diagnostic
+(`bisect_audio_task`, active for the first six dropped frames of a run) that
+re-runs a failed task from a fresh DMEM with 1, 2, 3... of its commands,
+comparing the command jump table (DMEM `0x10`-`0x2F`, the sixteen halfwords
+`lh $2, 0x10($2)` indexes into) against a pristine copy after each, so the
+culprit is whichever prefix first disturbs it.
 
-It is always **ENVMIXER**, and only when its flags byte has bit 3 set (the
-game issues it as `SETBUFF f=08 ... / ENVMIXER f=08 ...`, always paired). The
+That comparison originally covered the whole `0x00`-`0x40` window, which
+turned out to be a mistake: part of that window is DMA chunk-remainder
+bookkeeping that legitimately varies with how many bytes of the command list
+get consumed, and comparing the whole window flagged that as "corruption,"
+pointing at several innocent commands (a plain SETBUFF, a RESAMPLE) in turn.
+Narrowing the comparison to just the table entries themselves was the actual
+fix needed before trusting what it points at.
+
+With that fixed, the command it always points at is **ENVMIXER**. The
 recompiled handler (`RecompiledFuncs/aspMain_rsp.cpp`, label `L_1B38`) reads a
 persistent 16-byte "voice state" block the microcode keeps at a fixed DMEM
-address (register r24, itself fixed at `0x360` for the whole task) to decide
-where to write its mixed samples. With flag bit 3 clear, the handler forces
-that write pointer to a fixed, safe scratch address (`r23 + 0x50`, where r23
-is fixed at `0xF90`) regardless of what the state block says. With the bit
-set, it skips that clamp and uses the state block's value directly. An inner
-loop then advances the pointer 16 bytes at a time, one iteration per sample
-chunk -- and when the state block holds an unlucky value, that walk carries
-the pointer past DMEM's end. The four stores caught doing this landed at
-`0xFF0`, `0x1000`, `0x1010`, `0x1020` -- the last three wrapping onto the
-constant pool, exactly matching the "correct value plus or minus something
-under 32" corruption pattern above.
+address (register r24, fixed at `0x360` for the whole task) to decide where to
+write its mixed samples, when its flags byte has bit 3 set -- with the bit
+clear, the handler instead forces a fixed, safe scratch address (`r23 + 0x50`,
+r23 fixed at `0xF90`), ignoring the state block entirely.
 
-What is not yet established is which command writes the value into that
-`0x360` state block that occasionally makes the walk overshoot, and whether
-that value is something the cartridge's own audio data legitimately produces
-or a mistranslation somewhere in the arithmetic feeding it. That is the thread
-to pull next.
+Instrumenting every store into the table directly (rather than inferring the
+address from the surrounding command dump) confirmed the corrupting write is
+a 16-byte vector store landing at `0x1010`-`0x102F`, wrapping DMEM's 4KB the
+same way the original stepping (`0xFF0`, `0x1000`, `0x1010`, `0x1020`,
+`0x1030`) suggested. But the failing instance had flags `0x09` -- bit 3 *and*
+bit 0 both set -- not `0x08`, and critically, no aux-mode SETBUFF (the one
+that refreshes the state block's write-pointer field) had run anywhere in the
+preceding ~80 commands. Meanwhile, directly watching that write pointer across
+many genuine `SETBUFF f=08 / ENVMIXER f=08` pairs -- the ordinary, paired case
+-- never once showed it approaching DMEM's end; the values stayed in the
+`0x0A80`-`0x0E40` range throughout.
+
+That points at a stale value rather than a single command's arithmetic
+overrunning: ENVMIXER's explicit-buffer mode trusts whatever the state block
+currently holds without checking whether an aux SETBUFF set it recently, and
+if the game ever issues that flag combination without one immediately
+preceding it -- reusing a much older buffer address left over from a
+different, unrelated voice -- the value has no relationship to the current
+mix at all. What still needs pinning down: whether the game's own command
+stream ever legitimately does this on purpose (relying on state a much
+earlier SETBUFF left behind), or whether some earlier aux SETBUFF simply never
+got the chance to run when it should have -- and if so, why not. That is the
+thread to pull next.
 
 Until then `asp_main_watched` reports the task complete instead of letting
 librecomp assert, which costs one frame of audio -- a click -- rather than the

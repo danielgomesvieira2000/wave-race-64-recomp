@@ -551,6 +551,9 @@ RspExitReason rerun_audio_task(uint8_t* rdram, uint32_t ucode_addr, uint32_t cou
     return aspMain_run(rdram, ucode_addr);
 }
 
+}  // namespace
+namespace {
+
 // Finds the first command that damages DMEM outside the audio buffers: the
 // microcode's constant pool (which holds the command jump table at 0x10) and
 // the OSTask copy at 0xFC0. Each prefix of the command list is run from a
@@ -584,14 +587,24 @@ void bisect_audio_task(uint8_t* rdram, uint32_t ucode_addr) {
             std::fprintf(stderr, "[wr64-audio] (top of DMEM 0x%03X-0x%03X first written after command %u)\n",
                          0xFC0 + lo, 0xFC0 + hi, n - 1);
         }
-        if (std::memcmp(dmem, pristine, sizeof(pristine)) != 0) {
+        // Only the table itself (0x10-0x2F, the sixteen halfword entries
+        // "lh $2, 0x10($2)" indexes into) matters for dispatch correctness.
+        // The rest of this 0x40-byte window includes DMA chunk-remainder
+        // bookkeeping that legitimately varies with how many bytes of the
+        // command list get consumed -- comparing the whole window flagged
+        // that as "corruption" and pointed at innocent commands.
+        if (std::memcmp(&dmem[0x10], &pristine[0x10], 0x20) != 0) {
             what = "the constant pool / jump table at DMEM 0x000-0x040";
-            const uint16_t* t = reinterpret_cast<const uint16_t*>(&dmem[0x10]);
-            const uint16_t* p = reinterpret_cast<const uint16_t*>(&pristine[0x10]);
-            std::fprintf(stderr, "[wr64-audio] table entries now:");
-            for (int i = 0; i < 16; ++i) {
-                if (t[i] != p[i]) {
-                    std::fprintf(stderr, " [%d] %04X->%04X", i, p[i], t[i]);
+            // Byte-swizzled storage (see RSP_MEM_B in rsp.hpp): logical byte N
+            // of DMEM lives at raw offset N^3. A plain reinterpret_cast here
+            // would compare the wrong bytes; go through the same swizzle the
+            // microcode's own loads and stores use.
+            std::fprintf(stderr, "[wr64-audio] bytes changed in 0x000-0x040:");
+            for (uint32_t i = 0; i < 0x40; ++i) {
+                const uint8_t dv = dmem[i ^ 3];
+                const uint8_t pv = pristine[i ^ 3];
+                if (dv != pv) {
+                    std::fprintf(stderr, " [0x%02X] %02X->%02X", i, pv, dv);
                 }
             }
             std::fprintf(stderr, "\n");
