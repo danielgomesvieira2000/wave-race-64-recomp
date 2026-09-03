@@ -166,9 +166,12 @@ A 100-second run reaches attract mode with audio, completing 5,500 audio tasks
 and 1,875 graphics tasks with no unhandled jump targets and no hangs. The
 scheduler cycles normally through its three states.
 
-One defect is characterised but not fixed. It fires roughly every 30 seconds of
-play -- more often than the "one run in three" an earlier draft of this document
-claimed, which was measuring a rate-limited counter rather than the fault.
+One defect took until phase 06 to run down, and its history is kept here in
+full because the diagnosis went wrong twice before it went right -- the wrong
+turns are as instructive as the answer (the resolution is at the end of this
+section). It fired roughly every 30 seconds of play -- more often than the "one
+run in three" an earlier draft of this document claimed, which was measuring a
+rate-limited counter rather than the fault.
 
 A vector store walks off the end of DMEM. Instrumenting every vector store in
 librecomp's RSP caught it stepping `0xFF0`, `0x1000`, `0x1010`, `0x1020`,
@@ -230,22 +233,58 @@ many genuine `SETBUFF f=08 / ENVMIXER f=08` pairs -- the ordinary, paired case
 -- never once showed it approaching DMEM's end; the values stayed in the
 `0x0A80`-`0x0E40` range throughout.
 
-That points at a stale value rather than a single command's arithmetic
-overrunning: ENVMIXER's explicit-buffer mode trusts whatever the state block
-currently holds without checking whether an aux SETBUFF set it recently, and
-if the game ever issues that flag combination without one immediately
-preceding it -- reusing a much older buffer address left over from a
-different, unrelated voice -- the value has no relationship to the current
-mix at all. What still needs pinning down: whether the game's own command
-stream ever legitimately does this on purpose (relying on state a much
-earlier SETBUFF left behind), or whether some earlier aux SETBUFF simply never
-got the chance to run when it should have -- and if so, why not. That is the
-thread to pull next.
+That pointed at a stale value rather than a single command's arithmetic
+overrunning, and the last question -- why an ENVMIXER would ever arrive
+without its SETBUFFs -- turned out to have nothing to do with the microcode.
 
-Until then `asp_main_watched` reports the task complete instead of letting
-librecomp assert, which costs one frame of audio -- a click -- rather than the
-run. That is a net, not a fix, and it says so on stderr every time it catches
-something.
+**Resolved: the command list was being rewritten while the microcode read
+it.** Snapshotting each task's list before the run and comparing afterwards
+showed roughly one task in a thousand changing underneath the microcode, by
+thousands of bytes from about command 3 onward -- the game writing the next
+frame's list into the buffer. Every failing task was one of those. The
+microcode DMAs its list in 0x140-byte chunks as it goes, so what it executed
+was a splice of two frames: the frame-end block of one (INTERLEAVE, then
+`SETBUFF(0, 0, 0x200)` and SAVEBUFF to the AI buffer) followed by the tail of
+a voice from the other -- its final SETVOL and its ENVMIXER, with the two
+SETBUFFs and four SETVOLs the game always emits in front of them overwritten.
+That ENVMIXER inherits the SAVEBUFF's count of 0x200 and the previous voice's
+aux buffers; wet-right at `0xE40` plus 0x200 ends at `0x1040`, and the stores
+land at `0xFF0, 0x1000, 0x1010, 0x1020, 0x1030` -- the original stepping,
+exactly.
+
+The game double-buffers its lists on the assumption that the RSP finishes a
+task long before that buffer's turn comes round again, two frames later.
+Timing every task showed why that failed here: each took 5 to 24 ms against a
+16.7 ms frame, because **the port had been running as a Debug build** since
+phase 03 -- `CMAKE_BUILD_TYPE=Debug` sat in both build directories' caches,
+overriding the project's RelWithDebInfo default, and the recompiled RSP vector
+unit is very slow unoptimized. Rebuilt optimized, the same five-minute window
+that had produced 21 rewritten lists produced none, and no dropped frames.
+
+Two things changed as a result. `docs/BUILDING.md` now says the build type
+explicitly and why. And `asp_main_watched` now copies the command list to a
+private scratch area (physical `0x7E0000`, in the top of the 8 MB the runtime
+reports; this 4 MB cartridge never reads osMemSize) and points the task at
+the copy before running it, so a machine slow enough to run tasks late can
+still never hand the microcode a splice. It also keeps comparing the game's
+own buffer before and after, and says so on stderr if the game did rewrite it
+-- harmless now, but the signal that found this.
+
+Also fixed along the way: `wr64::watch_for_hang` spawned a thread per call and
+let it poll for up to 100 ms; at one audio task per frame that was a thread
+creation every frame on the thread that has to keep pace with the game. It is
+now one persistent thread armed with a deadline. That alone did not change the
+race rate -- the Debug build's task duration was the cause -- but it was real
+overhead in the wrong place.
+
+The ENVMIXER analysis above stands as a description of *what the splice does*
+once it exists; the state-block reads, the skipped clamp and the walk are all
+real. None of it is a bug in the microcode or its recompilation.
+
+`asp_main_watched` still reports a task that did not reach its break as
+complete rather than letting librecomp assert -- one frame of audio rather than
+the run, should anything ever get past the private copy -- and says so on
+stderr, with the bisection's account of which command did what, every time.
 
 Still to do for this phase: play every course in both directions, stunt mode,
 and a full championship to the ceremony.

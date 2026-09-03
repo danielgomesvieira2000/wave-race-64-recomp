@@ -128,9 +128,24 @@ python tools/patch_rt64.py
 Use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`:
 
 ```
-cmake -B build-rt -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON
+cmake -B build-rt -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON
 cmake --build build-rt
 ```
+
+**Always build optimized** (`RelWithDebInfo`: optimized, with the symbols the
+crash handler needs). The project defaults to it when no build type is given,
+but a build type already in a directory's cache wins over that default, and a
+Debug build of this port is not merely slow -- it breaks the audio. The
+recompiled audio microcode is run on a thread of its own, once per frame, and
+the game double-buffers its command lists on the assumption that the RSP is
+done with a list long before that buffer's turn comes round again, two frames
+later. Unoptimized, one task takes 5 to 24 ms (measured) against a 16.7 ms
+frame, so the game regularly starts rewriting a list the microcode is still
+reading; the microcode then sees a splice of two frames' commands, and one
+particular splice -- an ENVMIXER inheriting the frame-end SAVEBUFF's sample
+count -- walks a buffer off the end of DMEM onto the command jump table. That
+is the "audio frame dropped" click. Optimized, a task takes well under a
+millisecond and the window closes. See docs/PHASE05-FINDINGS.md.
 
 RT64 decides its warning flags from `CMAKE_CXX_SIMULATE_ID`: a Clang targeting
 the MSVC ABI gets `/W4`, on the assumption that such a Clang is `clang-cl`. That
@@ -197,7 +212,7 @@ rebindable keys and per-device profiles, and `recompui` for the config and mod
 menus, built on RmlUi and drawn through RT64. It is off by default:
 
 ```
-cmake -B build-fe -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON -DWR64_WITH_FRONTEND=ON
+cmake -B build-fe -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON -DWR64_WITH_FRONTEND=ON
 cmake --build build-fe
 ```
 

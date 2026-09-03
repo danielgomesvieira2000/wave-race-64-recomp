@@ -12,6 +12,7 @@
 #include "wr64/callbacks.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -454,54 +455,48 @@ RspExitReason rsp_unknown_ucode(uint8_t* rdram, uint32_t ucode_addr) {
     return RspExitReason::Broke;
 }
 
-// Runs the microcode with a watchdog on it.
+// Runs the microcode with a watchdog on it, from a private copy of its command
+// list, with a net under it.
 //
-// A microcode that spins forever is the worst failure this code has: it faults
-// nothing, prints nothing and returns nothing, so the RSP task thread simply
-// stops. The game then freezes with no error at all -- the scheduler waits for
-// an SP-complete event that will never come, while every other thread carries
-// on, so the audio thread keeps building tasks and the window keeps swapping
-// the same finished frame. A wrong microcode load address produced exactly that
-// during phase 05; this makes the next one announce itself.
-// Runs the microcode, with a watchdog on it and a net under it.
+// The watchdog. A microcode that spins forever is the worst failure this code
+// has: it faults nothing, prints nothing and returns nothing, so the RSP task
+// thread simply stops. The game then freezes with no error at all -- the
+// scheduler waits for an SP-complete event that will never come, while every
+// other thread carries on, so the audio thread keeps building tasks and the
+// window keeps swapping the same finished frame. A wrong microcode load address
+// produced exactly that during phase 05; the watchdog makes the next one
+// announce itself.
 //
-// A microcode that spins forever is the worst failure this code has: it faults
-// nothing, prints nothing and returns nothing, so the RSP task thread simply
-// stops. The game then freezes with no error at all -- the scheduler waits for
-// an SP-complete event that will never come, while every other thread carries
-// on, so the audio thread keeps building tasks and the window keeps swapping
-// the same finished frame. A wrong microcode load address produced exactly that
-// during phase 05; the watchdog makes the next one announce itself.
+// The private copy. The game double-buffers its audio command lists on the
+// assumption that the RSP is done with a list long before that buffer's turn
+// comes round again, two frames later. That holds on hardware, where the task
+// takes about a millisecond, and it holds here of an optimized build. It did
+// not hold of the Debug build this port ran as through phase 05 and most of
+// phase 06: a task then took 5 to 24 ms against a 16.7 ms frame, and about one
+// task in a thousand had its list rewritten by the game while the microcode was
+// still DMAing it in, 0x140 bytes at a time. The microcode saw a splice of two
+// frames' commands, and one splice in particular -- an ENVMIXER stripped of its
+// own SETBUFFs, so inheriting the frame-end SAVEBUFF's 0x200-byte count --
+// walked the wet-right channel buffer from 0xE40 off the end of DMEM, wrapping
+// onto the command jump table at 0x10. That was the "audio frame dropped"
+// click phase 05 could characterise but not place. Copying the list before the
+// run costs a memcpy of a few KB per frame and makes the outcome independent
+// of how late the task runs. The copy lives in the top of the 8 MB the runtime
+// reports; this is a 4 MB cartridge that never reads osMemSize, so nothing of
+// the game's is there.
 //
-// The net is for a defect that is characterised but not fixed.
-//
-// Every 30 seconds or so of play, a vector store walks off the end of DMEM. The
-// game's audio memory map gives each of its four channel buffers exactly 160
-// samples and puts the last one flush against 0xF80; the offending store was
-// caught stepping 0xFF0, 0x1000, 0x1010, 0x1020, 0x1030. DMEM is 4KB, so
-// everything from 0x1000 wraps to 0x000 -- onto the microcode's constant pool,
-// which holds the sixteen-entry command jump table at 0x10. The next command
-// dispatched then jumps to a corrupted address.
-//
-// The corrupted entries are always their correct value plus or minus something
-// under 32, in both directions, which makes it a read-modify-write -- a mix --
-// rather than a scale. The mixer loop itself was checked instruction by
-// instruction against the cartridge and is faithful, and the game's own audio
-// parameters cap a per-update chunk at 144 samples against the 160 the layout
-// allows, so the ordinary synthesis path cannot be what overruns.
-//
-// librecomp treats the resulting bad dispatch as fatal: it asserts, and the RSP
+// The net. librecomp treats a bad dispatch as fatal: it asserts, and the RSP
 // task thread dies with it, stopping the game exactly as a hang would. DMEM is
-// reloaded from RDRAM before every task and the RDRAM copy of the table has
-// been confirmed intact throughout, so the damage never outlives the task that
-// caused it. Reporting the task complete therefore costs one frame of audio --
-// an audible click -- instead of the run. It is a net, not a fix, and it says
-// so on stderr every time it catches something.
+// reloaded from RDRAM before every task, so the damage never outlives the task
+// that caused it, and reporting the task complete costs one frame of audio
+// rather than the run. With the copy in place it should never fire; if it
+// does, bisect_audio_task explains which command did what.
 
 // The command list of the audio task about to run, recorded by
 // get_rsp_microcode so a failed task can be dumped afterwards.
 uint32_t g_audio_task_data = 0;
 uint32_t g_audio_task_size = 0;
+uint32_t g_audio_task_original_ptr = 0;   // the game's buffer; g_audio_task_data may point at our copy
 
 const char* rsp_exit_name(RspExitReason r) {
     switch (r) {
@@ -637,10 +632,51 @@ void bisect_audio_task(uint8_t* rdram, uint32_t ucode_addr) {
     std::fflush(stderr);
 }
 
+// Where the private copy of the command list lives: physical 0x7E0000, in the
+// top of the 8 MB the runtime reports. See the comment above.
+constexpr uint32_t kCommandListScratch = 0x807E0000u;
+constexpr uint32_t kCommandListScratchSize = 0x10000u;
+
 RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
+    const uint32_t original_base = g_audio_task_original_ptr & 0x00FFFFFFu;
+
+    // Run from a private copy (see above). Both addresses are 8-byte aligned, so
+    // a raw copy preserves RDRAM's byte swizzling. The microcode reads the
+    // list's address exactly once, from the OSTask librecomp placed at DMEM
+    // 0xFC0, so redirecting that word is all it takes. The diagnostics below
+    // are pointed at the copy too: it is what actually ran.
+    if (g_audio_task_size <= kCommandListScratchSize) {
+        std::memcpy(rdram + (kCommandListScratch & 0x00FFFFFFu), rdram + original_base, g_audio_task_size);
+        RSP_MEM_W_STORE(0x30, 0xFC0, kCommandListScratch);
+        g_audio_task_data = kCommandListScratch;
+        g_audio_task.t.data_ptr = kCommandListScratch;
+    }
+
+    // Health metric, kept on purpose: did the game rewrite the original list
+    // while the task ran? Harmless now, but it is the measurement that found
+    // the bug, and a machine slow enough to trip it is worth knowing about.
+    static std::vector<uint8_t> before;
+    before.assign(rdram + original_base, rdram + original_base + g_audio_task_size);
+
     wr64::watch_for_hang("the audio microcode", 5);
     const RspExitReason reason = aspMain_run(rdram, ucode_addr);
     wr64::watch_done();
+
+    {
+        static uint64_t changed_runs = 0, runs = 0;
+        ++runs;
+        if (std::memcmp(before.data(), rdram + original_base, g_audio_task_size) != 0) {
+            ++changed_runs;
+            if (changed_runs <= 3) {
+                std::fprintf(stderr, "[wr64] the game rewrote an audio command list while its task was running"
+                                     " (%llu of %llu tasks so far). The task ran from its own copy, so nothing was"
+                                     " lost, but audio tasks are running more than a frame late on this machine.\n",
+                             static_cast<unsigned long long>(changed_runs),
+                             static_cast<unsigned long long>(runs));
+                std::fflush(stderr);
+            }
+        }
+    }
 
     if (reason != RspExitReason::Broke) {
         static uint64_t dropped = 0;
@@ -667,6 +703,7 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     // identifies the code about to run.
     const uint32_t ucode = static_cast<uint32_t>(task->t.ucode) & 0x00FFFFFFu;
     if (ucode == (kAspMainTextStart & 0x00FFFFFFu)) {
+        g_audio_task_original_ptr = static_cast<uint32_t>(task->t.data_ptr);
         g_audio_task_data = static_cast<uint32_t>(task->t.data_ptr);
         g_audio_task_size = task->t.data_size;
         g_audio_task = *task;

@@ -21,6 +21,8 @@
 #include <exception>
 #include <stdexcept>
 #include <atomic>
+#include <chrono>
+#include <mutex>
 #include <cstdio>
 #include <string>
 #include <thread>
@@ -174,20 +176,30 @@ namespace {
 
 // Hang watchdog state. Only one piece of work is watched at a time, which is
 // all this is for: catching a microcode that never returns.
-std::atomic<bool> g_watch_finished{ true };
+//
+// One persistent thread, armed with a deadline, rather than a thread per
+// watched call. The first version of this spawned a detached std::thread for
+// every call and let it poll for up to 100 ms before noticing the work had
+// finished. Watching the audio microcode meant doing that for every audio
+// task -- four per frame, some 240 thread creations a second, on the very
+// thread that has to keep pace with the game. That jitter was enough to let
+// the game get two audio frames ahead of the RSP and start rewriting a
+// command list the microcode was still reading (see the ENVMIXER notes in
+// docs/PHASE05-FINDINGS.md). Arming a watchdog must cost two atomic stores.
+std::atomic<long long> g_watch_deadline_ms{ 0 };   // 0 = nothing being watched
+std::atomic<const char*> g_watch_what{ nullptr };
+std::atomic<int> g_watch_seconds{ 0 };
+HANDLE g_watch_target = nullptr;                  // the one thread that is watched
+std::once_flag g_watch_thread_started;
 
-void watch_thread(HANDLE thread, std::string what, int seconds) {
-    for (int i = 0; i < seconds * 10; ++i) {
-        if (g_watch_finished.load()) {
-            CloseHandle(thread);
-            return;
-        }
-        Sleep(100);
-    }
+long long now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
+void report_hang(HANDLE thread, const char* what, int seconds) {
     std::fprintf(stderr, "\n[wr64] ==== HANG ====\n");
-    std::fprintf(stderr, "[wr64] %s has not returned after %d seconds\n",
-                 what.c_str(), seconds);
+    std::fprintf(stderr, "[wr64] %s has not returned after %d seconds\n", what, seconds);
 
     // One sample names a single instruction, which for a spin loop is whichever
     // one the thread happened to be on -- and with everything inlined that is
@@ -217,7 +229,21 @@ void watch_thread(HANDLE thread, std::string what, int seconds) {
 
     std::fprintf(stderr, "[wr64] ==============\n");
     std::fflush(stderr);
-    CloseHandle(thread);
+}
+
+void watch_thread() {
+    for (;;) {
+        Sleep(100);
+        const long long deadline = g_watch_deadline_ms.load();
+        if (deadline == 0 || now_ms() < deadline) {
+            continue;
+        }
+        // Report once per hang: disarm before the (slow) sampling so a hang
+        // is not reported again on the next tick.
+        g_watch_deadline_ms.store(0);
+        const char* what = g_watch_what.load();
+        report_hang(g_watch_target, what != nullptr ? what : "watched work", g_watch_seconds.load());
+    }
 }
 
 }  // namespace
@@ -225,18 +251,28 @@ void watch_thread(HANDLE thread, std::string what, int seconds) {
 namespace wr64 {
 
 void watch_for_hang(const char* what, int seconds) {
-    HANDLE duplicate = nullptr;
-    if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
-                         GetCurrentProcess(), &duplicate, 0, FALSE,
-                         DUPLICATE_SAME_ACCESS)) {
-        return;
+    // The watched thread's handle is taken once: this only ever watches the
+    // RSP task thread, and a per-call DuplicateHandle would be the kind of
+    // cost this exists to avoid.
+    static thread_local bool registered = false;
+    if (!registered) {
+        HANDLE duplicate = nullptr;
+        if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
+                             GetCurrentProcess(), &duplicate, 0, FALSE,
+                             DUPLICATE_SAME_ACCESS)) {
+            return;
+        }
+        g_watch_target = duplicate;
+        registered = true;
     }
-    g_watch_finished.store(false);
-    std::thread{ watch_thread, duplicate, std::string{ what }, seconds }.detach();
+    g_watch_what.store(what);
+    g_watch_seconds.store(seconds);
+    g_watch_deadline_ms.store(now_ms() + static_cast<long long>(seconds) * 1000);
+    std::call_once(g_watch_thread_started, [] { std::thread{ watch_thread }.detach(); });
 }
 
 void watch_done() {
-    g_watch_finished.store(true);
+    g_watch_deadline_ms.store(0);
 }
 
 }  // namespace wr64
