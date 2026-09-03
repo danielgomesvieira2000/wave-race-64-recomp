@@ -34,6 +34,52 @@ REMAP = {
 }
 
 
+def place_bss_absolutely(text):
+    """Pin each bss object to the address splat recorded for it.
+
+    The same shortfall that affects data affects bss: a .bss object can be
+    smaller than the span it represents, so the next one starts early and the
+    error accumulates. Padding is the right answer for data, where the missing
+    bytes are real cartridge contents that can be restored from the ROM. It is
+    the wrong answer here, because bss objects do not tile a contiguous range --
+    audio_bss, bss1 and the libultra bss files sit in different segments with
+    gaps between them, so "pad to where the next one starts" would invent
+    hundreds of kilobytes of nonsense.
+
+    bss holds no data, only addresses, and splat annotates every symbol with the
+    address it belongs at. Setting the location counter before each object uses
+    that recorded address directly, so nothing can drift into anything else.
+    """
+    if ". = ABSOLUTE(0x" in text:
+        print("\nbss objects already pinned; leaving the script alone")
+        return text
+
+    placed = 0
+    out = []
+    for line in text.splitlines(keepends=True):
+        m = re.search(r"build/asm-all/us/rev1/(\S+)\.bss\.o\(\.bss\)", line)
+        if m:
+            source = ASM_ROOT / f"{m.group(1)}.bss.s"
+            vram = first_vram(source)
+            if vram is not None:
+                indent = line[:len(line) - len(line.lstrip())]
+                out.append(f"{indent}. = ABSOLUTE(0x{vram:08X});\n")
+                placed += 1
+        out.append(line)
+    print(f"\npinned {placed} bss object(s) to their recorded addresses")
+    return "".join(out)
+
+
+def first_vram(path):
+    if not path.exists():
+        return None
+    for line in path.read_text(errors="replace").splitlines():
+        m = re.search(r"/\*\s*([0-9A-Fa-f]{8})\s*\*/", line)
+        if m:
+            return int(m.group(1), 16)
+    return None
+
+
 def main():
     if not LD.exists():
         sys.exit(f"missing {LD}\nRun tools/wsl_run_splat_asmonly.sh first.")
@@ -54,6 +100,8 @@ def main():
             text = text.replace(old, new)
             changed += 1
             print(f"  {old}\n    -> {new}")
+
+    text = place_bss_absolutely(text)
 
     LD.write_text(text)
     after = len(re.findall(r"build/src/[^\s)]*\.o", text))

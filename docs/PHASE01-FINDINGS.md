@@ -262,3 +262,62 @@ exactly, rather than inferring an alignment the original build may not have used
 
 Verify with the same measurement: `675/2551` symbols placed exactly should
 become `2551/2551`, and `.entry` should match the cartridge in all 0x50 bytes.
+
+---
+
+# Addendum 3: gate met
+
+```
+segments checked : 32
+wrong size       : 0
+wrong bytes      : 0
+symbols placed   : 2551/2551 exact
+```
+
+The assembled ELF is byte-identical to the cartridge across every segment, and
+every address-encoding symbol sits exactly where its name says it should.
+
+## What the fix was
+
+Two passes, because the shortfall had two shapes.
+
+**Subsegment padding** (`tools/pad_data_objects.py`, 27,056 bytes restored).
+splat emits a subsegment only as far as its last symbol. The missing bytes are
+real cartridge contents, so they are restored with `.incbin` of the exact ROM
+range -- `.space` would have invented zeros and produced an ELF that looked
+padded while being wrong. Lengths come from consecutive subsegment ROM starts
+in the config, so nothing has to be assumed about the original build's
+alignment.
+
+**Segment tail padding** (`tools/pad_segment_tails.py`, 1,552 bytes restored).
+Some bytes at the end of a segment belong to no subsegment at all, so the first
+pass cannot see them. Every overlay ended that way. These are only visible by
+comparing a linked ELF against the declared segment sizes, which is why the
+build runs twice. The total came to `0x610` -- exactly the figure predicted from
+the audio segments' displaced ROM addresses.
+
+**bss placement** (`tools/fix_asmonly_ld.py`). bss objects do not tile a
+contiguous range, so padding them would have invented hundreds of kilobytes.
+Instead each is pinned to the address splat recorded, in the linker script.
+
+## Things that looked right and were not
+
+Kept because each cost real time and would otherwise be retried:
+
+- **`migrate_rodata_to_functions: False`** — inert, twice tested. It only
+  affects `c` subsegments, and ours are all `asm`.
+- **`subalign: 16`** — inert. splat already emits `SUBALIGN(16)` on every
+  section; the padding was missing *inside* sections, between objects.
+- **Preferring `<name>.rodata.s` over the text object.** This looks obviously
+  correct — splat writes those files, so surely they are the ones to pad. They
+  are dead weight. With rodata migration on, the generated linker script takes
+  `.rodata` from the *text* object and never references the standalone file,
+  while taking `.data` from the standalone file. The mapping has to follow the
+  linker script, not the filenames. Getting this "right" regressed a working
+  build back to 51,207 differing bytes.
+
+## Reproducing
+
+```
+wsl -d Ubuntu -- bash tools/wsl_build_all.sh
+```
