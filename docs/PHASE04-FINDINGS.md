@@ -483,3 +483,41 @@ jump table genuinely requests no load and the overlay is expected to be resident
 from earlier, or the state should not be 2 at this point. Reading that single
 jump table entry is the next step, and it is a much smaller question than the one
 this phase started with.
+
+## jtbl_800EB150 entry 1
+
+```
+800EB150: .word .L80095690     ; gGameState 1
+800EB154: .word .L800950E0     ; gGameState 2   <- this one
+800EB158: .word .L80095690
+800EB160: .word .L800950C8
+```
+
+Entry 1 is `.L800950E0`, the `gCourseID` case: it reads the course, sets
+`$a1 = 1`, indexes four parallel tables by course, and falls through to the
+common tail at `.L80095690`.
+
+The tail is the interesting part. It does display list work and ends:
+
+```
+80095A04: lw $v0, 0x0($t0)     ; t0 = &gDisplayListHead
+```
+
+**`unk_game_load` returns a display list pointer, not a boolean.** So the
+caller's `beqz $v0` is not a "was a load requested" test at all -- the value is
+non-zero, the branch is not taken, and `GameLoad_LoadOverlay` does run.
+
+That corrects the previous entry, which read the gate as a load request and
+concluded no load was being asked for. It also sharpens the contradiction:
+`GameLoad_LoadOverlay` is reached, but no DMA is ever announced.
+
+Tracing the order across iterations explains part of it. `gGameState` is still 0
+when `GameLoad_LoadOverlay` runs on the first iterations, so it correctly loads
+nothing; `func_801EB180` sets the state to 2 partway through a later
+`func_80092CF0`, and the crash arrives before the next `GameLoad_LoadOverlay`
+call is reached. The load is always one step behind the use.
+
+The next thing to establish is what runs between `func_80092CF0` returning and
+the crash, given that `func_800922E4` -- the only caller of that address -- sits
+at the top of the following iteration. Either something else reaches the overlay
+window, or the iteration boundary is not where the loop structure suggests.
