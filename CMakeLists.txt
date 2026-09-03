@@ -185,6 +185,9 @@ set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp
                              src/testdrive.cpp)
+    if(WR64_WITH_FRONTEND)
+        list(APPEND WR64_SOURCES src/frontend.cpp)
+    endif()
     # Patches replacing recompiled functions. RECOMP_FUNC is weak under Clang,
     # so these strong definitions win at link time without regenerating anything.
     file(GLOB WR64_PATCH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/*.cpp")
@@ -258,6 +261,36 @@ if(WR64_WITH_RUNTIME)
                     "$<TARGET_FILE_DIR:WaveRace64Recomp>"
             COMMENT "Copying SDL2, dxcompiler and dxil next to the executable")
     endif()
+endif()
+
+# The frontend's own assets. recompui reads them from <executable>/assets, and
+# ships none itself: the port supplies the stylesheet and the fonts.
+#
+# The fonts are copied from RmlUi's samples rather than committed. They are SIL
+# Open Font License faces that this repository already has through a submodule,
+# and a second copy of a binary is worth avoiding. Note that PromptFont, which
+# recompui uses for controller glyphs, is not among them -- it is not vendored
+# anywhere in this tree, so button prompts will show as missing glyphs until it
+# is added.
+if(WR64_WITH_FRONTEND)
+    target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_FRONTEND=1)
+    target_link_libraries(WaveRace64Recomp PRIVATE recompui recompinput)
+    target_include_directories(WaveRace64Recomp PRIVATE
+        "${WR64_LIB_DIR}/RecompFrontend/recompui/include"
+        "${WR64_LIB_DIR}/RecompFrontend/recompinput/include")
+
+    set(WR64_RMLUI_ASSETS
+        "${WR64_LIB_DIR}/RecompFrontend/recompui/lib/RmlUi/Samples/assets")
+    add_custom_command(TARGET WaveRace64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/recomp.rcss"
+                "${WR64_RMLUI_ASSETS}/LatoLatin-Regular.ttf"
+                "${WR64_RMLUI_ASSETS}/LatoLatin-Bold.ttf"
+                "${WR64_RMLUI_ASSETS}/LatoLatin-Italic.ttf"
+                "${WR64_RMLUI_ASSETS}/NotoEmoji-Regular.ttf"
+                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+        COMMENT "Staging the frontend's stylesheet and fonts")
 endif()
 
 if(WR64_WITH_RECOMPILED)

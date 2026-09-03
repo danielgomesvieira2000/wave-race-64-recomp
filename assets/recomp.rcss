@@ -1,0 +1,31 @@
+/*
+ * Phase 06: the port's stylesheet.
+ *
+ * recompui loads this by name from <executable>/assets/recomp.rcss. Every
+ * N64: Recompiled port has one, and it is deliberately almost empty.
+ *
+ * The menus are the same across these ports because the look is not in here.
+ * recompui carries the theme in code, as a palette of named colours --
+ * Background1..3, Text, Primary, Secondary, Warning, Danger, Success, Border --
+ * with the defaults the other recomps use, and its elements style themselves
+ * from it. A port that writes its own colours here does not restyle those
+ * elements; it competes with them, and the result is a menu that is neither
+ * one thing nor the other. So this file supplies the one thing the library
+ * genuinely cannot know, which is the font, and otherwise stays out of the way.
+ *
+ * The family name is the one declared inside the .ttf, not its filename:
+ * LatoLatin-Regular.ttf calls itself "LatoLatin". It must match what
+ * src/frontend.cpp registers with register_primary_font. Getting it wrong fails
+ * silently and strangely -- every element lays out and draws in the right
+ * place, with no text in any of them.
+ *
+ * To restyle the menus, set theme colours from C++ with
+ * recompui::theme::set_theme_color rather than adding rules here.
+ */
+
+body {
+    font-family: LatoLatin;
+    font-weight: normal;
+    font-style: normal;
+    font-size: 20dp;
+}

@@ -64,4 +64,14 @@ bool read_header(const std::filesystem::path& path, RomHeader& out, std::string&
 // with one human-readable line per mismatch; returns true when there are none.
 bool verify(const RomHeader& header, std::vector<std::string>& problems);
 
+// How librecomp and RecompFrontend identify this game and its dump.
+//
+// These live here rather than in main.cpp because the launcher needs them too:
+// the ROM picker validates whatever file the player chooses against this hash,
+// and reports which way it failed. One definition, two callers.
+inline constexpr uint64_t kRomHash = 0x2B675E2250A604FCULL;
+inline constexpr char8_t  kGameId[] = u8"wr64.us.rev1";
+inline constexpr char     kModGameId[] = "wr64";
+inline constexpr char     kDisplayName[] = "Wave Race 64";
+
 }  // namespace wr64

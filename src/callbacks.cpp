@@ -30,6 +30,9 @@
 #include <librecomp/rsp.hpp>
 
 #include "wr64/crash_handler.h"
+#if WR64_WITH_FRONTEND
+#   include "wr64/frontend.h"
+#endif
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
 
@@ -51,6 +54,14 @@ SDL_GameController* g_controller = nullptr;
 void poll_input() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+#if WR64_WITH_FRONTEND
+        // Every event goes to the UI first. It is the only thing polling SDL in
+        // this process, so a menu that is never handed the events cannot be
+        // operated at all -- it draws, highlights its first entry, and ignores
+        // every key and click. Window and quit events still fall through below,
+        // because those concern the process rather than whatever is on screen.
+        wr64::frontend::handle_event(event);
+#endif
         switch (event.type) {
             case SDL_QUIT:
                 // Traced during phase 04: a clean exit-code-0 shutdown and a
@@ -118,6 +129,18 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (controller_num != 0) {
         return false;
     }
+
+#if WR64_WITH_FRONTEND
+    // While a menu has input, the game gets none. Otherwise the button that
+    // closes a menu also reaches the game behind it -- Start to leave the
+    // settings would pause the race underneath.
+    if (wr64::frontend::capturing_input()) {
+        *buttons = 0;
+        *x = 0.0f;
+        *y = 0.0f;
+        return true;
+    }
+#endif
 
     uint16_t pressed = 0;
     float stick_x = 0.0f;
@@ -525,6 +548,12 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         return {};
     }
+
+#if WR64_WITH_FRONTEND
+    // recompui reads the window through a global of its own; publish ours so
+    // the UI measures and draws into the same one the game does.
+    wr64::frontend::publish_window(g_window);
+#endif
 
 #if defined(_WIN32)
     SDL_SysWMinfo wm_info;

@@ -213,3 +213,30 @@ this project's `CMakeLists.txt` rather than as submodule patches:
 `patches/ui_funcs.h` exists because `recompui` includes it by a hardcoded
 relative path out of the library and into the port. Upstream marks it "TODO:
 Forced game includes".
+
+Two globals are declared `extern` inside recompui and defined by the port, in
+`src/frontend.cpp`: `supported_games` and the SDL `window`.
+
+### What the port supplies, and what it does not
+
+The menus look and behave the same across every N64: Recompiled port because
+recompui carries the theme in code -- a palette of named colours with the same
+defaults the other recomps use -- and its elements style themselves from it. A
+port that writes its own colours into `assets/recomp.rcss` does not restyle
+those elements, it competes with them. So that file supplies the font and
+nothing else. To restyle the menus, set theme colours from C++ with
+`recompui::theme::set_theme_color`.
+
+The font family in the stylesheet is the name declared inside the `.ttf`, not
+its filename: `LatoLatin-Regular.ttf` calls itself `LatoLatin`. A mismatch fails
+silently and strangely -- every element lays out and draws in the right place,
+with no text in any of them.
+
+`recompui::programconfig::set_program_name` and `set_program_id` must both be
+called before anything is built. The launcher throws from its constructor
+otherwise, and the process dies with nothing on stderr but `abort() has been
+called`.
+
+Not yet done: PromptFont, which recompui uses for controller glyphs, is not
+vendored anywhere in this tree. Button prompts will show as missing glyphs until
+it is added to `assets/promptfont/promptfont.ttf`.

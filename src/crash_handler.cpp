@@ -17,6 +17,9 @@
 #if defined(_WIN32)
 
 #include <algorithm>
+#include <csignal>
+#include <exception>
+#include <stdexcept>
 #include <atomic>
 #include <cstdio>
 #include <string>
@@ -261,6 +264,47 @@ namespace wr64 {
 
 void install_crash_handler() {
     AddVectoredExceptionHandler(1, on_exception);
+
+    // A C++ exception nobody catches ends in abort(), and abort() prints
+    // "abort() has been called" and nothing else -- not the type, not the
+    // message, not where. The vectored handler above does not help: it
+    // deliberately ignores C++ exceptions, because they pass through it in
+    // normal operation. Rethrowing inside terminate is the one way to get at
+    // the exception that is actually killing the process.
+    // abort() does not raise a structured exception, so the vectored handler
+    // never sees it and the only trace it leaves is the CRT's four-word
+    // "abort() has been called". A library that asserts its way out of a bad
+    // state -- RmlUi and plume both do -- therefore kills the process with no
+    // indication of which one, or where. Walking the stack here names it.
+    std::signal(SIGABRT, [](int) {
+        std::fprintf(stderr, "\n[wr64] ==== ABORT ====\n");
+        void* frames[32] = {};
+        const USHORT captured = CaptureStackBackTrace(0, 32, frames, nullptr);
+        for (USHORT i = 0; i < captured; ++i) {
+            describe_address("  ", frames[i]);
+        }
+        std::fprintf(stderr, "[wr64] ===============\n");
+        std::fflush(stderr);
+        _exit(3);
+    });
+
+    std::set_terminate([]() {
+        std::fprintf(stderr, "\n[wr64] ==== UNHANDLED EXCEPTION ====\n");
+        if (std::current_exception()) {
+            try {
+                std::rethrow_exception(std::current_exception());
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "[wr64] %s\n", e.what());
+            } catch (...) {
+                std::fprintf(stderr, "[wr64] a non-std exception\n");
+            }
+        } else {
+            std::fprintf(stderr, "[wr64] terminate called with no active exception\n");
+        }
+        std::fprintf(stderr, "[wr64] =============================\n");
+        std::fflush(stderr);
+        std::abort();
+    });
 }
 
 }  // namespace wr64

@@ -12,6 +12,9 @@
 #include "wr64/renderer.h"
 #include "wr64/rom.h"
 #include "wr64/testdrive.h"
+#if WR64_WITH_FRONTEND
+#   include "wr64/frontend.h"
+#endif
 
 #include <cstdio>
 #if defined(_WIN32)
@@ -63,9 +66,7 @@ void on_thread_create(uint8_t* rdram, recomp_context* ctx) {
 
 // XXH3-64 of the pinned dump, which is the identity librecomp checks. Its sha1
 // and header CRC are recorded in include/wr64/rom.h; this is the same dump.
-constexpr uint64_t kRomHash = 0x2B675E2250A604FCULL;
 
-constexpr char8_t kGameId[] = u8"wr64.us.rev1";
 
 void print_usage(const char* argv0) {
     std::printf(
@@ -139,32 +140,39 @@ int run(int argc, char** argv, const char* rom_path) {
     // Loaded before the window opens so the script's clock starts with it.
     wr64::load_input_script();
 
-    // Refuse a wrong dump here rather than letting it fail confusingly later.
-    wr64::RomHeader header;
-    std::string error;
-    if (!wr64::read_header(rom_path, header, error)) {
-        std::fprintf(stderr, "error: %s\n", error.c_str());
-        return 1;
-    }
-    std::vector<std::string> problems;
-    if (!wr64::verify(header, problems)) {
-        std::fprintf(stderr, "This dump does not match the pinned target:\n");
-        for (const std::string& problem : problems) {
-            std::fprintf(stderr, "  - %s\n", problem.c_str());
+    // Without the launcher the dump comes from the command line, so refuse a
+    // wrong one here rather than letting it fail confusingly later. With the
+    // launcher there may be no path at all yet: the player picks one in the UI,
+    // and RecompFrontend validates it against the same hash and reports which
+    // way it failed. Checking twice would only mean two error messages.
+    if (rom_path != nullptr) {
+        wr64::RomHeader header;
+        std::string error;
+        if (!wr64::read_header(rom_path, header, error)) {
+            std::fprintf(stderr, "error: %s\n", error.c_str());
+            return 1;
         }
-        return 2;
+        std::vector<std::string> problems;
+        if (!wr64::verify(header, problems)) {
+            std::fprintf(stderr, "This dump does not match the pinned target:\n");
+            for (const std::string& problem : problems) {
+                std::fprintf(stderr, "  - %s\n", problem.c_str());
+            }
+            return 2;
+        }
     }
+
 
     // The generated section tables have to reach librecomp before anything can
     // resolve an address, so this comes first.
     wr64::register_overlays();
 
     recomp::GameEntry game{};
-    game.rom_hash = kRomHash;
+    game.rom_hash = wr64::kRomHash;
     game.internal_name = "WAVE RACE 64";
-    game.display_name = "Wave Race 64";
-    game.game_id = kGameId;
-    game.mod_game_id = "wr64";
+    game.display_name = wr64::kDisplayName;
+    game.game_id = wr64::kGameId;
+    game.mod_game_id = wr64::kModGameId;
     // Wave Race 64 saves records and ghost data to a 4 Kbit EEPROM.
     game.save_type = recomp::SaveType::Eep4k;
     game.is_enabled = true;
@@ -173,17 +181,23 @@ int run(int argc, char** argv, const char* rom_path) {
     game.on_init_callback = on_init;
     game.thread_create_callback = on_thread_create;
 
+#if WR64_WITH_FRONTEND
+    wr64::frontend::publish_game(game);
+#endif
+
     if (!recomp::register_game(game)) {
         std::fprintf(stderr, "error: failed to register the game with librecomp\n");
         return 1;
     }
 
-    const recomp::RomValidationError rom_error =
-        recomp::select_rom(std::filesystem::path{rom_path}, std::u8string{kGameId});
-    if (rom_error != recomp::RomValidationError::Good) {
-        std::fprintf(stderr, "error: librecomp rejected the dump (%d)\n",
-                     static_cast<int>(rom_error));
-        return 2;
+    if (rom_path != nullptr) {
+        const recomp::RomValidationError rom_error =
+            recomp::select_rom(std::filesystem::path{rom_path}, std::u8string{wr64::kGameId});
+        if (rom_error != recomp::RomValidationError::Good) {
+            std::fprintf(stderr, "error: librecomp rejected the dump (%d)\n",
+                         static_cast<int>(rom_error));
+            return 2;
+        }
     }
 
     recomp::Configuration config{};
@@ -191,7 +205,13 @@ int run(int argc, char** argv, const char* rom_path) {
     config.argv = argv;
     config.project_version = recomp::Version{0, 3, 0, "-phase03"};
     config.rsp_callbacks = wr64::rsp_callbacks();
+#if WR64_WITH_FRONTEND
+    // RecompFrontend's renderer draws the game and the menus into the same
+    // command list, so it replaces the project's rather than sitting beside it.
+    config.renderer_callbacks = wr64::frontend::renderer_callbacks();
+#else
     config.renderer_callbacks = wr64::renderer_callbacks();
+#endif
     config.audio_callbacks = wr64::audio_callbacks();
     config.input_callbacks = wr64::input_callbacks();
     config.gfx_callbacks = wr64::gfx_callbacks();
@@ -209,7 +229,19 @@ int run(int argc, char** argv, const char* rom_path) {
     // Calling start_game() after it therefore never runs, and the game thread
     // waits forever for a start that has already been overtaken: the process
     // stays alive with a window open and never reaches the entry point.
-    recomp::start_game(std::u8string{kGameId}, std::string{});
+#if WR64_WITH_FRONTEND
+    wr64::frontend::init();
+
+    // With the launcher, the game is started from the menu -- by the player,
+    // once a dump has been accepted -- so nothing is started here. A ROM given
+    // on the command line still skips straight to the game, which is what the
+    // scripted verification runs rely on.
+    if (rom_path != nullptr) {
+        recomp::start_game(std::u8string{wr64::kGameId}, std::string{});
+    }
+#else
+    recomp::start_game(std::u8string{wr64::kGameId}, std::string{});
+#endif
 
     recomp::start(config);
     std::fprintf(stderr, "[wr64] recomp::start returned -- runtime shut down\n");
@@ -248,10 +280,19 @@ int main(int argc, char** argv) {
     // targets through printf, and those reports were being lost entirely.
     std::setvbuf(stdout, nullptr, _IONBF, 0);
 
+#if WR64_WITH_FRONTEND && WR64_WITH_RUNTIME && WR64_WITH_RECOMPILED
+    // With the launcher, no arguments is the normal way to start: the player
+    // picks their dump in the UI. A path is still accepted and still goes
+    // straight to the game, which is what the scripted verification runs use.
+    if (argc < 2) {
+        return run(argc, argv, nullptr);
+    }
+#else
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;
     }
+#endif
 
     const std::string command = argv[1];
 
