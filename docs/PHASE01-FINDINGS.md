@@ -187,3 +187,78 @@ The R-type differences need a separate explanation and should be chased first,
 by dumping one small differing region side by side rather than in aggregate.
 `.segment_1B1FB0` at 0.48% and `.entry` at 4 bytes are the right places to look:
 small enough to read by hand.
+
+---
+
+# Addendum 2: the 4 bytes in `.entry`, explained
+
+Starting from the smallest failing case turned out to explain the whole thing.
+`.entry` is 0x50 bytes and only two words differ:
+
+| vram | ELF | ROM | resolves to (ELF / ROM) |
+|---|---|---|---|
+| `0x80046808` | `2508BD50` | `2508EDD0` | `0x800EBD50` / `0x800EEDD0` |
+| `0x80046834` | `27BDEB60` | `27BD1BE0` | `0x8014EB60` / `0x80151BE0` |
+
+Both are the `addiu` half of a `lui`/`addiu` address pair, and both are low by
+exactly `0x3080`. The second is the boot code setting the stack pointer, so the
+port would have started with a stack 12,416 bytes below where the game expects
+it -- a fault that would have surfaced during phase 04 as an inexplicable early
+crash, far from its cause.
+
+## Root cause
+
+`D_80151BE0` -- a symbol whose name states its own address -- is placed by our
+link at `0x8014EB60`. `main_segment_BSS_START` lands at `0x800EBD50` where the
+ROM requires `0x800EEDD0`.
+
+Tracking every address-encoding symbol the linker placed (2,551 of them) shows
+the error is not one missing chunk but an accumulation:
+
+| declared | placed | drift |
+|---|---|---|
+| `0x80038220` | `0x80038220` | 0 |
+| `0x800D4644` | `0x800D4634` | `-0x10` |
+| `0x800DAB10` | `0x800DA910` | `-0x200` |
+| `0x800E9870` | `0x800E8D90` | `-0xAE0` |
+| `0x800EB4C0` | `0x800E9050` | `-0x2470` |
+| `0x800EC830` | `0x800E97B0` | `-0x3080` |
+
+675 symbols (26.5%) are placed exactly -- the code. The drift is confined to
+data and rodata, and grows monotonically.
+
+The first slip is exact and readable. `Seed` sits at `0x800D4630` with size 4,
+so it ends at `0x800D4634`. The next subsegment file, `8EE40.data.s`, begins at
+ROM `0x8EE40`, i.e. vram `0x800D4640`. The 0x10 bytes between are real bytes in
+the cartridge that no symbol covers, so splat never emits them, the linker
+concatenates the next object immediately, and everything downstream shifts.
+
+**splat emits each data subsegment only as far as its last symbol.** Trailing
+bytes not covered by a symbol are dropped. Nothing realigns the next object, so
+each shortfall is permanent and they sum to `0x3080` by the end of
+`main_segment`.
+
+This also disposes of the "R-type instructions differ" puzzle from addendum 1.
+`.main_segment` holds text *and* data in one section, so once the data drifts,
+a byte-for-byte comparison at a fixed ROM offset is misaligned from that point
+on and every later word looks wrong. There was only ever one bug.
+
+## Two fixes tried and rejected
+
+Both were measured, not assumed, and neither changed the output by one byte:
+
+- `migrate_rodata_to_functions: False` -- inert, because it only affects `c`
+  subsegments and ours are all `asm`.
+- `subalign: 16` -- splat emits `ALIGN` at section boundaries, not between
+  objects, which is exactly where the padding is missing.
+
+## The fix to make next
+
+Pad each generated data object out to its true length. The length is knowable
+without guessing: a subsegment runs from its own ROM start to the next
+subsegment's ROM start, and both are in the config. Emitting `.space` for the
+difference at the end of each generated `.s` restores the dropped bytes
+exactly, rather than inferring an alignment the original build may not have used.
+
+Verify with the same measurement: `675/2551` symbols placed exactly should
+become `2551/2551`, and `.entry` should match the cartridge in all 0x50 bytes.
