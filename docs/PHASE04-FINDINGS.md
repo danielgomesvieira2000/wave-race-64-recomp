@@ -385,3 +385,64 @@ stubbed audio and RSP microcode are the obvious suspects: if the game waits on
 something audio-related before advancing, a silent stub that reports success
 without doing the work would hold it at state 0 indefinitely while the rest of
 the frame loop keeps running -- which is exactly the behaviour observed.
+
+## What writes gGameState
+
+Nothing writes it directly. Across the whole disassembly the symbol appears only
+in `lui`, `lw` and `addiu` -- 123, 75 and 48 times -- and never in a store. It is
+always written through a computed pointer:
+
+```
+801EB180: lui   $v0, %hi(gGameState)
+801EB184: addiu $v0, $v0, %lo(gGameState)
+801EB190: addiu $v1, $zero, 0x2
+801EB1A0: sw    $v1, 0x0($v0)        ; gGameState = 2
+801EB1A8: sw    $zero, %lo(D_801CE638)($at)
+801EB1B4: sw    $t2, %lo(D_801CE63C)($at)
+```
+
+Searching for `sw ... gGameState` finds nothing and is quietly misleading. All
+the writers live in codeseg, and `func_801EB180` is one of them.
+
+## The state machine does advance
+
+The renderer's state-0 case reaches it conditionally:
+
+```
+80092D8C: jal  func_80093104
+80092D94: beqz $v0, .L80092DAC   ; v0 == 0 -> func_801EB180, state becomes 2
+80092D9C: jal  func_801ECAF4     ; otherwise a different transition
+```
+
+Tracing shows `func_80093F78`, `func_80093104` and then **`func_801EB180`**, so
+the branch is taken and `gGameState` does become 2. The earlier reading of a
+permanently-zero `gGameState` was taken at function entry, before the transition
+in that same frame.
+
+So the boot sequence is not stuck, and the audio and RSP stubs are not implicated
+after all. That hypothesis is dropped.
+
+## Where it actually stops
+
+No `[wr64-dma]` line ever appears, so no overlay is ever announced -- and
+`GameLoad_LoadOverlay` is gated:
+
+```
+80047290: jal  unk_game_load
+8004729C: beqz $v0, .L800472AC     ; nothing requested -> skip the load
+800472A4: jal  GameLoad_LoadOverlay
+```
+
+`unk_game_load` dispatches on `gGameState` and returns 0 for the state reached,
+so no load is requested, and the next frame's `func_800922E4` calls into an
+overlay that was never brought in.
+
+Note that codeseg code runs perfectly well without any of this, because all
+1,087 resident functions are registered up front. Only the overlays depend on a
+load actually happening.
+
+The remaining question is why the state the game reaches expects its overlay to
+be resident already. The most likely answer is that an earlier transition, which
+would have loaded it, is being skipped -- `func_801ECAF4` is the branch not
+taken here, and `func_80093104` decides between them. Determining what
+`func_80093104` is testing is the next step.
