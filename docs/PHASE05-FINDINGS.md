@@ -1,0 +1,136 @@
+# Phase 05 findings: audio
+
+Phase 04 left the port silent by design. Two pieces were placeholders: the RSP
+callback reported every audio task complete without running it, and the audio
+callbacks discarded their samples. This phase replaced both.
+
+## The audio path, end to end
+
+The game mixes audio on the RSP, not the CPU. Its audio thread builds a list of
+ABI commands each frame, hands it to the RSP as a task, and the RSP writes
+finished 16-bit stereo samples back into RDRAM. The CPU then points the audio
+interface at that buffer with `osAiSetNextBuffer`. So making the port audible
+meant recompiling the cartridge's audio microcode and then putting the samples
+it produces on a sound card.
+
+`RSPRecomp` handles the first half. It is a separate tool from `N64Recomp`,
+driven by `recomp/aspMain.rsp.toml`, and it emits C++ rather than C because the
+generated code uses librecomp's RSP vector unit, which is a C++ header of SSE
+intrinsics. The output is one function, `aspMain_run`.
+
+## The microcode does not run at IMEM 0
+
+This was the phase's real problem, and it is worth stating plainly because
+nothing about it fails loudly.
+
+`text_address` tells RSPRecomp where in the RSP's instruction memory the blob
+executes, and every jump and branch is resolved against it. The obvious value is
+`0x04001000`, the base of IMEM. It is wrong. `rspboot` occupies the first `0x80`
+bytes and loads the task's microcode after itself, so the correct value is
+`0x04001080`.
+
+Set to `0x04001000`, the recompiler produces a complete, plausible-looking file
+in which every jump lands `0x80` bytes early. It reports no error, and the
+result compiles and links. What it did at runtime was subtler than a crash: the
+microcode's first call -- the one that DMAs the command list into DMEM -- landed
+in the middle of an unrelated routine, so the dispatcher read an empty command
+buffer and spun forever inside the DMA loop.
+
+That produced a freeze with no diagnostic at all. The RSP task thread never
+returned, so the game's scheduler sat at "yield requested, RSP busy" waiting for
+an SP-complete event that would never come, and stopped starting tasks of either
+kind. Every other thread carried on: the audio thread kept building tasks that
+were never dispatched, and the window kept swapping the same finished frame. The
+port looked like it was running.
+
+Three independent checks agree on `0x1080`, and any one of them would have
+settled it:
+
+- The microcode contains exactly three call targets (`0x1150`, `0x1184`,
+  `0x11B0`). At `0x1080` all three land on the first instruction of a
+  subroutine. At `0x1000` all three land mid-routine.
+- The command jump table's first entry is the handler for the no-op command.
+  At `0x1080` it resolves to the dispatch loop's own back-edge, which is exactly
+  what a no-op should do.
+- The table's entries span `0x1118`..`0x1E24`. Text placed at `0x1080` runs to
+  `0x1EA0` and contains all of them; text placed at `0x1000` ends at `0x1E20`
+  and does not contain the last.
+
+## The command jump table is invisible to the recompiler
+
+The microcode dispatches each audio command through `lh $2, 0x10($2)` followed
+by `jr $2`: a table of sixteen halfwords at DMEM `0x10`, inside the microcode's
+*data* segment rather than its text. RSPRecomp finds branch targets by walking
+the instruction stream, so a target that exists only as data is invisible to it.
+The first audio task fell through the generated switch and returned
+`UnhandledJumpTarget`.
+
+The sixteen values are read straight out of the cartridge at `0xA9320`..`0xA933F`
+and listed in `extra_indirect_branch_targets`. They are the entry point of each
+command handler.
+
+## The RSP ignores the low two bits of a jump target
+
+The RSP's program counter is twelve bits and instructions are word aligned, so
+`jr` discards the low two bits of its register: a target of `0x12EF` means
+`0x12EC`. RSPRecomp's generated dispatch switches on the raw value, which is
+fine only while every target is already aligned. Wave Race's table is not always
+aligned at the moment the game uses it.
+
+`tools/patch_rsprecomp.py` masks the switch with `0x1FFC` instead of `0x1FFF`,
+restoring the hardware's behaviour for every microcode. Like the other submodule
+patches in `tools/`, it is scripted and idempotent, because a submodule update
+would otherwise revert it silently and the port would go quiet again with no
+obvious cause.
+
+## The two channels arrive swapped
+
+librecomp stores RDRAM byte-swapped so the `MEM_*` macros can read big-endian
+N64 words as native little-endian ones, which it does by XORing the low bits of
+every address. `ultramodern::queue_audio_buffer` hands out a raw pointer, which
+skips that: within each 32-bit word the two 16-bit halves sit in the opposite
+order to the cartridge's. Each word holds one left and one right sample, so the
+audible result is the stereo image mirrored -- correct-sounding music with the
+channels reversed, which is the kind of bug that survives casual listening.
+`queue_samples` swaps them back.
+
+## Output
+
+SDL's queue API, not a pull callback. The interface ultramodern expects *is* a
+queue: the game asks how much is still buffered and decides how much more to
+generate from the answer. Mirroring that directly keeps the two in step, where a
+callback would need its own ring buffer in between and a second place for the
+sample count to drift.
+
+The device is opened with `SDL_AUDIO_ALLOW_ANY_CHANGE` unset, so SDL converts
+internally if the hardware disagrees. The sample rate is the one thing that must
+not silently differ: the game paces itself against how fast the queue drains, so
+a device running at 48000 while the game believes it is feeding 32000 would make
+the whole audio thread run at the wrong speed. `set_frequency` reopens the
+device; the game starts at 32000 and settles on 26900.
+
+## What was added to diagnose it, and kept
+
+A hang watchdog (`wr64::watch_for_hang`) wraps the microcode call. If it has not
+returned after five seconds, a detached thread suspends the RSP task thread,
+samples its instruction pointer repeatedly and resolves the distinct addresses
+to source lines. A spin loop is otherwise the least visible failure this code
+can have -- no fault, no output, no return -- and it is what the wrong load
+address produced. Sampling repeatedly rather than once matters: with everything
+inlined, a single sample usually names a helper rather than the loop.
+
+`main` now leaves stdout unbuffered. Every run in this project is inspected by
+redirecting output to a file, which makes stdout fully buffered, and the process
+is normally killed rather than exiting -- so the buffer is discarded. The
+recompiled microcode reports unhandled jump targets through `printf`, and those
+reports were being lost entirely.
+
+## State at the end of the phase
+
+A 100-second run reaches attract mode with audio, completing 5,500 audio tasks
+and 1,875 graphics tasks with no unhandled jump targets and no hangs. The
+scheduler cycles normally through its three states.
+
+Not yet verified, and remaining for this phase: menu navigation, racing beyond
+attract mode, the water surface's appearance against a reference, and a full
+championship in both directions plus stunt mode.

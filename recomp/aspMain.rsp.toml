@@ -1,0 +1,60 @@
+# RSP recompiler config for Wave Race 64's audio microcode.
+#
+# The audio task is the one thing ultramodern does not handle for us: graphics
+# tasks go to the renderer, so what reaches the RSP callback is aspMain, and
+# phase 03 stubbed it to report every task finished without running it. That is
+# why the port is silent.
+#
+# aspMain is a textbin blob in the cartridge. Its bounds come from the splat
+# config and are confirmed by the ELF: aspMainTextStart is 3616 bytes at vram
+# 0x800D37B0, and the segment runs from ROM 0x8DFB0 to 0x8EDD0.
+#
+# text_address is the IMEM address the microcode executes at, not where it sits
+# in the cartridge -- the RSP runs it from its own instruction memory after the
+# DMA, and every branch and jump target is resolved against it.
+#
+# It is 0x1080, not 0x1000, because rspboot occupies the first 0x80 bytes of
+# IMEM and loads the task's microcode after itself. Getting this wrong does not
+# fail loudly: the recompiler happily produces a complete, plausible-looking
+# file in which every jump lands 0x80 bytes early. What that cost here was a
+# game that ran one audio task and then froze, because the microcode's first
+# call -- the one that DMAs the command list into DMEM -- landed in the middle
+# of an unrelated routine and the dispatcher then read an empty buffer forever.
+#
+# The check that settles it: the microcode contains exactly three call targets
+# (0x1150, 0x1184, 0x11B0), and at 0x1080 all three land on the first
+# instruction of a subroutine, while at 0x1000 all three land mid-routine. The
+# command jump table agrees -- its first entry, the handler for the no-op
+# command, resolves to the dispatch loop's own back-edge.
+
+rom_file_path = "../baserom.us.rev1.z64"
+text_offset = 0x8DFB0
+text_size = 0xE20
+text_address = 0x04001080
+
+# Emitted as C++, not C: the generated file includes librecomp/rsp.hpp and
+# rsp_vu_impl.hpp, which are C++ headers. It also keeps it out of the *.c glob
+# that builds the recompiled game code.
+output_file_path = "../RecompiledFuncs/aspMain_rsp.cpp"
+output_function_name = "aspMain_run"
+
+# The audio command handlers, which the recompiler cannot find on its own.
+#
+# aspMain dispatches each audio command through `lh $2, 0x10($2)` followed by
+# `jr $2`: a jump table of sixteen halfwords living at DMEM 0x10, inside the
+# microcode's *data* segment (ROM 0xA9310) rather than its text. RSPRecomp
+# discovers branch targets by walking the instruction stream, so a target that
+# only ever exists as data is invisible to it -- the first audio task ran, fell
+# through the generated switch and returned UnhandledJumpTarget.
+#
+# These sixteen values are read straight out of the cartridge at 0xA9320..0xA933F
+# and are the entry point of each command handler. They span 0x1118..0x1E24,
+# which fits the text exactly once it is placed at 0x1080 and runs to 0x1EA0 --
+# another confirmation of the load address, since the last entry lies outside a
+# blob placed at 0x1000.
+extra_indirect_branch_targets = [
+    0x1118, 0x1470, 0x11DC, 0x1B38,
+    0x1214, 0x187C, 0x1254, 0x12D0,
+    0x12EC, 0x1328, 0x140C, 0x1294,
+    0x1E24, 0x138C, 0x170C, 0x144C,
+]

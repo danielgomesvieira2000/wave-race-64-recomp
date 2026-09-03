@@ -27,6 +27,7 @@
 
 extern "C" void osPiStartDma_recomp(uint8_t* rdram, recomp_context* ctx);
 
+
 namespace wr64 {
 
 void pi_start_dma_hook(uint8_t* rdram, recomp_context* ctx);
@@ -117,6 +118,7 @@ void register_runtime_functions() {
     // happening: GameLoad_LoadOverlay ran, issued its DMA, and nothing was ever
     // announced, because the hook had been quietly replaced moments after it
     // was installed.
+
     if (pi_start_dma_addr != 0) {
         recomp::overlays::add_loaded_function(static_cast<int32_t>(pi_start_dma_addr),
                                               pi_start_dma_hook);

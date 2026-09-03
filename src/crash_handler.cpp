@@ -16,7 +16,12 @@
 
 #if defined(_WIN32)
 
+#include <algorithm>
+#include <atomic>
 #include <cstdio>
+#include <string>
+#include <thread>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -119,10 +124,8 @@ LONG WINAPI on_exception(EXCEPTION_POINTERS* info) {
 
 }  // namespace
 
-namespace {
-
-// Shared by the crash report and the lookup-miss report.
-void describe_address(const char* label, void* address) {
+// Shared by the crash report, the lookup-miss report and the hang watchdog.
+static void describe_address(const char* label, void* address) {
     HANDLE process = GetCurrentProcess();
     static bool symbols_ready = false;
     if (!symbols_ready) {
@@ -156,7 +159,84 @@ void describe_address(const char* label, void* address) {
     }
 }
 
+namespace wr64 {
+
+void describe_code_address(const char* label, void* address) {
+    describe_address(label, address);
+}
+
+}  // namespace wr64
+
+namespace {
+
+// Hang watchdog state. Only one piece of work is watched at a time, which is
+// all this is for: catching a microcode that never returns.
+std::atomic<bool> g_watch_finished{ true };
+
+void watch_thread(HANDLE thread, std::string what, int seconds) {
+    for (int i = 0; i < seconds * 10; ++i) {
+        if (g_watch_finished.load()) {
+            CloseHandle(thread);
+            return;
+        }
+        Sleep(100);
+    }
+
+    std::fprintf(stderr, "\n[wr64] ==== HANG ====\n");
+    std::fprintf(stderr, "[wr64] %s has not returned after %d seconds\n",
+                 what.c_str(), seconds);
+
+    // One sample names a single instruction, which for a spin loop is whichever
+    // one the thread happened to be on -- and with everything inlined that is
+    // usually a helper, not the loop. Sampling repeatedly and reporting the
+    // distinct addresses sketches the whole loop body instead.
+    std::vector<void*> seen;
+    for (int sample = 0; sample < 40; ++sample) {
+        if (SuspendThread(thread) == static_cast<DWORD>(-1)) {
+            break;
+        }
+        CONTEXT context = {};
+        context.ContextFlags = CONTEXT_CONTROL;
+        void* rip = nullptr;
+        if (GetThreadContext(thread, &context)) {
+            rip = reinterpret_cast<void*>(context.Rip);
+        }
+        ResumeThread(thread);
+
+        if (rip != nullptr && std::find(seen.begin(), seen.end(), rip) == seen.end()) {
+            seen.push_back(rip);
+        }
+        Sleep(1);
+    }
+    for (void* rip : seen) {
+        describe_address("in", rip);
+    }
+
+    std::fprintf(stderr, "[wr64] ==============\n");
+    std::fflush(stderr);
+    CloseHandle(thread);
+}
+
 }  // namespace
+
+namespace wr64 {
+
+void watch_for_hang(const char* what, int seconds) {
+    HANDLE duplicate = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
+                         GetCurrentProcess(), &duplicate, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS)) {
+        return;
+    }
+    g_watch_finished.store(false);
+    std::thread{ watch_thread, duplicate, std::string{ what }, seconds }.detach();
+}
+
+void watch_done() {
+    g_watch_finished.store(true);
+}
+
+}  // namespace wr64
 
 // Called by librecomp's get_function when an address lookup fails. See
 // tools/patch_librecomp.py for why that call site exists.

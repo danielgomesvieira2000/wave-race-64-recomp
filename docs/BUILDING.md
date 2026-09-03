@@ -134,3 +134,23 @@ the driver RT64 expects is simpler than patching the submodule.
 Changing compiler invalidates the CMake cache, and the options do not survive
 it. Delete the build directory when switching rather than reconfiguring in
 place, or the build will silently come back with the runtime switched off.
+
+## Recompiling the audio microcode (phase 05 onward)
+
+The game's audio is mixed by the RSP, so the port needs the cartridge's audio
+microcode recompiled alongside the game code. That is a second tool with its own
+config, run once after the recompiler is built:
+
+```
+python tools/patch_rsprecomp.py
+wsl bash tools/wsl_build_recompiler.sh
+wsl bash tools/wsl_recompile_rsp.sh
+```
+
+This writes `RecompiledFuncs/aspMain_rsp.cpp`, which the CMake build picks up
+automatically and compiles with SSSE3 and SSE4.1 enabled -- librecomp's RSP
+vector unit is written against those intrinsics. Like everything else under
+`RecompiledFuncs/`, the file is derived from your dump and is not committed.
+
+Without it the port still runs; it is simply silent, because the RSP callback
+falls back to reporting each audio task complete without running it.

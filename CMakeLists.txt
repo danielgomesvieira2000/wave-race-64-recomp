@@ -78,6 +78,26 @@ if(WR64_WITH_RECOMPILED)
             "Generate it first: N64Recomp recomp/wr64.toml")
     endif()
 
+    # The recompiled RSP audio microcode, produced by RSPRecomp. It is C++
+    # because it includes librecomp's rsp headers, and it is listed explicitly
+    # rather than globbed so it cannot be swept into the C sources.
+    set(WR64_RSP_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/aspMain_rsp.cpp")
+    if(EXISTS "${WR64_RSP_SOURCE}")
+        list(APPEND WR64_RECOMPILED_SOURCES "${WR64_RSP_SOURCE}")
+
+        # librecomp emulates the RSP's vector unit with SSSE3 and SSE4.1
+        # intrinsics -- _mm_shuffle_epi8 and _mm_blendv_epi8 have no portable
+        # fallback there. Neither is enabled by default, so this one file needs
+        # them explicitly. Both predate every x86-64 CPU capable of running RT64.
+        if(MSVC)
+            set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
+                COMPILE_OPTIONS "/clang:-mssse3;/clang:-msse4.1")
+        else()
+            set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
+                COMPILE_OPTIONS "-mssse3;-msse4.1")
+        endif()
+    endif()
+
     add_library(wr64_recompiled STATIC ${WR64_RECOMPILED_SOURCES})
     target_include_directories(wr64_recompiled PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -85,6 +105,9 @@ if(WR64_WITH_RECOMPILED)
         # RecompiledFuncs itself for funcs.h and reimplemented_decls.h.
         "${WR64_LIB_DIR}/N64ModernRuntime/N64Recomp/include"
         "${WR64_LIB_DIR}/N64ModernRuntime/librecomp/include"
+        # The recompiled RSP microcode reaches ultramodern's headers through
+        # librecomp/rsp.hpp, so this target needs them too.
+        "${WR64_LIB_DIR}/N64ModernRuntime/ultramodern/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs")
 
     # Recompiled code is machine-generated: its warnings are noise, and it must

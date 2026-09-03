@@ -215,6 +215,13 @@ int run(int argc, char** argv, const char* rom_path) {
 int main(int argc, char** argv) {
     wr64::install_crash_handler();
 
+    // Unbuffer stdout. When the port's output is redirected to a file -- which
+    // is how every run in this project is inspected -- stdout becomes fully
+    // buffered, and the process is normally killed rather than exiting, so the
+    // buffer is discarded. The recompiled RSP microcode reports unhandled jump
+    // targets through printf, and those reports were being lost entirely.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;

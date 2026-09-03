@@ -4,15 +4,17 @@
 // everything that touches a window, a gamepad, a speaker or an OS dialog is
 // provided from here. SDL2 does the work; RT64 already vendors and links it.
 //
-// Two of these are honest placeholders rather than implementations, and are
-// marked as such where they appear: audio output and RSP microcode. Both are
-// phase 05 work, and neither is needed to reach the boot gate.
+// Audio and the RSP microcode were honest placeholders through phase 04 --
+// neither is needed to reach the boot gate -- and are real as of phase 05:
+// samples go to an SDL audio device, and RSP tasks run the audio microcode
+// recompiled from the cartridge.
 
 #include "wr64/callbacks.h"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <SDL.h>
 #if defined(_WIN32)
@@ -27,7 +29,16 @@
 #include <ultramodern/threads.hpp>
 #include <librecomp/rsp.hpp>
 
+#include "wr64/crash_handler.h"
 #include "wr64/renderer.h"
+
+// The recompiled audio microcode, produced by RSPRecomp from the cartridge.
+//
+// Declared at global scope and with C++ linkage, matching how RSPRecomp emits
+// it. Inside the anonymous namespace below it would get internal linkage and
+// fail to resolve; with extern "C" it would get a different mangled name. Both
+// produce the same undefined symbol at link time and neither is obvious.
+RspExitReason aspMain_run(uint8_t* rdram, uint32_t ucode_addr);
 
 namespace {
 
@@ -184,49 +195,212 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
 
 // ---------------------------------------------------------------- audio ----
 //
-// Placeholder. The samples are discarded and the queue always reports itself
-// drained, which keeps the game's audio thread running at the right rate
-// without producing sound. Real output is phase 05.
+// The RSP's audio microcode writes finished stereo samples into RDRAM and the
+// game hands them here; all that is left is to put them on the sound card.
+//
+// SDL's queue API is used rather than a pull callback because the interface
+// ultramodern expects is a queue: the game asks how much is still buffered and
+// decides how much more to generate from the answer. Mirroring that directly
+// keeps the two in step, where a callback would need its own ring buffer in
+// between and a second place for the sample count to drift.
 
+SDL_AudioDeviceID g_audio_device = 0;
 uint32_t g_audio_frequency = 32000;
 
+// The N64 mixes 16-bit stereo, and the game's own sample rate is whatever it
+// asks for through set_frequency.
+constexpr int kAudioChannels = 2;
+constexpr int kBytesPerFrame = kAudioChannels * static_cast<int>(sizeof(int16_t));
+
+void close_audio_device() {
+    if (g_audio_device != 0) {
+        SDL_CloseAudioDevice(g_audio_device);
+        g_audio_device = 0;
+    }
+}
+
+// Opens (or reopens) the output device at the game's current sample rate.
+//
+// SDL is asked for exactly this format with SDL_AUDIO_ALLOW_ANY_CHANGE unset,
+// so it resamples and converts internally if the hardware disagrees. Letting
+// SDL change the format instead would mean converting here, and the sample rate
+// is the one thing that must not silently differ: the game paces itself against
+// how fast the queue drains, so a device running at 48000 while the game
+// believes it is feeding 32000 makes the whole audio thread run at the wrong
+// speed.
+bool open_audio_device() {
+    close_audio_device();
+
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+        std::fprintf(stderr, "[wr64] SDL_InitSubSystem(AUDIO) failed: %s\n", SDL_GetError());
+        return false;
+    }
+
+    SDL_AudioSpec want{};
+    want.freq = static_cast<int>(g_audio_frequency);
+    want.format = AUDIO_S16SYS;
+    want.channels = kAudioChannels;
+    // Roughly a 60Hz frame's worth, rounded up to a power of two. Smaller than
+    // the game's own buffering, so the queue depth we report back stays
+    // dominated by what the game queued rather than by SDL's own latency.
+    want.samples = 1024;
+    want.callback = nullptr;  // queue-driven
+
+    SDL_AudioSpec have{};
+    g_audio_device = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    if (g_audio_device == 0) {
+        std::fprintf(stderr, "[wr64] SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
+        return false;
+    }
+
+    SDL_PauseAudioDevice(g_audio_device, 0);
+    std::fprintf(stderr, "[wr64] audio device open at %d Hz, %d channels\n",
+                 have.freq, have.channels);
+    std::fflush(stderr);
+    return true;
+}
+
 void queue_samples(int16_t* audio_data, size_t sample_count) {
-    (void)audio_data;
-    (void)sample_count;
+    if (g_audio_device == 0) {
+        return;
+    }
+
+    // sample_count counts individual 16-bit samples, not stereo frames -- see
+    // ultramodern::queue_audio_buffer, which divides a byte count by
+    // sizeof(int16_t).
+    //
+    // The two channels arrive swapped, and this is the one place in the project
+    // where that is visible. librecomp stores RDRAM byte-swapped so that the
+    // MEM_* macros can read big-endian N64 words as native little-endian ones,
+    // which it does by XORing the low bits of every address. A pointer handed
+    // out raw, as this one is, skips that: within each 32-bit word the two
+    // 16-bit halves sit in the opposite order to the cartridge's. Each word
+    // holds one left and one right sample, so the audible result is the stereo
+    // image mirrored -- correct-sounding music with the channels reversed,
+    // which is exactly the kind of bug that survives casual listening.
+    // Mirrors the "first display list" log on the graphics side: it separates
+    // "the game never asked for audio" from "the audio it asked for is silent",
+    // which are different bugs with the same symptom.
+    static bool announced_first = false;
+    if (!announced_first) {
+        announced_first = true;
+        std::fprintf(stderr, "[wr64] first audio buffer queued: %zu frames at %u Hz\n",
+                     sample_count / 2, g_audio_frequency);
+        std::fflush(stderr);
+    }
+
+    static std::vector<int16_t> unswapped;
+    unswapped.resize(sample_count);
+    for (size_t i = 0; i + 1 < sample_count; i += 2) {
+        unswapped[i + 0] = audio_data[i + 1];
+        unswapped[i + 1] = audio_data[i + 0];
+    }
+    if (sample_count & 1) {
+        unswapped[sample_count - 1] = audio_data[sample_count - 1];
+    }
+
+    SDL_QueueAudio(g_audio_device, unswapped.data(),
+                   static_cast<Uint32>(sample_count * sizeof(int16_t)));
+
+    // A silent port and a working one queue samples equally often, so the
+    // count alone proves nothing; the amplitude is what separates the microcode
+    // actually mixing from it dutifully producing zeroes. Reported once, then
+    // the scan stops paying for itself -- this runs on the audio thread.
+    static bool announced = false;
+    if (!announced) {
+        for (size_t i = 0; i < sample_count; ++i) {
+            if (unswapped[i] != 0) {
+                announced = true;
+                std::fprintf(stderr, "[wr64] audio is audible (first non-silent buffer"
+                                     " after %zu frames)\n", sample_count / 2);
+                std::fflush(stderr);
+                break;
+            }
+        }
+    }
 }
 
 size_t get_frames_remaining() {
-    // Reporting zero tells the game its buffer has drained, so it keeps
-    // producing audio at the expected cadence instead of stalling on a queue
-    // that never empties.
-    return 0;
+    if (g_audio_device == 0) {
+        // No device: report the queue permanently drained, so the game keeps
+        // generating audio at its normal cadence instead of stalling on a
+        // buffer that will never empty.
+        return 0;
+    }
+    return SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame;
 }
 
 void set_frequency(uint32_t frequency) {
+    if (frequency == g_audio_frequency && g_audio_device != 0) {
+        return;
+    }
     g_audio_frequency = frequency;
+    open_audio_device();
 }
 
 // ------------------------------------------------------------------ rsp ----
 
 // librecomp does not ask us to run a task; it asks which recompiled microcode
 // function should run it. Graphics tasks never reach here -- ultramodern routes
-// those to the renderer -- so what arrives is the audio microcode, aspMain,
-// which would have to be recompiled in its own right to work.
+// those to the renderer -- so what arrives is the audio microcode, aspMain.
 //
-// Returning nullptr is permitted but makes librecomp print and exit, which
-// would stop the port the first time the game submits an audio task, long
-// before anything interesting. This stub instead reports the task as finished
-// without doing any work, so boot can proceed in silence. That is a stated
-// limitation, not a fix: real audio is phase 05.
-RspExitReason rsp_stub_ucode(uint8_t* rdram, uint32_t ucode_addr) {
+// Phase 03 answered with a stub that reported every task finished without
+// running it, which is why the port was silent. aspMain is now recompiled by
+// RSPRecomp from the cartridge (see recomp/aspMain.rsp.toml), and this returns
+// the real thing.
+
+// Where aspMain's text sits in RDRAM, from the ELF symbol aspMainTextStart.
+constexpr uint32_t kAspMainTextStart = 0x800D37B0;
+
+// Retained for tasks that are not aspMain: reporting the task complete keeps
+// the game running, where returning nullptr would make librecomp print and
+// exit. Anything landing here is logged once, because a task we cannot run is
+// worth knowing about rather than silently dropping.
+RspExitReason rsp_unknown_ucode(uint8_t* rdram, uint32_t ucode_addr) {
     (void)rdram;
-    (void)ucode_addr;
+    static bool reported = false;
+    if (!reported) {
+        reported = true;
+        std::fprintf(stderr, "[wr64] unrecognised RSP microcode at 0x%08X; "
+                             "reporting its tasks complete without running them\n",
+                     ucode_addr);
+        std::fflush(stderr);
+    }
     return RspExitReason::Broke;
 }
 
+// Runs the microcode with a watchdog on it.
+//
+// A microcode that spins forever is the worst failure this code has: it faults
+// nothing, prints nothing and returns nothing, so the RSP task thread simply
+// stops. The game then freezes with no error at all -- the scheduler waits for
+// an SP-complete event that will never come, while every other thread carries
+// on, so the audio thread keeps building tasks and the window keeps swapping
+// the same finished frame. A wrong microcode load address produced exactly that
+// during phase 05; this makes the next one announce itself.
+RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
+    wr64::watch_for_hang("the audio microcode", 5);
+    const RspExitReason reason = aspMain_run(rdram, ucode_addr);
+    wr64::watch_done();
+    return reason;
+}
+
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
-    (void)task;
-    return rsp_stub_ucode;
+    // Match on the microcode's address rather than the task type: type numbers
+    // are a game-level convention, while the address is what actually
+    // identifies the code about to run.
+    const uint32_t ucode = static_cast<uint32_t>(task->t.ucode) & 0x00FFFFFFu;
+    if (ucode == (kAspMainTextStart & 0x00FFFFFFu)) {
+        return asp_main_watched;
+    }
+    static uint64_t others = 0;
+    if (++others <= 5) {
+        std::fprintf(stderr, "[wr64] non-audio RSP task: type %u ucode 0x%08X\n",
+                     static_cast<unsigned>(task->t.type),
+                     static_cast<uint32_t>(task->t.ucode));
+        std::fflush(stderr);
+    }
+    return rsp_unknown_ucode;
 }
 
 // --------------------------------------------------------------- events ----
