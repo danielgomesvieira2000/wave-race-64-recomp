@@ -1,0 +1,10 @@
+// The executable's icon, as Windows Explorer and the taskbar show it.
+//
+// Generated from assets/icons/Logo.svg -- the same artwork the launcher shows
+// as its background -- rasterized at each standard icon size (16 through 256)
+// rather than scaled up or down from a single size, so it stays crisp at every
+// size Explorer actually uses. See docs/BUILDING.md for how to regenerate it
+// if Logo.svg changes; the .ico itself is committed since nothing here can
+// rebuild it without lunasvg, which this project only vendors as a dependency
+// of RecompFrontend's menu, not as a standalone tool.
+IDI_ICON1 ICON "../assets/AppIcon.ico"

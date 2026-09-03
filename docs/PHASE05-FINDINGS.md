@@ -194,16 +194,34 @@ What is established:
 - librecomp's vector stores mask DMEM addresses exactly as the hardware does, so
   the wrap is faithful; what reaches it is wrong, not how it is applied.
 
-So the overrunning command has not been identified. The parameter block the
-mixer reads held `in 0x5C0, out 0x5C0, count 0x200` at the moment of the store,
-which does not correspond to a write anywhere near `0xFF0` -- meaning the store
-came from a command that does not take its address from that block. That is the
-thread to pull next.
+**Update: the overrunning command is now identified.** `src/callbacks.cpp`
+carries a standing diagnostic (`bisect_audio_task`, active for the first six
+dropped frames of a run) that re-runs a failed task from a fresh DMEM with
+1, 2, 3... of its commands, comparing the constant pool against a pristine
+copy after each, so the culprit is whichever prefix first disturbs it -- no
+guessing from where the corrupted bytes land.
 
-Until then `asp_main_watched` reports the task complete instead of letting
-librecomp assert, which costs one frame of audio -- a click -- rather than the
-run. That is a net, not a fix, and it says so on stderr every time it catches
-something.
+It is always **ENVMIXER**, and only when its flags byte has bit 3 set (the
+game issues it as `SETBUFF f=08 ... / ENVMIXER f=08 ...`, always paired). The
+recompiled handler (`RecompiledFuncs/aspMain_rsp.cpp`, label `L_1B38`) reads a
+persistent 16-byte "voice state" block the microcode keeps at a fixed DMEM
+address (register r24, itself fixed at `0x360` for the whole task) to decide
+where to write its mixed samples. With flag bit 3 clear, the handler forces
+that write pointer to a fixed, safe scratch address (`r23 + 0x50`, where r23
+is fixed at `0xF90`) regardless of what the state block says. With the bit
+set, it skips that clamp and uses the state block's value directly. An inner
+loop then advances the pointer 16 bytes at a time, one iteration per sample
+chunk -- and when the state block holds an unlucky value, that walk carries
+the pointer past DMEM's end. The four stores caught doing this landed at
+`0xFF0`, `0x1000`, `0x1010`, `0x1020` -- the last three wrapping onto the
+constant pool, exactly matching the "correct value plus or minus something
+under 32" corruption pattern above.
+
+What is not yet established is which command writes the value into that
+`0x360` state block that occasionally makes the walk overshoot, and whether
+that value is something the cartridge's own audio data legitimately produces
+or a mistranslation somewhere in the arithmetic feeding it. That is the thread
+to pull next.
 
 Until then `asp_main_watched` reports the task complete instead of letting
 librecomp assert, which costs one frame of audio -- a click -- rather than the

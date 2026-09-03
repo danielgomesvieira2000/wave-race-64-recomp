@@ -11,6 +11,7 @@
 
 #include "wr64/callbacks.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -496,6 +497,133 @@ RspExitReason rsp_unknown_ucode(uint8_t* rdram, uint32_t ucode_addr) {
 // caused it. Reporting the task complete therefore costs one frame of audio --
 // an audible click -- instead of the run. It is a net, not a fix, and it says
 // so on stderr every time it catches something.
+
+// The command list of the audio task about to run, recorded by
+// get_rsp_microcode so a failed task can be dumped afterwards.
+uint32_t g_audio_task_data = 0;
+uint32_t g_audio_task_size = 0;
+
+const char* rsp_exit_name(RspExitReason r) {
+    switch (r) {
+    case RspExitReason::Invalid: return "Invalid";
+    case RspExitReason::Broke: return "Broke";
+    case RspExitReason::ImemOverrun: return "ImemOverrun";
+    case RspExitReason::UnhandledJumpTarget: return "UnhandledJumpTarget";
+    case RspExitReason::Unsupported: return "Unsupported";
+    case RspExitReason::SwapOverlay: return "SwapOverlay";
+    case RspExitReason::UnhandledResumeTarget: return "UnhandledResumeTarget";
+    }
+    return "?";
+}
+
+// Dumps the task's audio command list (ABI 1: eight bytes per command, opcode in
+// the top byte) so the command that overruns DMEM can be identified from what
+// the game asked for rather than from where the store landed.
+void dump_audio_task(const uint8_t* rdram, RspExitReason reason) {
+    static const char* const kOps[16] = {
+        "SPNOOP", "ADPCM", "CLEARBUFF", "ENVMIXER", "LOADBUFF", "RESAMPLE", "SAVEBUFF", "SEGMENT",
+        "SETBUFF", "SETVOL", "DMEMMOVE", "LOADADPCM", "MIXER", "INTERLEAVE", "POLEF", "SETLOOP" };
+    const uint32_t count = g_audio_task_size / 8;
+    std::fprintf(stderr, "[wr64-audio] task failed with %s: %u commands at 0x%08X\n",
+                 rsp_exit_name(reason), count, g_audio_task_data);
+    for (uint32_t i = 0; i < count && i < 200; ++i) {
+        const uint32_t addr = g_audio_task_data + i * 8;
+        const uint32_t w0 = *reinterpret_cast<const uint32_t*>(rdram + (addr & 0x00FFFFFFu));
+        const uint32_t w1 = *reinterpret_cast<const uint32_t*>(rdram + ((addr + 4) & 0x00FFFFFFu));
+        const uint32_t op = w0 >> 24;
+        std::fprintf(stderr, "[wr64-audio]  %3u %-10s f=%02X a=%04X  b=%04X c=%04X   (%08X %08X)\n",
+                     i, kOps[op & 15], (w0 >> 16) & 0xFF, w0 & 0xFFFF, w1 >> 16, w1 & 0xFFFF, w0, w1);
+    }
+    std::fflush(stderr);
+}
+
+OSTask g_audio_task{};
+
+// Re-runs the failed task with only its first `count` commands, exactly as
+// librecomp sets a task up (the OSTask copied to DMEM 0xFC0, the microcode's
+// data DMA'd to DMEM 0). DMEM is rebuilt from RDRAM on every run, so the
+// corruption a failed run leaves behind does not carry over.
+RspExitReason rerun_audio_task(uint8_t* rdram, uint32_t ucode_addr, uint32_t count) {
+    OSTask copy = g_audio_task;
+    copy.t.data_size = count * 8;
+    std::memcpy(&dmem[0xFC0], &copy, sizeof(OSTask));
+    dma_rdram_to_dmem(rdram, 0x0000, copy.t.ucode_data, 0xF80 - 1);
+    return aspMain_run(rdram, ucode_addr);
+}
+
+// Finds the first command that damages DMEM outside the audio buffers: the
+// microcode's constant pool (which holds the command jump table at 0x10) and
+// the OSTask copy at 0xFC0. Each prefix of the command list is run from a
+// fresh DMEM and both regions compared with what was loaded, so the first
+// prefix that dirties either ends with the command that did it. A failed
+// dispatch, by contrast, happens whenever the next command's table entry
+// happens to be the corrupted one, which can be many commands later.
+void bisect_audio_task(uint8_t* rdram, uint32_t ucode_addr) {
+    const uint32_t total = g_audio_task_size / 8;
+    uint8_t pristine[0x40];
+    OSTask copy = g_audio_task;
+    dma_rdram_to_dmem(rdram, 0x0000, copy.t.ucode_data, 0xF80 - 1);
+    std::memcpy(pristine, dmem, sizeof(pristine));
+
+    uint32_t bad = 0;
+    const char* what = nullptr;
+    bool top_reported = false;
+    for (uint32_t n = 1; n <= total && what == nullptr; ++n) {
+        const RspExitReason r = rerun_audio_task(rdram, ucode_addr, n);
+        copy.t.data_size = n * 8;
+        if (!top_reported && std::memcmp(&dmem[0xFC0], &copy, sizeof(OSTask)) != 0) {
+            // Report once which bytes of the top of DMEM the microcode itself
+            // writes (scratch use is legitimate; only what it says matters).
+            top_reported = true;
+            const uint8_t* a = &dmem[0xFC0];
+            const uint8_t* b = reinterpret_cast<const uint8_t*>(&copy);
+            uint32_t lo = 0x40, hi = 0;
+            for (uint32_t i = 0; i < 0x40; ++i) {
+                if (a[i] != b[i]) { lo = std::min(lo, i); hi = std::max(hi, i); }
+            }
+            std::fprintf(stderr, "[wr64-audio] (top of DMEM 0x%03X-0x%03X first written after command %u)\n",
+                         0xFC0 + lo, 0xFC0 + hi, n - 1);
+        }
+        if (std::memcmp(dmem, pristine, sizeof(pristine)) != 0) {
+            what = "the constant pool / jump table at DMEM 0x000-0x040";
+            const uint16_t* t = reinterpret_cast<const uint16_t*>(&dmem[0x10]);
+            const uint16_t* p = reinterpret_cast<const uint16_t*>(&pristine[0x10]);
+            std::fprintf(stderr, "[wr64-audio] table entries now:");
+            for (int i = 0; i < 16; ++i) {
+                if (t[i] != p[i]) {
+                    std::fprintf(stderr, " [%d] %04X->%04X", i, p[i], t[i]);
+                }
+            }
+            std::fprintf(stderr, "\n");
+        }
+        else if (r != RspExitReason::Broke) {
+            what = "nothing visible, yet the run failed";
+        }
+        bad = n;
+    }
+    if (what == nullptr) {
+        std::fprintf(stderr, "[wr64-audio] every prefix ran clean on re-run: the failure depends on"
+                             " state the first run changed, not on the command list alone\n");
+        std::fflush(stderr);
+        return;
+    }
+    std::fprintf(stderr, "[wr64-audio] first prefix to damage %s is %u commands:"
+                         " command %u did it. Context:\n", what, bad, bad - 1);
+    static const char* const kOps[16] = {
+        "SPNOOP", "ADPCM", "CLEARBUFF", "ENVMIXER", "LOADBUFF", "RESAMPLE", "SAVEBUFF", "SEGMENT",
+        "SETBUFF", "SETVOL", "DMEMMOVE", "LOADADPCM", "MIXER", "INTERLEAVE", "POLEF", "SETLOOP" };
+    const uint32_t from = bad >= 40 ? bad - 40 : 0;
+    for (uint32_t i = from; i < bad + 2 && i < total; ++i) {
+        const uint32_t addr = g_audio_task_data + i * 8;
+        const uint32_t w0 = *reinterpret_cast<const uint32_t*>(rdram + (addr & 0x00FFFFFFu));
+        const uint32_t w1 = *reinterpret_cast<const uint32_t*>(rdram + ((addr + 4) & 0x00FFFFFFu));
+        std::fprintf(stderr, "[wr64-audio]  %s%3u %-10s f=%02X a=%04X  b=%04X c=%04X   (%08X %08X)\n",
+                     i == bad - 1 ? ">" : " ", i, kOps[(w0 >> 24) & 15], (w0 >> 16) & 0xFF, w0 & 0xFFFF,
+                     w1 >> 16, w1 & 0xFFFF, w0, w1);
+    }
+    std::fflush(stderr);
+}
+
 RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
     wr64::watch_for_hang("the audio microcode", 5);
     const RspExitReason reason = aspMain_run(rdram, ucode_addr);
@@ -510,6 +638,11 @@ RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
                          static_cast<unsigned long long>(dropped));
             std::fflush(stderr);
         }
+        if (dropped <= 6) {
+            std::fprintf(stderr, "[wr64-audio] task failed with %s: %u commands at 0x%08X\n",
+                         rsp_exit_name(reason), g_audio_task_size / 8, g_audio_task_data);
+            bisect_audio_task(rdram, ucode_addr);
+        }
         return RspExitReason::Broke;
     }
     return reason;
@@ -521,6 +654,9 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     // identifies the code about to run.
     const uint32_t ucode = static_cast<uint32_t>(task->t.ucode) & 0x00FFFFFFu;
     if (ucode == (kAspMainTextStart & 0x00FFFFFFu)) {
+        g_audio_task_data = static_cast<uint32_t>(task->t.data_ptr);
+        g_audio_task_size = task->t.data_size;
+        g_audio_task = *task;
         return asp_main_watched;
     }
     static uint64_t others = 0;

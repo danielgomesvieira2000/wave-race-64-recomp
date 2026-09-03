@@ -81,10 +81,18 @@ void build_launcher(recompui::LauncherMenu* menu) {
         std::u8string{ wr64::kGameId },
         wr64::kModGameId,
         wr64::kDisplayName,
-        // No thumbnail: any artwork for this game would be taken from the
-        // cartridge, and this project does not ship anything derived from a
-        // dump. The launcher lays out fine without one.
+        // No thumbnail: any artwork for the game itself would be taken from
+        // the cartridge, and this project does not ship anything derived from
+        // a dump. The launcher lays out fine without one.
         {});
+
+    // The launcher's own background, distinct from the game thumbnail above:
+    // this is original artwork supplied with the project (assets/icons/Logo.svg),
+    // not derived from the cartridge, so it carries none of that restriction.
+    // remove_default_title() takes down the plain-text program name the
+    // library shows in its place -- the two would otherwise overlap.
+    menu->set_launcher_background_svg("icons/Logo.svg");
+    menu->remove_default_title();
 
     options->add_start_game_or_load_rom_option("Load ROM", "Start Game");
     options->add_setup_controls_option("Controls");

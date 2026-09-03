@@ -194,6 +194,14 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES ${WR64_PATCH_SOURCES})
 endif()
 
+# The Windows resource compiler (llvm-rc, alongside clang-cl) is opt-in
+# per generator, unlike C/CXX -- it has to be enabled explicitly, and only
+# where a resource compiler exists at all.
+if(WIN32)
+    enable_language(RC)
+    list(APPEND WR64_SOURCES src/app.rc)
+endif()
+
 add_executable(WaveRace64Recomp ${WR64_SOURCES})
 
 target_include_directories(WaveRace64Recomp PRIVATE
