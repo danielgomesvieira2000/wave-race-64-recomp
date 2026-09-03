@@ -1,0 +1,41 @@
+# Phase 05 verification: drive the port from boot into a race, without a pad.
+#
+# Times are seconds since the game's first input poll. Each line is
+#
+#     <start> <end> <buttons> [stick_x stick_y] [# note]
+#
+# and lines overlap freely, which is what lets a tap and a minute-long hold
+# share one syntax. See src/testdrive.cpp.
+#
+# The timings are deliberately loose and the Start presses deliberately
+# repeated. The port renders at roughly 20fps rather than 60, so the game's own
+# clock runs at a third of wall time and the menu fly-in animations take far
+# longer than they would on hardware -- a single well-aimed press is a guess,
+# where a press every few seconds is not. The state transcript in the log says
+# which one landed.
+
+# Walk the menus: title, main menu, rider select, course select, the course
+# overview. Start advances all of them.
+3.0    3.5   START          # Start (title screen)
+7.0    7.5   START          # Start (main menu)
+11.0   11.5  START          # Start
+15.0   15.5  START          # Start
+19.0   19.5  START          # Start
+23.0   23.5  START          # Start
+27.0   27.5  START          # Start
+31.0   31.5  START          # Start
+
+# Prove the cursor reads the stick as well as the buttons, between presses.
+9.0    9.6   -       60  0  # stick right
+13.0   13.6  -      -60  0  # stick left
+17.0   17.6  -        0 60  # stick up
+21.0   21.6  -        0 -60 # stick down
+
+# Racing. No Start from here on: it would pause. Accelerate for a long stretch,
+# leaning each way in turn so the log and the screenshots show the stick being
+# read during gameplay rather than a single constant.
+40.0   170.0 A       0   0  # accelerate
+45.0   65.0  A      30   0  # lean right
+70.0   90.0  A     -30   0  # lean left
+95.0   115.0 A      20   0  # lean right again
+120.0  140.0 A     -20   0  # lean left again

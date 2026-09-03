@@ -30,6 +30,7 @@
 #include <librecomp/rsp.hpp>
 
 #include "wr64/crash_handler.h"
+#include "wr64/testdrive.h"
 #include "wr64/renderer.h"
 
 // The recompiled audio microcode, produced by RSPRecomp from the cartridge.
@@ -165,11 +166,32 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
         if (keys[SDL_SCANCODE_RETURN]) pressed |= BTN_START;
         if (keys[SDL_SCANCODE_A])      pressed |= BTN_L;
         if (keys[SDL_SCANCODE_S])      pressed |= BTN_R;
+        // The C buttons work the camera, which Wave Race uses constantly, so
+        // they need to be reachable without a pad. I/J/K/L keeps them under the
+        // right hand while the left drives with the arrow keys.
+        if (keys[SDL_SCANCODE_I])      pressed |= BTN_CUP;
+        if (keys[SDL_SCANCODE_K])      pressed |= BTN_CDOWN;
+        if (keys[SDL_SCANCODE_J])      pressed |= BTN_CLEFT;
+        if (keys[SDL_SCANCODE_L])      pressed |= BTN_CRIGHT;
+        if (keys[SDL_SCANCODE_T])      pressed |= BTN_DUP;
+        if (keys[SDL_SCANCODE_G])      pressed |= BTN_DDOWN;
+        if (keys[SDL_SCANCODE_F])      pressed |= BTN_DLEFT;
+        if (keys[SDL_SCANCODE_H])      pressed |= BTN_DRIGHT;
         if (keys[SDL_SCANCODE_LEFT])   stick_x = -80.0f;
         if (keys[SDL_SCANCODE_RIGHT])  stick_x =  80.0f;
         if (keys[SDL_SCANCODE_UP])     stick_y =  80.0f;
         if (keys[SDL_SCANCODE_DOWN])   stick_y = -80.0f;
     }
+
+    // Scripted input is merged in rather than replacing the pad, so a run can
+    // still be nudged by hand while it plays. See src/testdrive.cpp.
+    uint16_t scripted_buttons = 0;
+    float scripted_x = 0.0f;
+    float scripted_y = 0.0f;
+    wr64::input_script_state(&scripted_buttons, &scripted_x, &scripted_y);
+    pressed |= scripted_buttons;
+    if (scripted_x != 0.0f) { stick_x = scripted_x; }
+    if (scripted_y != 0.0f) { stick_y = scripted_y; }
 
     *buttons = pressed;
     *x = stick_x;
@@ -378,10 +400,47 @@ RspExitReason rsp_unknown_ucode(uint8_t* rdram, uint32_t ucode_addr) {
 // on, so the audio thread keeps building tasks and the window keeps swapping
 // the same finished frame. A wrong microcode load address produced exactly that
 // during phase 05; this makes the next one announce itself.
+// Runs the microcode, with a watchdog on it and a net under it.
+//
+// A microcode that spins forever is the worst failure this code has: it faults
+// nothing, prints nothing and returns nothing, so the RSP task thread simply
+// stops. The game then freezes with no error at all -- the scheduler waits for
+// an SP-complete event that will never come, while every other thread carries
+// on, so the audio thread keeps building tasks and the window keeps swapping
+// the same finished frame. A wrong microcode load address produced exactly that
+// during phase 05; the watchdog makes the next one announce itself.
+//
+// The net is for a defect that is characterised but not yet fixed. Roughly one
+// run in three, during heavy audio, a command writes 64 bytes over DMEM
+// 0x000..0x040 -- the microcode's constant pool, which holds the sixteen-entry
+// command jump table at 0x10. Every entry comes back as its correct value
+// scaled by slightly less than one, with the ratio varying smoothly across the
+// table, which is the signature of an envelope mixer reading and writing a
+// buffer that is not where it should be. The next command to dispatch then
+// jumps to a corrupted address and the microcode returns UnhandledJumpTarget.
+//
+// librecomp treats that as fatal: it asserts, and the RSP task thread dies with
+// it, which stops the game exactly as a hang would. But DMEM is reloaded from
+// RDRAM before every task, so the damage does not outlive the task that caused
+// it -- the RDRAM copy of the table has been confirmed intact throughout. So
+// reporting the task complete costs one frame of audio, a click, instead of the
+// run. It is a net, not a fix, and it says so every time it catches something.
 RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
     wr64::watch_for_hang("the audio microcode", 5);
     const RspExitReason reason = aspMain_run(rdram, ucode_addr);
     wr64::watch_done();
+
+    if (reason != RspExitReason::Broke) {
+        static uint64_t dropped = 0;
+        ++dropped;
+        if (dropped <= 3 || dropped % 100 == 0) {
+            std::fprintf(stderr, "[wr64] audio frame dropped: the microcode did not reach"
+                                 " its break (%llu so far). See src/callbacks.cpp.\n",
+                         static_cast<unsigned long long>(dropped));
+            std::fflush(stderr);
+        }
+        return RspExitReason::Broke;
+    }
     return reason;
 }
 
@@ -438,9 +497,29 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
 }
 
 ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
+    // Pick the largest whole multiple of the N64's 320x240 that fits the
+    // display, rather than hardcoding one. A fixed 640x480 doubled is 1280x960,
+    // which is taller than a 1536x864 laptop panel: Windows then places the
+    // window partly off-screen, and the game is cropped with no indication that
+    // anything is wrong. Whole multiples keep the upscale clean.
+    int width = 320 * 4;
+    int height = 240 * 4;
+    SDL_Rect usable{};
+    if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+        int scale = 4;
+        while (scale > 1 && (320 * scale > usable.w || 240 * scale > usable.h)) {
+            --scale;
+        }
+        width = 320 * scale;
+        height = 240 * scale;
+        std::fprintf(stderr, "[wr64] window %dx%d (%dx upscale; display has %dx%d usable)\n",
+                     width, height, scale, usable.w, usable.h);
+        std::fflush(stderr);
+    }
+
     g_window = SDL_CreateWindow("Wave Race 64: Recompiled",
                                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                640 * 2, 480 * 2,
+                                width, height,
                                 SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (g_window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -471,6 +550,7 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     }
     ++ticks;
     poll_input();
+    wr64::poll_game_state();
 }
 
 }  // namespace

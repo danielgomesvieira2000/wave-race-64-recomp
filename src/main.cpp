@@ -11,8 +11,12 @@
 #include "wr64/crash_handler.h"
 #include "wr64/renderer.h"
 #include "wr64/rom.h"
+#include "wr64/testdrive.h"
 
 #include <cstdio>
+#if defined(_WIN32)
+#   include <crtdbg.h>
+#endif
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -39,6 +43,10 @@ void on_init(uint8_t* rdram, recomp_context* ctx) {
     std::printf("[wr64] runtime initialised; entering recomp_entrypoint\n");
     std::printf("[wr64] rdram base = %p\n", static_cast<void*>(rdram));
     std::fflush(stdout);
+
+    // The state watcher needs the RDRAM base, and this is the first place the
+    // project has it.
+    wr64::set_rdram_base(rdram);
 
     // Must happen here rather than at startup: init_overlays() begins with
     // func_map.clear(), and librecomp calls it long before this hook.
@@ -128,6 +136,9 @@ int identify(const char* path) {
 #if WR64_WITH_RUNTIME && WR64_WITH_RECOMPILED
 
 int run(int argc, char** argv, const char* rom_path) {
+    // Loaded before the window opens so the script's clock starts with it.
+    wr64::load_input_script();
+
     // Refuse a wrong dump here rather than letting it fail confusingly later.
     wr64::RomHeader header;
     std::string error;
@@ -214,6 +225,21 @@ int run(int argc, char** argv, const char* rom_path) {
 
 int main(int argc, char** argv) {
     wr64::install_crash_handler();
+
+#if defined(_WIN32) && !defined(NDEBUG)
+    // Send failed assertions to stderr instead of a message box.
+    //
+    // librecomp asserts on an RSP microcode that does not end in a break. The
+    // default debug-CRT behaviour is a modal dialog, which blocks the thread
+    // that raised it -- and that thread is the one running RSP tasks, so the
+    // game freezes exactly as if the microcode had hung, with the explanation
+    // sitting in a window behind everything else. A run under a script or a
+    // capture then reports a hang and no reason for it.
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+#endif
 
     // Unbuffer stdout. When the port's output is redirected to a file -- which
     // is how every run in this project is inspected -- stdout becomes fully

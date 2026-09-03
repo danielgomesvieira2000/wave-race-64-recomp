@@ -125,12 +125,68 @@ is normally killed rather than exiting -- so the buffer is discarded. The
 recompiled microcode reports unhandled jump targets through `printf`, and those
 reports were being lost entirely.
 
+## Verifying menus and racing
+
+Neither is observable from a terminal: a port stuck on the title screen and one
+quietly racing look identical from outside, and both look like a window that is
+up. Two additions make the answer checkable.
+
+`src/testdrive.cpp` watches `gGameState`, whose address the ELF gives and whose
+values the decomp names, and reports every change. A run then produces a
+transcript -- title screen, main menu, rider select, course select, racing --
+rather than something to infer from pixels. It also reads an optional script of
+timed inputs from `WR64_INPUT_SCRIPT`, so a session is repeatable and can live
+in the repository next to the thing it tests. Without that variable set nothing
+is injected and the pad and keyboard behave normally.
+
+`tools/capture_window.ps1` photographs the window at intervals, because the
+transcript says which screen the game thinks it is on and cannot say whether it
+is drawn correctly -- a menu that advances with nothing on it is a renderer
+problem, not a game-logic one.
+
+What they showed:
+
+- The title screen advances to the main menu on Start, within one frame.
+- Rider select, course select and the course overview each advance in turn, and
+  the transcript names them.
+- A championship race starts and runs: the HUD shows time, rank, lap and speed
+  counting, with crowd, banners, palm trees, buoys, wake spray and the water
+  surface all drawn. The water -- the documented HLE risk for this game -- is
+  correct on the title screen and during racing.
+- Audio plays throughout.
+
+The window is now sized to the display rather than hardcoded. A fixed 2x of
+640x480 is 1280x960, which is taller than a 1536x864 laptop panel; Windows then
+places the window partly off-screen and the game is silently cropped, which is
+exactly what the first captures showed before the geometry was measured.
+
 ## State at the end of the phase
 
 A 100-second run reaches attract mode with audio, completing 5,500 audio tasks
 and 1,875 graphics tasks with no unhandled jump targets and no hangs. The
 scheduler cycles normally through its three states.
 
-Not yet verified, and remaining for this phase: menu navigation, racing beyond
-attract mode, the water surface's appearance against a reference, and a full
-championship in both directions plus stunt mode.
+One defect is characterised but not fixed. Roughly one run in three, during
+heavy audio, something writes 64 bytes over DMEM 0x000..0x040 -- the microcode's
+constant pool, which holds the command jump table at 0x10. Every entry comes
+back as its correct value scaled by slightly less than one, with the ratio
+varying smoothly across the table, which is the signature of an envelope mixer
+reading and writing a buffer that is not where it should be. The next command
+dispatched then jumps to a corrupted address.
+
+Established about it so far: the RDRAM copy of the table is never touched, so
+the corruption is inside DMEM and does not outlive the task that caused it,
+since DMEM is reloaded before every task; the written region is the low 64 bytes
+and nothing adjacent, which fits a buffer running past the end of DMEM and
+wrapping; and librecomp's vector stores mask addresses exactly as the hardware
+does, so the wrap itself is faithful and the address or length reaching it is
+not. The next step is to audit the envelope mixer handler's loop bound against
+the disassembly.
+
+Until then `asp_main_watched` reports the task complete instead of letting
+librecomp assert, which costs one frame of audio -- a click -- rather than the
+run. That is a net, not a fix, and it says so on stderr every time it catches
+something.
+
+Still to do for this phase: play every course in both directions, stunt mode,
+and a full championship to the ceremony.

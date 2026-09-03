@@ -154,3 +154,30 @@ vector unit is written against those intrinsics. Like everything else under
 
 Without it the port still runs; it is simply silent, because the RSP callback
 falls back to reporting each audio task complete without running it.
+
+## Playing it
+
+```
+build-rt/WaveRace64Recomp.exe <your dump>.z64
+```
+
+A gamepad is used if one is attached. On the keyboard: arrow keys are the analog
+stick, `X` is A, `C` is B, `Z` is Z, `Enter` is Start, `A` and `S` are the
+shoulder buttons, `I`/`J`/`K`/`L` are the C buttons (the camera) and
+`T`/`F`/`G`/`H` are the D-pad.
+
+The window is sized to the largest whole multiple of 320x240 that fits the
+display, and is resizable.
+
+Two things help when reporting a problem. The port prints a transcript of the
+game's own state to stderr -- title screen, main menu, rider select, racing --
+so redirecting stderr to a file says where it got to. And
+`tools/capture_window.ps1` photographs the window at intervals:
+
+```
+powershell -ExecutionPolicy Bypass -File tools/capture_window.ps1 -OutDir shots -Count 12 -IntervalSeconds 5
+```
+
+For a repeatable session without touching the pad, `WR64_INPUT_SCRIPT` points at
+a file of timed inputs; `tools/scripts/race.txt` drives the game from boot into
+a race. Leave the variable unset and nothing is injected.
