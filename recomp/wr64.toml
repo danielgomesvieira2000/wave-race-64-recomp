@@ -105,5 +105,8 @@ stubs = [
 # This one is not in that list because splat invented the name, so it has to be
 # dropped by hand. Nothing is lost -- the runtime provides the whole routine.
 ignored = [
-    "func_800CB0A8"
+    "func_800CB0A8",
+    # Replaced by patches/dma.cpp with a synchronous transfer, so loaded code is
+    # in place before the call returns rather than after a queue wait.
+    "game_dma_copy"
 ]

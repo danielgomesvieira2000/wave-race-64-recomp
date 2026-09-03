@@ -25,7 +25,11 @@
 #include "recomp_overlays.inl"
 #include "runtime_funcs.inl"
 
+extern "C" void osPiStartDma_recomp(uint8_t* rdram, recomp_context* ctx);
+
 namespace wr64 {
+
+void pi_start_dma_hook(uint8_t* rdram, recomp_context* ctx);
 
 void register_overlays() {
     recomp::overlays::overlay_section_table_data_t sections{};
@@ -56,8 +60,14 @@ void register_runtime_functions() {
     // before it is silently discarded. librecomp calls init_overlays() well
     // before it calls on_init_callback.
     for (const auto& entry : runtime_provided_funcs) {
-        recomp::overlays::add_loaded_function(static_cast<int32_t>(entry.ram_addr),
-                                              entry.func);
+        // osPiStartDma is redirected through our wrapper, which announces the
+        // transfer to the runtime before returning. Every DMA the game makes
+        // passes through here, including the overlay loads that bypass
+        // game_dma_copy entirely. See patches/dma.cpp.
+        recomp_func_t* func = (entry.func == osPiStartDma_recomp)
+                                  ? pi_start_dma_hook
+                                  : entry.func;
+        recomp::overlays::add_loaded_function(static_cast<int32_t>(entry.ram_addr), func);
     }
 
     // Register every function of every non-overlay section.

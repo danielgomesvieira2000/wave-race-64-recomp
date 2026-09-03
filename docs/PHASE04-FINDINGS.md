@@ -257,3 +257,77 @@ Everything after that is the game's job, and in this game it goes through
 is the remaining work, and it is the same conclusion the phase 00 plan reached
 from the other direction: the overlay loader has to be wired to the runtime
 through a patch.
+
+---
+
+# Announcing loaded code to the runtime
+
+With every call resolved by address, the runtime has to be told when the game
+brings code in, or the call fails. librecomp announces only the boot region:
+
+```c
+load_overlays(0x1000, (int32_t)entrypoint, 1024 * 1024);
+```
+
+Everything else is the game's business. Two paths matter, and finding the second
+took a wrong turn worth recording.
+
+## game_dma_copy is not the overlay path
+
+`game_dma_copy(rom, ram, size)` is the obvious candidate: seven call sites,
+including `GameLoad_LoadCodeseg` and `SysMain_Thread`. Patching it worked, and
+tracing every transfer proved it was the wrong hook:
+
+```
+[wr64-dma] #1 rom 0x0A95D0 -> ram 0x801DAFA0 size 0x4CAC0   codeseg
+[wr64-dma] #2 rom 0x0F6090 -> ram 0x80228E10 size 0x8290
+[wr64-dma] #4 rom 0x374100 -> ram 0x802A0000 size 0x2800    asset chunks
+...
+```
+
+`codeseg` loads through it exactly as expected, and **nothing ever lands at
+0x802C5800**. `GameLoad_LoadOverlay` does not use it: it reads an entry from
+`gOverlayTable` and calls `osPiStartDma` directly, with the destination
+hardcoded.
+
+The table entries are eight words:
+`{romStart, romEnd, textStart, textEnd, dataStart, dataEnd, bssStart, bssEnd}`.
+
+So the hook belongs one level down, at `osPiStartDma`, where both paths meet.
+`patches/dma.cpp` wraps librecomp's own implementation rather than replacing it,
+and `src/overlays.cpp` registers the wrapper at `osPiStartDma`'s cartridge
+address in place of the runtime's.
+
+## Two address conventions, both easy to get wrong
+
+- `game_dma_copy`'s `a1` is a **physical** address -- the original passes it
+  through `osPhysicalToVirtual` before the DMA. `do_rom_read` writes through
+  `MEM_B`, which expects KSEG0, so handing the physical address straight over
+  faults two gigabytes past RDRAM.
+- The ROM argument is normalised the way librecomp does it, `(addr |
+  rom_base) & 0x1FFFFFFF`, which accepts a bare file offset or a K1 cartridge
+  address without needing to know which the caller used. `load_overlays` then
+  wants the file offset, since that is the space the section table uses.
+
+## Where it stands
+
+Still `Failed to find function at 0x802C5800`, and the reason is now visible in
+`SysMain_Thread`'s loop rather than mysterious:
+
+```
+800471FC: jal func_80092CF0        ; renderer, dispatches into overlays
+80047208: jal SysMain_GfxFullSync
+8004727C: jal game_dma_copy
+80047290: jal unk_game_load
+800472A4: jal GameLoad_LoadOverlay ; loads the overlay -- at the end
+```
+
+The renderer runs **before** the loader. On hardware that is fine: the load is
+conditional, and an overlay requested on one iteration is used on the next. Here
+the very first dispatch already targets an overlay that nothing has loaded, so
+either `gGameState` starts at a value whose renderer lives in an overlay, or
+something earlier in the sequence -- `func_800922E4` has three overlay targets,
+and `unk_game_load` is unexamined -- is meant to have loaded it already.
+
+That is the next thing to determine, and it is a question about the game's
+startup sequence rather than about the recompilation.

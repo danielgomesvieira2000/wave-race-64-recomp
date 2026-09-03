@@ -52,6 +52,35 @@ def defined_recomp_functions():
     return names
 
 
+def patched_functions():
+    """Functions we replace outright, defined under their own game names.
+
+    A function marked `ignored` is not emitted by the recompiler, so it is
+    absent from the section tables. With every call resolved by address, its
+    callers then fail to find it -- replacing game_dma_copy produced exactly
+    that: "Failed to find function at 0x80097EC8", which is game_dma_copy.
+
+    Only names that are both marked `ignored` in the config and actually defined
+    in patches/ or src/ are returned. func_800CB0A8, for instance, is ignored
+    because ultramodern owns that whole routine; nothing here defines it, and
+    registering a name with no definition would not link.
+    """
+    config = REPO / "recomp" / "wr64.toml"
+    if not config.exists():
+        return set()
+    block = re.search(r"^ignored\s*=\s*\[(.*?)\]", config.read_text(), re.S | re.M)
+    if not block:
+        return set()
+    ignored = set(re.findall(r'"([A-Za-z_]\w*)"', block.group(1)))
+
+    defined = set()
+    pattern = re.compile(r"\bvoid\s+(\w+)\s*\(\s*uint8_t\s*\*\s*rdram\s*,\s*recomp_context")
+    for path in list((REPO / "patches").glob("*.cpp")) + list((REPO / "src").glob("*.cpp")):
+        defined.update(pattern.findall(path.read_text(errors="replace")))
+
+    return ignored & defined
+
+
 def symbol_addresses():
     out = subprocess.run(
         ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf", "-sW", ELF],
@@ -95,6 +124,16 @@ def main():
     ]
     for address, name in entries:
         lines.append(f"    {{ 0x{address:08X}u, {name}_recomp }},\n")
+
+    patched = []
+    for name in sorted(patched_functions()):
+        address = addresses.get(name)
+        if address is None:
+            print(f"  no ELF address for patched function {name}")
+            continue
+        patched.append((address, name))
+        lines.append(f"    {{ 0x{address:08X}u, {name} }},   /* patched */\n")
+
     lines.append("};\n")
 
     OUT.write_text("".join(lines))
@@ -102,6 +141,7 @@ def main():
     print(f"wrote {OUT.relative_to(REPO)}")
     print(f"  _recomp functions with a definition        : {len(called)}")
     print(f"  registered with a cartridge address        : {len(entries)}")
+    print(f"  patched functions registered               : {len(patched)}")
     if unresolved:
         print(f"  no address in the ELF (not registered)     : {len(unresolved)}")
         for name in unresolved[:8]:
