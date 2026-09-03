@@ -41,6 +41,11 @@ void poll_input() {
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_QUIT:
+                // Traced during phase 04: a clean exit-code-0 shutdown and a
+                // crash look the same from outside, so it matters whether the
+                // quit came from here or from the runtime deciding to stop.
+                std::fprintf(stderr, "[wr64] SDL_QUIT received; asking the runtime to quit\n");
+                std::fflush(stderr);
                 ultramodern::quit();
                 break;
             case SDL_CONTROLLERDEVICEADDED:
@@ -282,6 +287,15 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 }
 
 void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
+    // This is librecomp's main loop body, so counting it distinguishes "the
+    // loop never ran" from "the loop ran and then something ended it".
+    static uint64_t ticks = 0;
+    if (ticks == 0 || ticks == 1000 || ticks == 10000) {
+        std::fprintf(stderr, "[wr64] main loop tick %llu\n",
+                     static_cast<unsigned long long>(ticks));
+        std::fflush(stderr);
+    }
+    ++ticks;
     poll_input();
 }
 

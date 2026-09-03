@@ -31,6 +31,14 @@
 
 namespace {
 
+// Strip the MIPS segment bits from a virtual address to get an RDRAM offset.
+// KSEG0 (0x80000000) and KSEG1 (0xA0000000) are both direct-mapped windows onto
+// physical memory, so masking is all that is needed here -- the game does not
+// use the TLB.
+constexpr uint32_t physical(uint32_t vaddr) {
+    return vaddr & 0x00FFFFFFu;
+}
+
 // RT64 takes a plain function pointer for interrupt notification, so this
 // cannot be a lambda with captures.
 void no_interrupts() {
@@ -156,17 +164,41 @@ void RT64Context::send_dl(const OSTask* task) {
         return;
     }
 
+    // Boot bring-up tracing: the first display list is the moment the game
+    // stops initialising and starts drawing, which is the single most useful
+    // event to see during phase 04. Counted, not printed every frame.
+    static uint64_t dl_count = 0;
+    if (dl_count == 0) {
+        std::fprintf(stderr, "[wr64] first display list: ucode 0x%08X data 0x%08X dl 0x%08X\n",
+                     task->t.ucode, task->t.ucode_data, task->t.data_ptr);
+        std::fflush(stderr);
+    }
+    ++dl_count;
+
     // Identify the microcode before submitting anything. RT64 selects its
     // graphics binary interface from the task's ucode text and data addresses,
     // and processDisplayLists asserts that one has been chosen -- it does not
     // do this itself. An emulator would leave the task in DMEM for RT64 to
     // read; a recompilation has no real DMEM, so the addresses are handed over
     // from the OSTask directly.
-    app_->interpreter->loadUCodeGBI(task->t.ucode, task->t.ucode_data, true);
+    app_->interpreter->loadUCodeGBI(physical(task->t.ucode), physical(task->t.ucode_data), true);
 
-    // The display list address is the task's data pointer. RT64 walks it itself,
-    // so no end address is needed; true selects the HLE path.
-    app_->processDisplayLists(app_->core.RDRAM, task->t.data_ptr, 0, true);
+    // RT64 indexes straight off the RDRAM base, so it needs a physical address.
+    // The OSTask carries virtual KSEG0 addresses -- the display list pointer
+    // arrives as 0x801388D0 -- and handing that over unmasked indexes two
+    // gigabytes past the 8 MB of RDRAM, which faults immediately.
+    //
+    // Bisect switch for phase 04: setting WR64_SKIP_DL isolates whether a fault
+    // is inside RT64's display list processing or somewhere else entirely.
+    static const bool skip_dl = std::getenv("WR64_SKIP_DL") != nullptr;
+    if (!skip_dl) {
+        app_->processDisplayLists(app_->core.RDRAM, physical(task->t.data_ptr), 0, true);
+    }
+
+    if (dl_count == 1) {
+        std::fprintf(stderr, "[wr64] send_dl returned from the first display list\n");
+        std::fflush(stderr);
+    }
 }
 
 void RT64Context::send_dummy_workload(uint32_t fb_address) {
@@ -177,6 +209,16 @@ void RT64Context::send_dummy_workload(uint32_t fb_address) {
 
 void RT64Context::update_screen() {
     if (valid_) {
+        static uint64_t frames = 0;
+        // A steady frame count is how we tell "presenting an empty screen" from
+        // "stalled before the first present" -- the two look identical to a user
+        // and are entirely different problems.
+        if (frames == 0 || frames == 60 || frames == 600) {
+            std::fprintf(stderr, "[wr64] update_screen #%llu\n",
+                         static_cast<unsigned long long>(frames));
+            std::fflush(stderr);
+        }
+        ++frames;
         app_->updateScreen();
     }
 }

@@ -100,7 +100,7 @@ endif()
 # ---------------------------------------------------------------------------
 #  The port itself
 # ---------------------------------------------------------------------------
-set(WR64_SOURCES src/main.cpp src/rom.cpp)
+set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 
 # The harness only makes sense with both the runtime and the generated code, and
 # overlays.cpp cannot even compile without recomp_overlays.inl.
@@ -115,6 +115,10 @@ target_include_directories(WaveRace64Recomp PRIVATE
 
 if(WR64_WITH_RUNTIME)
     target_link_libraries(WaveRace64Recomp PRIVATE rt64 ultramodern librecomp)
+    if(WIN32)
+        # dbghelp resolves the crash handler's addresses to function names.
+        target_link_libraries(WaveRace64Recomp PRIVATE dbghelp)
+    endif()
     target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_RUNTIME=1)
 
     # RT64 declares its definitions, include paths and link paths with the
@@ -192,3 +196,4 @@ message(STATUS "  compiler          ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILE
 message(STATUS "  runtime + RT64    ${WR64_WITH_RUNTIME}")
 message(STATUS "  recompiled code   ${WR64_WITH_RECOMPILED}")
 message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILER}")
+

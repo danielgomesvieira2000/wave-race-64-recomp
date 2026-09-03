@@ -8,6 +8,7 @@
 // against the pinned target before anything else is attempted.
 
 #include "wr64/callbacks.h"
+#include "wr64/crash_handler.h"
 #include "wr64/renderer.h"
 #include "wr64/rom.h"
 
@@ -29,9 +30,14 @@ namespace {
 // runtime, so librecomp's hooks report them rather than leaving the gate to be
 // inferred from the process not crashing.
 void on_init(uint8_t* rdram, recomp_context* ctx) {
-    (void)rdram;
     (void)ctx;
+    // Printing the RDRAM base makes a crash report readable: MEM_W subtracts the
+    // KSEG0 base without masking, so a faulting address is only interpretable
+    // relative to this. librecomp deliberately leaves guard pages around RDRAM
+    // to turn a bad game pointer into an immediate fault rather than silent
+    // corruption, which is why these are worth reading rather than suppressing.
     std::printf("[wr64] runtime initialised; entering recomp_entrypoint\n");
+    std::printf("[wr64] rdram base = %p\n", static_cast<void*>(rdram));
     std::fflush(stdout);
 }
 
@@ -191,6 +197,8 @@ int run(int argc, char** argv, const char* rom_path) {
     recomp::start_game(std::u8string{kGameId}, std::string{});
 
     recomp::start(config);
+    std::fprintf(stderr, "[wr64] recomp::start returned -- runtime shut down\n");
+    std::fflush(stderr);
 
     wr64::shutdown_platform();
     return 0;
@@ -201,6 +209,8 @@ int run(int argc, char** argv, const char* rom_path) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    wr64::install_crash_handler();
+
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;
