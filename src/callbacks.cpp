@@ -433,21 +433,30 @@ RspExitReason rsp_unknown_ucode(uint8_t* rdram, uint32_t ucode_addr) {
 // the same finished frame. A wrong microcode load address produced exactly that
 // during phase 05; the watchdog makes the next one announce itself.
 //
-// The net is for a defect that is characterised but not yet fixed. Roughly one
-// run in three, during heavy audio, a command writes 64 bytes over DMEM
-// 0x000..0x040 -- the microcode's constant pool, which holds the sixteen-entry
-// command jump table at 0x10. Every entry comes back as its correct value
-// scaled by slightly less than one, with the ratio varying smoothly across the
-// table, which is the signature of an envelope mixer reading and writing a
-// buffer that is not where it should be. The next command to dispatch then
-// jumps to a corrupted address and the microcode returns UnhandledJumpTarget.
+// The net is for a defect that is characterised but not fixed.
 //
-// librecomp treats that as fatal: it asserts, and the RSP task thread dies with
-// it, which stops the game exactly as a hang would. But DMEM is reloaded from
-// RDRAM before every task, so the damage does not outlive the task that caused
-// it -- the RDRAM copy of the table has been confirmed intact throughout. So
-// reporting the task complete costs one frame of audio, a click, instead of the
-// run. It is a net, not a fix, and it says so every time it catches something.
+// Every 30 seconds or so of play, a vector store walks off the end of DMEM. The
+// game's audio memory map gives each of its four channel buffers exactly 160
+// samples and puts the last one flush against 0xF80; the offending store was
+// caught stepping 0xFF0, 0x1000, 0x1010, 0x1020, 0x1030. DMEM is 4KB, so
+// everything from 0x1000 wraps to 0x000 -- onto the microcode's constant pool,
+// which holds the sixteen-entry command jump table at 0x10. The next command
+// dispatched then jumps to a corrupted address.
+//
+// The corrupted entries are always their correct value plus or minus something
+// under 32, in both directions, which makes it a read-modify-write -- a mix --
+// rather than a scale. The mixer loop itself was checked instruction by
+// instruction against the cartridge and is faithful, and the game's own audio
+// parameters cap a per-update chunk at 144 samples against the 160 the layout
+// allows, so the ordinary synthesis path cannot be what overruns.
+//
+// librecomp treats the resulting bad dispatch as fatal: it asserts, and the RSP
+// task thread dies with it, stopping the game exactly as a hang would. DMEM is
+// reloaded from RDRAM before every task and the RDRAM copy of the table has
+// been confirmed intact throughout, so the damage never outlives the task that
+// caused it. Reporting the task complete therefore costs one frame of audio --
+// an audible click -- instead of the run. It is a net, not a fix, and it says
+// so on stderr every time it catches something.
 RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
     wr64::watch_for_hang("the audio microcode", 5);
     const RspExitReason reason = aspMain_run(rdram, ucode_addr);
@@ -456,7 +465,7 @@ RspExitReason asp_main_watched(uint8_t* rdram, uint32_t ucode_addr) {
     if (reason != RspExitReason::Broke) {
         static uint64_t dropped = 0;
         ++dropped;
-        if (dropped <= 3 || dropped % 100 == 0) {
+        if (dropped <= 40 || dropped % 100 == 0) {
             std::fprintf(stderr, "[wr64] audio frame dropped: the microcode did not reach"
                                  " its break (%llu so far). See src/callbacks.cpp.\n",
                          static_cast<unsigned long long>(dropped));

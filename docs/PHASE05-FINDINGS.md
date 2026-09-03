@@ -166,22 +166,44 @@ A 100-second run reaches attract mode with audio, completing 5,500 audio tasks
 and 1,875 graphics tasks with no unhandled jump targets and no hangs. The
 scheduler cycles normally through its three states.
 
-One defect is characterised but not fixed. Roughly one run in three, during
-heavy audio, something writes 64 bytes over DMEM 0x000..0x040 -- the microcode's
-constant pool, which holds the command jump table at 0x10. Every entry comes
-back as its correct value scaled by slightly less than one, with the ratio
-varying smoothly across the table, which is the signature of an envelope mixer
-reading and writing a buffer that is not where it should be. The next command
-dispatched then jumps to a corrupted address.
+One defect is characterised but not fixed. It fires roughly every 30 seconds of
+play -- more often than the "one run in three" an earlier draft of this document
+claimed, which was measuring a rate-limited counter rather than the fault.
 
-Established about it so far: the RDRAM copy of the table is never touched, so
-the corruption is inside DMEM and does not outlive the task that caused it,
-since DMEM is reloaded before every task; the written region is the low 64 bytes
-and nothing adjacent, which fits a buffer running past the end of DMEM and
-wrapping; and librecomp's vector stores mask addresses exactly as the hardware
-does, so the wrap itself is faithful and the address or length reaching it is
-not. The next step is to audit the envelope mixer handler's loop bound against
-the disassembly.
+A vector store walks off the end of DMEM. Instrumenting every vector store in
+librecomp's RSP caught it stepping `0xFF0`, `0x1000`, `0x1010`, `0x1020`,
+`0x1030`; DMEM is 4KB, so everything from `0x1000` wraps to `0x000`, onto the
+microcode's constant pool and the command jump table at `0x10`. The next command
+dispatched jumps to a corrupted address.
+
+What is established:
+
+- The game's audio memory map gives each of its four channel buffers exactly 160
+  samples, and puts the last one flush against `0xF80`. So anything writing past
+  `0xF80` wraps onto the table, and the layout leaves no slack at all.
+- The corrupted entries are always their correct value plus or minus something
+  under 32, **in both directions**. That makes it a read-modify-write -- a mix --
+  and rules out the scaling operation an earlier theory here assumed.
+- The mixer loop was compared instruction by instruction against the cartridge
+  and is faithful, including its software pipelining and its signed loop bound.
+- The game's own audio parameters, read live, are `target 544/frame,
+  ai buffer 528..560, 4 updates/frame, chunk 136 (128..144)`. A per-update chunk
+  is capped at 144 against the 160 the layout allows, so the ordinary synthesis
+  path cannot overrun -- and the reverb and final-interleave paths use hardcoded
+  `0x140`/`0x280` lengths that fit exactly.
+- librecomp's vector stores mask DMEM addresses exactly as the hardware does, so
+  the wrap is faithful; what reaches it is wrong, not how it is applied.
+
+So the overrunning command has not been identified. The parameter block the
+mixer reads held `in 0x5C0, out 0x5C0, count 0x200` at the moment of the store,
+which does not correspond to a write anywhere near `0xFF0` -- meaning the store
+came from a command that does not take its address from that block. That is the
+thread to pull next.
+
+Until then `asp_main_watched` reports the task complete instead of letting
+librecomp assert, which costs one frame of audio -- a click -- rather than the
+run. That is a net, not a fix, and it says so on stderr every time it catches
+something.
 
 Until then `asp_main_watched` reports the task complete instead of letting
 librecomp assert, which costs one frame of audio -- a click -- rather than the
