@@ -119,6 +119,64 @@ LONG WINAPI on_exception(EXCEPTION_POINTERS* info) {
 
 }  // namespace
 
+namespace {
+
+// Shared by the crash report and the lookup-miss report.
+void describe_address(const char* label, void* address) {
+    HANDLE process = GetCurrentProcess();
+    static bool symbols_ready = false;
+    if (!symbols_ready) {
+        SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+        symbols_ready = SymInitialize(process, nullptr, TRUE) != FALSE;
+    }
+    if (!symbols_ready) {
+        std::fprintf(stderr, "[wr64] %s %p\n", label, address);
+        return;
+    }
+
+    alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
+    SYMBOL_INFO* symbol = reinterpret_cast<SYMBOL_INFO*>(buffer);
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    symbol->MaxNameLen = MAX_SYM_NAME;
+
+    DWORD64 displacement = 0;
+    if (SymFromAddr(process, reinterpret_cast<DWORD64>(address), &displacement, symbol)) {
+        std::fprintf(stderr, "[wr64] %s %s + 0x%llX\n", label, symbol->Name,
+                     static_cast<unsigned long long>(displacement));
+    } else {
+        std::fprintf(stderr, "[wr64] %s %p (no symbol)\n", label, address);
+    }
+
+    IMAGEHLP_LINE64 line = {};
+    line.SizeOfStruct = sizeof(line);
+    DWORD line_displacement = 0;
+    if (SymGetLineFromAddr64(process, reinterpret_cast<DWORD64>(address),
+                             &line_displacement, &line)) {
+        std::fprintf(stderr, "[wr64]     at %s:%lu\n", line.FileName, line.LineNumber);
+    }
+}
+
+}  // namespace
+
+// Called by librecomp's get_function when an address lookup fails. See
+// tools/patch_librecomp.py for why that call site exists.
+//
+// The address alone was never enough: it does not say which function asked, and
+// with 49 threads running it does not say which thread. Both matter here,
+// because the frame loop is spread across threads and reasoning about "the next
+// iteration" from the disassembly has already proved unreliable.
+extern "C" void wr64_report_lookup_miss(unsigned int addr, void* return_address) {
+    static long misses = 0;
+    const long index = InterlockedIncrement(&misses);
+
+    std::fprintf(stderr, "\n[wr64] ==== LOOKUP MISS #%ld ====\n", index);
+    std::fprintf(stderr, "[wr64] no function registered at 0x%08X\n", addr);
+    std::fprintf(stderr, "[wr64] thread %lu\n", GetCurrentThreadId());
+    describe_address("called from", return_address);
+    std::fprintf(stderr, "[wr64] ==========================\n");
+    std::fflush(stderr);
+}
+
 namespace wr64 {
 
 void install_crash_handler() {

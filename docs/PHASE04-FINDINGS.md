@@ -521,3 +521,81 @@ The next thing to establish is what runs between `func_80092CF0` returning and
 the crash, given that `func_800922E4` -- the only caller of that address -- sits
 at the top of the following iteration. Either something else reaches the overlay
 window, or the iteration boundary is not where the loop structure suggests.
+
+---
+
+# Phase 04 gate met: the game runs
+
+The attract-mode demo renders: water, jet ski and rider, crowd, trackside
+banners, and a live HUD reading TIME, RANK, LAP and SPEED. Overlays load and
+dispatch, and the process runs indefinitely.
+
+Getting the last stretch took two corrections to my own reasoning, both worth
+recording because each produced a confident and wrong conclusion.
+
+## I was watching the wrong address
+
+`gGameState` is at **0x800DAB24**, not 0x800EAB24.
+
+```
+801EB180: lui   $v0, %hi(gGameState)     ; 0x800E
+801EB184: addiu $v0, $v0, %lo(gGameState) ; 0xAB24
+```
+
+`0xAB24` has its top bit set, so `addiu` sign-extends it to -0x54DC:
+`0x800E0000 - 0x54DC = 0x800DAB24`. Reading the two halves as a concatenation
+gives 0x800EAB24, which is a real, writable, entirely unrelated address. Every
+watch of it read 0 and never changed, and that produced several turns of
+increasingly elaborate theory about a state machine that was never stuck.
+
+The decomp's own symbol list says so plainly: `gGameState = 0x800DAB24`. It
+should have been the first thing checked.
+
+Watched correctly, the state advances immediately:
+
+```
+func_80092CF0        #1: gGameState = 0
+unk_game_load        #1: gGameState = 2
+GameLoad_LoadOverlay #1: gGameState = 2
+func_80092CF0        #2: gGameState = 2   -> calls the overlay
+```
+
+## The hook was installed and then overwritten
+
+With the state correct, `GameLoad_LoadOverlay` ran with state 2, took entry 1 of
+`jtbl_800EB320` (`.L80098254`, which sets `$v0 = 1` and selects the `ovl_i0`
+table entry), and issued its DMA -- and still nothing was announced.
+
+`osPiStartDma` is a reimplemented libultra function, so it appears in *both*
+registration tables: the runtime-provided list and the resident section list.
+The hook went in with the first, and the resident pass overwrote it with the raw
+implementation moments later. Registering it last fixes it, and the transfers
+appear immediately -- including the audio banks:
+
+```
+[wr64-dma] #1 rom 0x7AE8B0 -> ram 0x80153978   MusicData
+[wr64-dma] #3 rom 0x40B530 -> ram 0x80153978   SoundDataADSR
+[wr64-dma] #5 rom 0x428C30 -> ram 0x80003240   SoundDataRaw
+[wr64-dma] #7 rom 0x7C4B70 -> ram 0x80003390   BankSetsData
+```
+
+## Logging misses properly is what found both
+
+`get_function` printed only the address it could not find, then asserted and
+exited -- and an exit is not an exception, so the crash handler never saw it.
+`tools/patch_librecomp.py` routes the miss through a hook that reports the
+calling function, source line and thread.
+
+The first report contradicted a claim made two commits earlier:
+
+```
+[wr64] no function registered at 0x802C5800
+[wr64] thread 16316
+[wr64] called from func_80092CF0 + 0x7B1
+[wr64]     at RecompiledFuncs/funcs_18.c:1789
+```
+
+The caller was `func_80092CF0`, not `func_800922E4`. The earlier claim that
+`func_800922E4` was "the single caller" came from a search piped through `head`,
+whose truncated output was read as the whole answer. There are 19 call sites
+across both functions -- 14 and 5.

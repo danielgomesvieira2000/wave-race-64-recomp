@@ -59,15 +59,13 @@ void register_runtime_functions() {
     // init_overlays() begins with func_map.clear(), so anything registered
     // before it is silently discarded. librecomp calls init_overlays() well
     // before it calls on_init_callback.
+    uint32_t pi_start_dma_addr = 0;
     for (const auto& entry : runtime_provided_funcs) {
-        // osPiStartDma is redirected through our wrapper, which announces the
-        // transfer to the runtime before returning. Every DMA the game makes
-        // passes through here, including the overlay loads that bypass
-        // game_dma_copy entirely. See patches/dma.cpp.
-        recomp_func_t* func = (entry.func == osPiStartDma_recomp)
-                                  ? pi_start_dma_hook
-                                  : entry.func;
-        recomp::overlays::add_loaded_function(static_cast<int32_t>(entry.ram_addr), func);
+        if (entry.func == osPiStartDma_recomp) {
+            pi_start_dma_addr = entry.ram_addr;
+        }
+        recomp::overlays::add_loaded_function(static_cast<int32_t>(entry.ram_addr),
+                                              entry.func);
     }
 
     // Register every function of every non-overlay section.
@@ -109,10 +107,26 @@ void register_runtime_functions() {
         }
     }
 
+    // Redirect osPiStartDma through our wrapper, which announces each transfer
+    // to the runtime. Every DMA the game makes passes through it, including the
+    // overlay loads that bypass game_dma_copy entirely -- see patches/dma.cpp.
+    //
+    // This must come last. osPiStartDma is a reimplemented libultra function,
+    // so it appears in both tables above, and the resident pass would otherwise
+    // overwrite the hook with the raw implementation. That is exactly what was
+    // happening: GameLoad_LoadOverlay ran, issued its DMA, and nothing was ever
+    // announced, because the hook had been quietly replaced moments after it
+    // was installed.
+    if (pi_start_dma_addr != 0) {
+        recomp::overlays::add_loaded_function(static_cast<int32_t>(pi_start_dma_addr),
+                                              pi_start_dma_hook);
+    }
+
     std::fprintf(stderr,
-                 "[wr64] registered %zu runtime-provided and %zu resident functions\n",
+                 "[wr64] registered %zu runtime-provided and %zu resident functions"
+                 " (PI DMA hook at 0x%08X)\n",
                  sizeof(runtime_provided_funcs) / sizeof(runtime_provided_funcs[0]),
-                 registered);
+                 registered, pi_start_dma_addr);
     std::fflush(stderr);
 }
 
