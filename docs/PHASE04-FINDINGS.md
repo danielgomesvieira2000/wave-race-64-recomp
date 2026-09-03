@@ -331,3 +331,57 @@ and `unk_game_load` is unexamined -- is meant to have loaded it already.
 
 That is the next thing to determine, and it is a question about the game's
 startup sequence rather than about the recompilation.
+
+## What unk_game_load does, and who really calls the overlay
+
+`unk_game_load` is a 630-instruction dispatcher on `gGameState`, jump-tabling
+through `jtbl_800EB150` over 72 entries. It stages what the next state needs --
+course data, asset pointers -- and returns whether an overlay load is required.
+`SysMain_Thread` uses that return to gate `GameLoad_LoadOverlay`:
+
+```
+80047290: jal  unk_game_load
+8004729C: beqz $v0, .L800472AC     ; skip the load if nothing was requested
+800472A4: jal  GameLoad_LoadOverlay
+```
+
+So it is not itself a loader; it decides whether loading is needed.
+
+The call that fails is not in the renderer at all. Searching the generated code
+for the address shows a single caller:
+
+```
+LOOKUP_FUNC(0x802C5800)  ->  func_800922E4
+```
+
+which runs *before* `func_80092CF0` in the loop, at `0x800471E0`. It is the
+per-frame update: controllers, then a state machine. Its overlay calls are
+guarded on `D_801CE638`, a screen-state variable:
+
+```
+80092424: lw   $v0, %lo(D_801CE638)($v0)
+8009242C: addiu $at, $zero, 0x1
+80092434: bnel $v0, $at, ...        ; == 1  -> overlay
+80092470: bnel $v0, $at, ...        ; == 8  -> overlay
+8009248C: bne  $v0, $at, ...        ; == 0x15 -> overlay
+```
+
+## The actual problem: gGameState never leaves 0
+
+Tracing both variables gives the shape of it. `gGameState` reads 0 on every
+iteration, while `D_801CE638` moves -- it was 0x11 on the first update and 0 on
+the second.
+
+That combination is the bug. `GameLoad_LoadOverlay` indexes its table by
+`gGameState - 1` and checks the result unsigned against 0x66, so **state 0 loads
+nothing at all** -- deliberately, since 0 is not a state with an overlay. The
+screen state meanwhile advances to one whose handler *is* in an overlay, and
+calls it. On hardware that never happens, because `gGameState` would have moved
+first and the overlay would have been loaded on the way.
+
+So the remaining question is not about overlays or dispatch, both of which now
+work. It is why the boot sequence never advances `gGameState` past 0. The
+stubbed audio and RSP microcode are the obvious suspects: if the game waits on
+something audio-related before advancing, a silent stub that reports success
+without doing the work would hold it at state 0 indefinitely while the rest of
+the frame loop keeps running -- which is exactly the behaviour observed.
