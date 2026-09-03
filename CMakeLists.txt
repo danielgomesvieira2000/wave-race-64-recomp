@@ -111,6 +111,25 @@ target_include_directories(WaveRace64Recomp PRIVATE
 if(WR64_WITH_RUNTIME)
     target_link_libraries(WaveRace64Recomp PRIVATE rt64 ultramodern librecomp)
     target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_RUNTIME=1)
+
+    if(WIN32)
+        # RT64 vendors SDL2 for Windows and points at it with link_directories(),
+        # which is directory-scoped: it applies to targets declared inside RT64's
+        # own CMakeLists but not to ours. The library *names* propagate to us
+        # through target_link_libraries, so the link asks for SDL2.lib without
+        # knowing where it lives. Supply the search path rather than patching the
+        # submodule.
+        set(WR64_SDL2_DIR
+            "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3")
+        target_link_directories(WaveRace64Recomp PRIVATE "${WR64_SDL2_DIR}/lib/x64")
+
+        # SDL2 is a DLL here, so it has to sit beside the executable to run.
+        add_custom_command(TARGET WaveRace64Recomp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${WR64_SDL2_DIR}/lib/x64/SDL2.dll"
+                    "$<TARGET_FILE_DIR:WaveRace64Recomp>"
+            COMMENT "Copying SDL2.dll next to the executable")
+    endif()
 endif()
 
 if(WR64_WITH_RECOMPILED)

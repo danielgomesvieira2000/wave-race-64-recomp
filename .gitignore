@@ -29,8 +29,9 @@ data_dump.toml
 /expected/
 /context/
 
-# Build
-/build/
+# Build. Any build*/ directory: the runtime stack is configured into
+# build-rt/ with a different compiler than the phase 00 tree in build/.
+/build*/
 /out/
 CMakeCache.txt
 CMakeFiles/

@@ -115,3 +115,22 @@ Do not "fix" this by editing the submodules.
 
 `winget install LLVM.LLVM` installs to `C:\Program Files\LLVM\bin` without
 registering it. Add that directory to your user PATH.
+
+## Building with the runtime (phase 03 onward)
+
+Use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`:
+
+```
+cmake -B build-rt -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON
+cmake --build build-rt
+```
+
+RT64 decides its warning flags from `CMAKE_CXX_SIMULATE_ID`: a Clang targeting
+the MSVC ABI gets `/W4`, on the assumption that such a Clang is `clang-cl`. That
+assumption is wrong for `clang++`, which targets the same ABI through the GNU
+driver and rejects `/W4` outright, so the whole of RT64 fails to compile. Using
+the driver RT64 expects is simpler than patching the submodule.
+
+Changing compiler invalidates the CMake cache, and the options do not survive
+it. Delete the build directory when switching rather than reconfiguring in
+place, or the build will silently come back with the runtime switched off.
