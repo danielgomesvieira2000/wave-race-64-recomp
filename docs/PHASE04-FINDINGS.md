@@ -446,3 +446,40 @@ be resident already. The most likely answer is that an earlier transition, which
 would have loaded it, is being skipped -- `func_801ECAF4` is the branch not
 taken here, and `func_80093104` decides between them. Determining what
 `func_80093104` is testing is the next step.
+
+## func_80093104 is the Controller Pak check
+
+It tests, in order: an enable flag, the controller's status bit, whether START
+is held (`andi $t2, 0x1000`), and then the Pak itself:
+
+```
+800931A0: jal osPfsIsPlug      ; non-zero -> return 0
+800931C4: jal osPfsInit        ; non-zero -> return 0
+800931E8: jal osPfsNumFiles
+80093220: jal osPfsFileState   ; sixteen times
+80093244: jal osPfsFreeBlocks
+80093260: addiu $v0, $zero, 0x1
+```
+
+It returns 1 only when a Controller Pak is present and readable, and 0 at the
+first sign it is not.
+
+This is worth recording because it exercises the stubs written in phase 03, and
+they behave correctly. `src/libultra_stubs.cpp` answers `osPfsIsPlug` with
+`PFS_ERR_NOPACK`, so the function returns 0, and the caller's `beqz $v0` takes
+the branch to `func_801EB180`, which sets `gGameState = 2`. That is exactly what
+hardware does with no Pak inserted -- the game skips the save-data path and
+carries on booting. The Controller Pak stubs were the right call and are not
+implicated.
+
+So three candidate explanations have now been eliminated with evidence rather
+than argument: the boot sequence is not stuck, the audio and RSP stubs are not
+holding it, and the Controller Pak stubs behave as hardware would.
+
+What remains is narrow. `gGameState` reaches 2, `unk_game_load` dispatches on it
+through `jtbl_800EB150` at index `state - 1`, and returns 0 -- so no overlay load
+is requested -- while `func_800922E4` goes on to call one. Either entry 1 of that
+jump table genuinely requests no load and the overlay is expected to be resident
+from earlier, or the state should not be 2 at this point. Reading that single
+jump table entry is the next step, and it is a much smaller question than the one
+this phase started with.
