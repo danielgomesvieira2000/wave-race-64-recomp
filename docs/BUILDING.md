@@ -118,6 +118,13 @@ registering it. Add that directory to your user PATH.
 
 ## Building with the runtime (phase 03 onward)
 
+Apply the project's patch to RT64 first (see *The game's own black borders*
+below for what it does and why it is a script):
+
+```
+python tools/patch_rt64.py
+```
+
 Use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`:
 
 ```
@@ -279,7 +286,43 @@ into from the swap chain's dimensions, and the window was being created at a
 whole multiple of 320x240 -- a 4:3 swap chain, into which "Expand" expands
 nothing. The menu said Expand and the game stayed 4:3.
 
-**HUD Placement** is set to Original rather than the library's Expand. Expand
-spreads the readouts to the edges of the widened frame, which in this game
-pushes the speed readout off the right-hand side. The frustum is still widened;
-this only decides where the 2D overlay sits inside it.
+### The game's own black borders
+
+Wave Race 64 never draws to its whole 320x240 framebuffer. Every frame --
+title, attract, menus, racing -- is drawn inside the region from (8, 20) to
+(311, 219), a 303x199 window with black borders around it that a CRT's overscan
+was meant to hide. Nothing hides them on a modern display: presented as-is
+they are a black bar across the top tenth of the picture and, once the frame is
+widened, forty pixels down each side. The values are the scissor the game sets,
+read from RT64 during the title screen, the attract sequence and a championship
+race; all three agree (`include/wr64/display.h`).
+
+Two things in RT64 go wrong because of that region, and `tools/patch_rt64.py`
+patches both. **Run it before configuring** -- it is scripted because it
+patches a submodule, and a submodule update would revert it silently:
+
+```
+python tools/patch_rt64.py
+```
+
+**The frame was treated as "not 4:3" and its HUD stretched.** RT64 widens the
+3D frustum for widescreen but keeps 2D content at its original shape in the
+middle of the frame. It decides whether a framebuffer is the game's main 4:3
+frame by comparing the scissor's shape to 4:3, within 10%; 303x199 is 1.52,
+14% off, so every HUD element was stretched across the widened frame instead,
+and the speed readout ended up at the far right edge and cut off. The patch
+also accepts a scissor covering three quarters of the framebuffer's width and
+height as the main frame, whatever its shape.
+
+**The borders were presented as black bars.** The final blit mapped the whole
+framebuffer to the window. The patch lets the port name the region the game
+draws into (`wr64::display::crop_to_content()`, called as the window is
+created), and the blit then scales that region to fit the window instead.
+Vertically it fits exactly; horizontally the widened frame has more picture
+than the region, and the window shows as much of it as its shape allows -- the
+frame a wider CRT would have shown, with nothing black around it. The HUD sits
+at 4:3 inside that, where the cartridge put it.
+
+**HUD Placement** in the Graphics tab does nothing for this game. It moves 2D
+content that names an edge through RT64's extended GBI, and the cartridge
+predates that.

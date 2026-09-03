@@ -6,6 +6,7 @@ user supplies; nothing here contains game data.
 | Script | Phase | Purpose |
 |---|---|---|
 | `check_toolchain.ps1` | 00 | Reports which build tools are present on Windows. |
+| `patch_rt64.py` | 06 | Patches RT64 so this game's inset frame is kept at 4:3 for the HUD and presented without its black borders. Idempotent; rerun after a submodule update. |
 | `splat_to_syms.py` | 01 | *(planned)* Convert splat output into an N64Recomp symbol table, applying size corrections and libultra renames. |
 | `jal_scan.py` | 01 | *(planned)* Scan `.text` for JAL targets splat did not classify as functions. |
 | `fix_zero_loads.py` | 02 | *(planned)* Strip assignments to `$zero` from recompiler output. |

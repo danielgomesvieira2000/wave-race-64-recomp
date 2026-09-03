@@ -35,6 +35,7 @@
 #   include "wr64/frontend.h"
 #   include <recompinput/input_events.h>
 #endif
+#include "wr64/display.h"
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
 
@@ -624,6 +625,10 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     // the UI measures and draws into the same one the game does.
     wr64::frontend::publish_window(g_window);
 #endif
+
+    // Present the region the game draws into, not the framebuffer's borders.
+    // The renderer does not exist yet; this only sets what it will read.
+    wr64::display::crop_to_content();
 
 #if defined(_WIN32)
     SDL_SysWMinfo wm_info;

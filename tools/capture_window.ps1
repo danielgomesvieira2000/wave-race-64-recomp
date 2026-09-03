@@ -20,6 +20,17 @@ param(
     [double]$StartDelaySeconds = 0.0
 )
 
+# Capture in physical pixels. Without this, on a display running at a scale
+# other than 100% (a 1920x1080 panel at 125% reports itself as 1536x864), the
+# capture is the top-left 1536x864 *physical* pixels of the screen -- a crop
+# that looks like the picture is zoomed in on its top-left corner. Days were
+# nearly lost to that.
+Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public static class Dpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
+"@
+[void][Dpi]::SetProcessDPIAware()
+
 Add-Type -AssemblyName System.Drawing
 
 # The window is found by enumerating top-level windows rather than with

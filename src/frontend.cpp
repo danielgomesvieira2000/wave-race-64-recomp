@@ -152,25 +152,17 @@ void init() {
     // Both copies are set. recompui owns the value the menu shows, ultramodern
     // owns the one the renderer reads, and the graphics tab syncs the two on
     // change; setting only one leaves the menu and the window disagreeing.
+    //
+    // HUD Placement is left at the library's default. It only moves 2D content
+    // that names an edge through RT64's extended GBI, and this game predates
+    // that; its HUD is kept at 4:3 in the middle of the frame regardless.
     if (!std::filesystem::exists(config_directory() / "graphics.json")) {
         recompui::config::get_graphics_config().set_option_value(
             recompui::config::graphics::options::wm_option,
             static_cast<uint32_t>(ultramodern::renderer::WindowMode::Fullscreen));
 
-        // The HUD stays where the cartridge put it, in the middle 4:3 of the
-        // screen. The library defaults it to Expand, which spreads the readouts
-        // to the edges of a widened frame -- and in this game that pushes the
-        // speed readout off the right-hand side entirely. Keeping it Original is
-        // both correct-looking and the setting that does not lose information.
-        // The frustum is still widened; this is only about where the 2D overlay
-        // sits inside it.
-        recompui::config::get_graphics_config().set_option_value(
-            recompui::config::graphics::options::hr_option,
-            static_cast<uint32_t>(ultramodern::renderer::HUDRatioMode::Original));
-
         ultramodern::renderer::GraphicsConfig gfx = ultramodern::renderer::get_graphics_config();
         gfx.wm_option = ultramodern::renderer::WindowMode::Fullscreen;
-        gfx.hr_option = ultramodern::renderer::HUDRatioMode::Original;
         ultramodern::renderer::set_graphics_config(gfx);
 
         std::fprintf(stderr, "[wr64] no saved graphics settings; defaulting to fullscreen at the display\'s size\n");
