@@ -1,8 +1,15 @@
 # Phase 04: boot bring-up
 
-In progress. The game runs, creates its threads, and submits its first display
-list, which RT64 processes and returns from. It then faults on a null pointer in
-the graphics code.
+**The game boots and renders.** The Nintendo 64 logo appears, correctly shaded
+and animated, drawn by RT64 from the cartridge's own display lists. The process
+runs indefinitely instead of crashing: 45 threads, a steady frame loop, and a
+window titled "Wave Race 64: Recompiled".
+
+Neither existing public port reaches this. One shows "two boxes of noise"; the
+other has never been launched.
+
+The sections below record how it got there, starting from the crash that was
+blocking it.
 
 ## Where it gets to
 
@@ -96,3 +103,64 @@ OSTask's display list pointer to RT64 unmasked. RT64 indexes straight off the
 RDRAM base, so `0x801388D0` indexed two gigabytes past an 8 MB allocation.
 `physical()` strips the segment bits. This was not the cause of the current
 crash, but it was a real bug on the same path.
+
+---
+
+# The null pointer, solved
+
+The cause was the phase 02 stub, and the chain is exact rather than inferred.
+In `SysMain_Thread`:
+
+```
+800471FC: jal func_80092CF0
+80047200:   lw $a0, %lo(gDisplayListHead)($a0)   ; delay slot: head passed in
+80047208: jal SysMain_GfxFullSync
+8004720C:   sw $v0, %lo(gDisplayListHead)($at)   ; delay slot: return stored back
+```
+
+`func_80092CF0` takes the display list head, appends what the resident overlay
+draws, and returns the advanced pointer -- which is written straight back into
+`gDisplayListHead`. Phase 02 stubbed it, because it `jal`s into the overlay
+window and cannot be resolved statically. An empty stub never sets `v0`, so the
+head became null and the next `SysMain_GfxFullSync` wrote through it.
+
+Watching the value across calls showed it precisely:
+
+```
+GfxInitBuffers #1: [0x80151944] = 0x00000000   (before it initialises)
+GfxFullSync    #1: [0x80151944] = 0x80138928   valid
+CreateGfxTask  #1: [0x80151944] = 0x80138938   valid
+GfxInitBuffers #2: [0x80151944] = 0x80138938   valid
+GfxFullSync    #2: [0x80151944] = 0x00000000   <- nulled in between
+```
+
+`patches/overlay_dispatch.cpp` now defines `func_80092CF0` to return its
+argument unchanged: nothing is drawn, the pointer stays valid, the frame
+completes. **That is an interim, not the fix** -- everything those 20 overlay
+entry points draw is still missing, which is why the logo appears but nothing
+beyond it will.
+
+## `ignored`, not `stubs`, for a patched function
+
+`RECOMP_FUNC` is `extern inline __attribute__((weak, noinline))` under Clang --
+and clang-cl takes that branch, because the MSVC branch is guarded on
+`!defined(__clang__)`. A strong definition should therefore win.
+
+On PE/COFF it does not, if the function was stubbed. The stub is emitted into
+the recompiled library, and the archive member holding it gets pulled in for the
+*other* functions sharing its object file, so both definitions reach the link
+and lld-link reports a duplicate symbol.
+
+Moving the function from `stubs` to `ignored` fixes it properly: `ignored`
+emits nothing at all, leaving the patch as the only definition. Its callers
+still need a declaration, so `tools/gen_reimplemented_decls.py` now also
+declares whatever `recomp/wr64.toml` marks `ignored`.
+
+## Tooling
+
+`tools/instrument_funcs.py` inserts a one-shot `printf` at the entry of named
+recompiled functions, or with `NAME@0xADDR` prints an RDRAM word on every call.
+Order alone answers "did it run"; a watched value answers "and did it stay
+valid", which is the question once an initialiser is known to have run before
+its user. It edits generated code, which is safe only because re-running the
+recompiler erases the edits.

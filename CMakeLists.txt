@@ -106,6 +106,10 @@ set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 # overlays.cpp cannot even compile without recomp_overlays.inl.
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp)
+    # Patches replacing recompiled functions. RECOMP_FUNC is weak under Clang,
+    # so these strong definitions win at link time without regenerating anything.
+    file(GLOB WR64_PATCH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/*.cpp")
+    list(APPEND WR64_SOURCES ${WR64_PATCH_SOURCES})
 endif()
 
 add_executable(WaveRace64Recomp ${WR64_SOURCES})
@@ -196,4 +200,5 @@ message(STATUS "  compiler          ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILE
 message(STATUS "  runtime + RT64    ${WR64_WITH_RUNTIME}")
 message(STATUS "  recompiled code   ${WR64_WITH_RECOMPILED}")
 message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILER}")
+
 

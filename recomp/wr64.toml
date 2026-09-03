@@ -58,9 +58,14 @@ relocatable_sections_path = "overlays.txt"
 # RECOMP_PATCH functions that dispatch through the runtime's overlay lookup.
 #
 # Found by tools/jal_scan.py; see docs/PHASE02-FINDINGS.md.
+# func_80092CF0 is NOT here: it is in `ignored` below, because patches/ now
+# provides a real definition. Stubbing emits an empty body into the recompiled
+# library, and a patch defining the same symbol then collides -- RECOMP_FUNC is
+# weak, but on PE/COFF the archive member is pulled in for the other functions
+# sharing its object file, so both definitions reach the link and lld-link
+# reports a duplicate. `ignored` emits nothing, leaving the field clear.
 stubs = [
-    "func_80092CF0",   # 20 overlay targets -- the dispatcher
-    "func_800922E4",   #  3 overlay targets
+    "func_800922E4",   #  3 overlay targets; its return value is unused
     "PauseMenu_Update" #  1 overlay target, 0x802C744C in ovl_i1
 ]
 
@@ -81,5 +86,9 @@ stubs = [
 # This one is not in that list because splat invented the name, so it has to be
 # dropped by hand. Nothing is lost -- the runtime provides the whole routine.
 ignored = [
-    "func_800CB0A8"
+    "func_800CB0A8",
+    # The overlay dispatcher. patches/overlay_dispatch.cpp defines it; see there
+    # for why an empty stub nulled gDisplayListHead and crashed the graphics
+    # code.
+    "func_80092CF0"
 ]
