@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+﻿cmake_minimum_required(VERSION 3.20)
 
 project(WaveRace64Recomp
     DESCRIPTION "Native PC port of Wave Race 64 via static recompilation"
@@ -100,10 +100,15 @@ endif()
 # ---------------------------------------------------------------------------
 #  The port itself
 # ---------------------------------------------------------------------------
-add_executable(WaveRace64Recomp
-    src/main.cpp
-    src/rom.cpp
-)
+set(WR64_SOURCES src/main.cpp src/rom.cpp)
+
+# The harness only makes sense with both the runtime and the generated code, and
+# overlays.cpp cannot even compile without recomp_overlays.inl.
+if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
+    list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp)
+endif()
+
+add_executable(WaveRace64Recomp ${WR64_SOURCES})
 
 target_include_directories(WaveRace64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -112,7 +117,37 @@ if(WR64_WITH_RUNTIME)
     target_link_libraries(WaveRace64Recomp PRIVATE rt64 ultramodern librecomp)
     target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_RUNTIME=1)
 
+    # RT64 declares its definitions, include paths and link paths with the
+    # directory-scoped add_compile_definitions/include_directories/
+    # link_directories, none of which reach a target declared outside its
+    # CMakeLists. Since src/renderer.cpp includes RT64 headers directly, all
+    # three have to be repeated here. hlsl++ will not parse without HLSL_CPU,
+    # and the Windows headers need NOMINMAX.
+    target_compile_definitions(WaveRace64Recomp PRIVATE
+        HLSL_CPU
+        FFX_GCC
+        IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+        NOMINMAX
+        __PRFCHWINTRIN_H)
+
+    target_include_directories(WaveRace64Recomp PRIVATE
+        "${WR64_LIB_DIR}/RT64/src"
+        "${WR64_LIB_DIR}/RT64/src/contrib"
+        "${WR64_LIB_DIR}/RT64/src/contrib/plume"
+        "${WR64_LIB_DIR}/RT64/src/contrib/imgui"
+        "${WR64_LIB_DIR}/RT64/src/contrib/hlslpp/include"
+        "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-core/src/api"
+        "${WR64_LIB_DIR}/RT64/src/contrib/nativefiledialog-extended/src/include"
+        "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include"
+        "${WR64_LIB_DIR}/N64ModernRuntime/N64Recomp/include"
+        "${WR64_LIB_DIR}/N64ModernRuntime/librecomp/include"
+        "${WR64_LIB_DIR}/N64ModernRuntime/ultramodern/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs")
+
     if(WIN32)
+        target_include_directories(WaveRace64Recomp PRIVATE
+            "${WR64_LIB_DIR}/RT64/src/contrib/dxc/inc")
+
         # RT64 vendors SDL2 for Windows and points at it with link_directories(),
         # which is directory-scoped: it applies to targets declared inside RT64's
         # own CMakeLists but not to ours. The library *names* propagate to us
@@ -123,12 +158,18 @@ if(WR64_WITH_RUNTIME)
             "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3")
         target_link_directories(WaveRace64Recomp PRIVATE "${WR64_SDL2_DIR}/lib/x64")
 
-        # SDL2 is a DLL here, so it has to sit beside the executable to run.
+        # Runtime DLLs have to sit beside the executable or it will not start at
+        # all -- Windows reports only 0xC0000135 with no clue which one is
+        # missing. SDL2 is linked directly; dxcompiler and dxil are loaded by
+        # RT64 to compile shaders. RT64 does copy the latter two, but into its
+        # own binary directory rather than ours.
         add_custom_command(TARGET WaveRace64Recomp POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${WR64_SDL2_DIR}/lib/x64/SDL2.dll"
+                    "${WR64_LIB_DIR}/RT64/src/contrib/dxc/bin/x64/dxcompiler.dll"
+                    "${WR64_LIB_DIR}/RT64/src/contrib/dxc/bin/x64/dxil.dll"
                     "$<TARGET_FILE_DIR:WaveRace64Recomp>"
-            COMMENT "Copying SDL2.dll next to the executable")
+            COMMENT "Copying SDL2, dxcompiler and dxil next to the executable")
     endif()
 endif()
 
