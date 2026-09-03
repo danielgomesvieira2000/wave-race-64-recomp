@@ -27,6 +27,8 @@ void shutdown_platform();
 
 // Defined in src/overlays.cpp, which owns the generated section tables.
 void register_overlays();
+// Must run from the game's on_init hook: init_overlays() clears the map.
+void register_runtime_functions();
 size_t overlay_section_count();
 size_t code_section_count();
 

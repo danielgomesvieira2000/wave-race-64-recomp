@@ -164,3 +164,96 @@ Order alone answers "did it run"; a watched value answers "and did it stay
 valid", which is the question once an initialiser is known to have run before
 its user. It edits generated code, which is safe only because re-running the
 recompiler erases the edits.
+
+---
+
+# Real overlay dispatch
+
+The interim patch is gone. All three functions stubbed in phase 02 --
+`func_80092CF0`, `func_800922E4` and `PauseMenu_Update` -- are now recompiled
+properly, and their calls into overlays resolve at runtime.
+
+## What func_80092CF0 actually is
+
+Reading it settled the approach. It is the game-state renderer dispatcher: it
+appends a display list command, then jump-tables on `gGameState` through
+`jtbl_800EAFA8`, 104 entries wide, and each case calls the draw function for
+that state -- many of them directly into overlays:
+
+```
+80092D60: sltiu $at, $t7, 0x68        ; gGameState < 104
+80092D74: lw    $t7, %lo(jtbl_800EAFA8)($at)
+80092D78: jr    $t7
+...
+80092DC0: jal   func_802C5BA4          ; straight into the overlay window
+```
+
+Hand-transcribing a 302-instruction dispatcher with a 104-entry jump table --
+and its two companions -- would have been far more code than the alternative,
+and far more to get subtly wrong.
+
+## Exposing the option the tool already had
+
+`Context::use_lookup_for_all_function_calls` makes every call resolve by address
+against whatever is currently loaded, which is exactly the semantics an overlay
+needs. The field and the code path in `resolve_jal` both exist; there is simply
+no config key for it, here or upstream, so the CLI can never set one.
+
+`tools/patch_n64recomp.py` adds the key -- three insertions following the
+pattern `trace_mode` already establishes. It is scripted and idempotent because
+it patches a submodule: a submodule update would otherwise revert it silently
+and the port would stop building for no visible reason.
+
+## Turning it on breaks two assumptions
+
+Both are the same shape: things that never needed an address before suddenly do.
+
+**Runtime-provided libultra functions.** N64Recomp renames them to
+`<name>_recomp` and never puts them in a section table, because with direct
+calls nothing looked them up. The first call failed with `Failed to find
+function at 0x800C6300` -- `osDpSetStatus`, which librecomp does implement.
+`tools/gen_runtime_func_table.py` pairs each with the address it had on the
+cartridge; 73 are registered.
+
+The list comes from scanning librecomp and our own sources for actual
+`<name>_recomp` *definitions*, not from N64Recomp's 440 names. Declaring an
+unused function is free; taking its address forces the linker to find a
+definition, and most of those names have none here.
+
+**Resident sections.** `init_overlays()` does not populate the function map at
+all -- it only records where sections live. Functions are added by
+`load_overlay()` when the game DMAs a section in, which is sufficient when only
+overlays are looked up by address. With every call a lookup, `main_segment` and
+`codeseg` are never registered, because they are never loaded through PI DMA.
+All 1,088 of their functions are now registered up front.
+
+Two ordering traps here, both of which produce silence rather than an error:
+
+- This must run from the game's `on_init` hook. `init_overlays()` begins with
+  `func_map.clear()`, so anything registered before it is discarded, and
+  librecomp calls it long before `on_init_callback`.
+- A section is identified as an overlay by its **address being shared**, not by
+  consulting `overlay_sections_by_index`. That table's values are not section
+  indices -- they run 3..21, while `main_segment` is index 8 and `codeseg` is
+  11 -- so using it as an index set silently skips most of the game. That
+  mistake registered 150 functions instead of 1,088 and looked plausible.
+
+## Where it stands
+
+The failure has moved to `Failed to find function at 0x802C5800` -- the overlay
+window itself. That is the correct next problem rather than a regression:
+resident code now resolves completely, and what remains is that no overlay has
+been registered, because nothing loads one.
+
+librecomp calls `load_overlays` exactly once, for the boot region:
+
+```c
+load_overlays(0x1000, (int32_t)entrypoint, 1024 * 1024);
+```
+
+Everything after that is the game's job, and in this game it goes through
+`game_dma_copy(rom, ram, size)` -- called from seven sites including
+`GameLoad_LoadCodeseg` and `SysMain_Thread`. Driving `load_overlays` from there
+is the remaining work, and it is the same conclusion the phase 00 plan reached
+from the other direction: the overlay loader has to be wired to the runtime
+through a patch.

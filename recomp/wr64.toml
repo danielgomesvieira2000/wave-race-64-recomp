@@ -18,6 +18,23 @@ elf_path = "../wr64.elf"
 # than assuming.
 entrypoint = 0x80046800
 
+# Route every function call through the runtime's function lookup.
+#
+# Wave Race 64's resident code calls directly into its overlays, and nineteen
+# sections share vram 0x802C5800, so a call target address cannot say on its own
+# which function is meant -- only what is loaded at the time can. resolve_jal
+# correctly refuses to guess, which is why func_80092CF0 and two others could
+# not be recompiled at all and had to be stubbed in phase 02.
+#
+# With this on, calls resolve against whatever is currently loaded, which is the
+# semantics an overlay needs. The cost is a lookup per call rather than a direct
+# one. Correctness first; if it shows up in profiling, the answer is to make the
+# lookup faster, not to go back to guessing.
+#
+# The key does not exist upstream. tools/patch_n64recomp.py adds it, exposing a
+# context field the recompiler already had but never let the CLI set.
+use_lookup_for_all_function_calls = true
+
 # Generated C. Regenerated from the user's own ROM; gitignored.
 output_func_path = "../RecompiledFuncs"
 
@@ -65,8 +82,10 @@ relocatable_sections_path = "overlays.txt"
 # sharing its object file, so both definitions reach the link and lld-link
 # reports a duplicate. `ignored` emits nothing, leaving the field clear.
 stubs = [
-    "func_800922E4",   #  3 overlay targets; its return value is unused
-    "PauseMenu_Update" #  1 overlay target, 0x802C744C in ovl_i1
+    # Empty. func_80092CF0, func_800922E4 and PauseMenu_Update were stubbed in
+    # phase 02 because they jal directly into the overlay window and could not
+    # be resolved statically. use_lookup_for_all_function_calls resolves those
+    # calls at runtime instead, so all three are now recompiled properly.
 ]
 
 # The tail of __osException that splat split off into its own symbol.
@@ -86,9 +105,5 @@ stubs = [
 # This one is not in that list because splat invented the name, so it has to be
 # dropped by hand. Nothing is lost -- the runtime provides the whole routine.
 ignored = [
-    "func_800CB0A8",
-    # The overlay dispatcher. patches/overlay_dispatch.cpp defines it; see there
-    # for why an empty stub nulled gDisplayListHead and crashed the graphics
-    # code.
-    "func_80092CF0"
+    "func_800CB0A8"
 ]

@@ -39,6 +39,10 @@ void on_init(uint8_t* rdram, recomp_context* ctx) {
     std::printf("[wr64] runtime initialised; entering recomp_entrypoint\n");
     std::printf("[wr64] rdram base = %p\n", static_cast<void*>(rdram));
     std::fflush(stdout);
+
+    // Must happen here rather than at startup: init_overlays() begins with
+    // func_map.clear(), and librecomp calls it long before this hook.
+    wr64::register_runtime_functions();
 }
 
 void on_thread_create(uint8_t* rdram, recomp_context* ctx) {
