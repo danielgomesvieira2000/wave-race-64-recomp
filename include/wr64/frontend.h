@@ -34,13 +34,15 @@ void publish_window(SDL_Window* window);
 // the game, so there is one renderer, not two.
 ultramodern::renderer::callbacks_t renderer_callbacks();
 
-// Hands an SDL event to the UI. Returns true when the UI consumed it, in which
-// case the game must not also see it -- otherwise pressing Start to leave a
-// menu also pauses the game behind it.
-bool handle_event(const SDL_Event& event);
-
 // True while a menu is open and taking input. The game's controller reads are
 // suppressed for as long as this holds.
+//
+// SDL events themselves are not handled here: recompinput::handle_events(),
+// called directly from src/callbacks.cpp's poll_input(), is the only thing
+// that drains SDL's event queue when the frontend is on. It is the library's
+// own polling loop and does bookkeeping (registering a connected controller
+// with its profile system) that later event handling depends on -- see the
+// comment on poll_input() for the crash that skipping it caused.
 bool capturing_input();
 
 }  // namespace wr64::frontend

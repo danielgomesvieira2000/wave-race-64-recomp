@@ -195,11 +195,6 @@ ultramodern::renderer::callbacks_t renderer_callbacks() {
     return callbacks;
 }
 
-bool handle_event(const SDL_Event& event) {
-    recompui::queue_event(event);
-    return recompui::is_context_capturing_input();
-}
-
 bool capturing_input() {
     return recompui::is_context_capturing_input();
 }

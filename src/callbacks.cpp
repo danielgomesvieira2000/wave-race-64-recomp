@@ -33,6 +33,7 @@
 #include "wr64/crash_handler.h"
 #if WR64_WITH_FRONTEND
 #   include "wr64/frontend.h"
+#   include <recompinput/input_events.h>
 #endif
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
@@ -52,17 +53,52 @@ SDL_GameController* g_controller = nullptr;
 
 // ---------------------------------------------------------------- input ----
 
+#if WR64_WITH_FRONTEND
+// Finds the first connected SDL game controller, without tracking add/remove
+// events ourselves.
+//
+// With the frontend on, recompinput::handle_events() (below) is the only thing
+// draining SDL's event queue -- SDL_PollEvent removes what it returns, so a
+// second loop here would never see anything, including CONTROLLERDEVICEADDED
+// and CONTROLLERDEVICEREMOVED, which this code used to react to directly.
+// SDL_GameControllerOpen on an already-open device returns the existing
+// handle rather than opening it again, so rescanning here every poll is cheap
+// and correct rather than a workaround.
+void refresh_primary_controller() {
+    if (g_controller != nullptr && !SDL_GameControllerGetAttached(g_controller)) {
+        g_controller = nullptr;
+    }
+    if (g_controller == nullptr) {
+        for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+            if (SDL_IsGameController(i)) {
+                g_controller = SDL_GameControllerOpen(i);
+                if (g_controller != nullptr) {
+                    break;
+                }
+            }
+        }
+    }
+}
+#endif
+
 void poll_input() {
+#if WR64_WITH_FRONTEND
+    // recompinput::handle_events() is the library's own polling loop, and it
+    // has to be the only thing draining SDL's event queue: a hand-rolled loop
+    // here that just forwarded events to recompui skipped bookkeeping later
+    // event handling depends on. Concretely, it never registered a connected
+    // controller with recompinput's profile system, so
+    // profiles::get_input_profile_for_player(0, Controller) kept returning -1
+    // for "no profile assigned" -- and the first real button press then
+    // indexed a profile vector with that -1. MSVC's hardened STL reports that
+    // as "vector subscript out of range" and fails the process immediately,
+    // uncatchably, with no stack trace. Keyboard input never does that lookup,
+    // which is why only a gamepad triggered it.
+    recompinput::handle_events();
+    refresh_primary_controller();
+#else
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-#if WR64_WITH_FRONTEND
-        // Every event goes to the UI first. It is the only thing polling SDL in
-        // this process, so a menu that is never handed the events cannot be
-        // operated at all -- it draws, highlights its first entry, and ignores
-        // every key and click. Window and quit events still fall through below,
-        // because those concern the process rather than whatever is on screen.
-        wr64::frontend::handle_event(event);
-#endif
         switch (event.type) {
             case SDL_QUIT:
                 // Traced during phase 04: a clean exit-code-0 shutdown and a
@@ -89,6 +125,7 @@ void poll_input() {
                 break;
         }
     }
+#endif
 }
 
 // N64 controller button bits, as libultra defines them.
