@@ -365,6 +365,12 @@ height as the main frame, whatever its shape.
 framebuffer to the window. The patch lets the port name the region the game
 draws into (`wr64::display::crop_to_content()`, called as the window is
 created), and the blit then scales that region to fit the window instead.
+The region is not the same in every mode: with two players the game draws
+into (8, 12)-(311, 229), taller than the single-player region, and a crop
+pinned to the latter cut the top and bottom off the split screen in 0.1. The
+display-list rewriter (`src/dlrewrite.cpp`) now reads the scissor the game
+sets each frame and moves the crop to follow it, once the region has held
+for a few frames.
 Vertically it fits exactly; horizontally the widened frame has more picture
 than the region, and the window shows as much of it as its shape allows -- the
 frame a wider CRT would have shown, with nothing black around it. The HUD sits

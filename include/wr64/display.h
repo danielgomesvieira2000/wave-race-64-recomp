@@ -20,6 +20,13 @@ constexpr int kContentTop = 20;
 constexpr int kContentRight = 311;
 constexpr int kContentBottom = 219;
 
+// The region is not fixed after all: with two players the game draws into
+// (8, 12)-(311, 229), taller than the single-player region, and a crop pinned
+// to the latter cut the top and bottom off the split screen. The display-list
+// rewriter reads the scissor the game sets each frame and reports the drawn
+// region here; the crop follows it, and a change is logged once.
+void set_content(int left, int top, int right, int bottom);
+
 // Tells the renderer to present that region, scaled to fit the window, rather
 // than the whole framebuffer. Call once, before the first frame.
 void crop_to_content();

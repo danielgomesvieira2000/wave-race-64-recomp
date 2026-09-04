@@ -40,13 +40,22 @@ Settings, controller profiles and saves live in
 `%LOCALAPPDATA%\WaveRace64Recomp`. Started by double-click, the program writes
 its log to `wr64.log` in that folder; attach that file to a bug report.
 
-## What 0.1 is
+## What 0.2 is
 
-The game boots, its menus work, and championship and time trial races run
-with audio, at speed, with records saved to the emulated EEPROM. Not every
-course has been played in both directions yet, and stunt mode and the
-championship ceremony have had less testing than the rest; reports of anything
-wrong there are welcome. Beyond running natively, the port adds:
+The game boots, its menus work, and championship, time trial and two-player
+races run with audio, at speed, with records saved to the emulated EEPROM.
+Not every course has been played in both directions yet, and stunt mode and
+the championship ceremony have had less testing than the rest; reports of
+anything wrong there are welcome.
+
+New in 0.2: the 3D models on the watercraft and rider select screens sit in
+their frames again in widescreen, where 0.1 spread them out with the frustum;
+and two-player split screen is presented in full, where 0.1 cut its top and
+bottom off. Both come from a display-list rewriter in the port that inserts
+RT64's extended commands into the game's lists before RT64 sees them, without
+touching the game's code (see `docs/PLAN.md`, phase 07).
+
+Beyond running natively, the port adds:
 
 - **Widescreen** at the display's resolution and aspect ratio, with the HUD
   kept at its original shape and the game's own black overscan borders
@@ -64,7 +73,10 @@ Known issues:
 - In a 4:3 window the picture is letterboxed. The game draws a 303x199 region
   of its 320x240 framebuffer, which does not fit a 4:3 window without bars.
   Fullscreen on a widescreen display, the default, has no bars.
-- **HUD Placement** in the Graphics tab does nothing for this game.
+- Full-screen 2D effects drawn by the game, such as the sun's glare, are kept
+  at 4:3 in the middle of the widened frame with the rest of the HUD, so they
+  do not reach the sides. The HUD itself stays at 4:3 in the centre.
+- **HUD Placement** in the Graphics tab does nothing for this game yet.
 - Windows only, for now.
 
 ## Layout

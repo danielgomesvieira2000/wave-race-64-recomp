@@ -39,8 +39,10 @@
 // audio task's private copy of its command list is above it at 0x7E0000.
 
 #include "wr64/dlrewrite.h"
+#include "wr64/display.h"
 #include "wr64/testdrive.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -59,6 +61,7 @@ constexpr uint8_t kOpMoveMem = 0x03;
 constexpr uint8_t kOpDisplayList = 0x06;
 constexpr uint8_t kOpMoveWord = 0xBC;
 constexpr uint8_t kOpEndDisplayList = 0xB8;
+constexpr uint8_t kOpSetScissor = 0xED;     // an RDP command, in 10.2 fixed point
 
 constexpr uint32_t kMtxProjection = 0x01;
 constexpr uint32_t kMtxLoad = 0x02;
@@ -95,6 +98,30 @@ struct Walker {
     // whether any 2D (an orthographic projection) has been drawn yet.
     bool centred = false;
     bool seen_ortho = false;
+
+    // The union of the scissors the game set for its drawing this frame. A
+    // scissor covering the whole framebuffer is a clear, not drawing, and is
+    // left out; what remains is the region the game draws into, which is what
+    // the presentation crops to.
+    int scissor_left = 0x7FFF, scissor_top = 0x7FFF, scissor_right = -1, scissor_bottom = -1;
+
+    void on_scissor(uint32_t w0, uint32_t w1) {
+        const int ulx = static_cast<int>((w0 >> 12) & 0xFFF) >> 2;
+        const int uly = static_cast<int>(w0 & 0xFFF) >> 2;
+        const int lrx = static_cast<int>((w1 >> 12) & 0xFFF) >> 2;
+        const int lry = static_cast<int>(w1 & 0xFFF) >> 2;
+        if (ulx == 0 && uly == 0 && lrx >= 319 && lry >= 239) {
+            return;
+        }
+        scissor_left = std::min(scissor_left, ulx);
+        scissor_top = std::min(scissor_top, uly);
+        scissor_right = std::max(scissor_right, lrx);
+        scissor_bottom = std::max(scissor_bottom, lry);
+    }
+
+    bool has_scissor() const {
+        return scissor_right > scissor_left && scissor_bottom > scissor_top;
+    }
 
     uint32_t physical(uint32_t segmented) const {
         const uint32_t base = segments[(segmented >> 24) & 0xF];
@@ -158,9 +185,12 @@ namespace wr64::dlrewrite {
 uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     static const bool disabled = std::getenv("WR64_NO_REWRITE") != nullptr;
     const uint32_t state = wr64::current_game_state();
-    if (disabled || racing(state)) {
+    if (disabled) {
         return 0;
     }
+    // The walk runs in every state, because the drawn region is read from it;
+    // the centring below is for menus only.
+    const bool menu = !racing(state);
 
     Walker w{};
     w.rdram = rdram;
@@ -211,7 +241,13 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             continue;
         }
 
-        if (op == kOpMtx) {
+        if (op == kOpSetScissor) {
+            w.on_scissor(w0, w1);
+            w.emit(w0, w1);
+            continue;
+        }
+
+        if (op == kOpMtx && menu) {
             const uint32_t params = (w0 >> 16) & 0xFF;
             if ((params & kMtxProjection) && (params & kMtxLoad)) {
                 const bool persp = w.perspective(w.physical(w1));
@@ -251,6 +287,27 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             std::fflush(stderr);
         }
         return 0;
+    }
+
+    // The drawn region follows the game's scissor, once it has held for a few
+    // frames: a transition frame can draw into less than the whole region, and
+    // the crop must not twitch with it.
+    if (w.has_scissor()) {
+        static int seen_left = -1, seen_top = -1, seen_right = -1, seen_bottom = -1;
+        static int seen_for = 0;
+        if (w.scissor_left == seen_left && w.scissor_top == seen_top &&
+            w.scissor_right == seen_right && w.scissor_bottom == seen_bottom) {
+            if (++seen_for == 3) {
+                wr64::display::set_content(seen_left, seen_top, seen_right, seen_bottom);
+            }
+        }
+        else {
+            seen_left = w.scissor_left;
+            seen_top = w.scissor_top;
+            seen_right = w.scissor_right;
+            seen_bottom = w.scissor_bottom;
+            seen_for = 1;
+        }
     }
 
     static uint32_t lists = 0;
