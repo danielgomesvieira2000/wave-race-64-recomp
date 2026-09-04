@@ -98,6 +98,22 @@ constexpr uint8_t kOpEndDisplayList = 0xB8;
 constexpr uint8_t kOpSetScissor = 0xED;     // RDP, 10.2 fixed point
 constexpr uint8_t kOpSetTextureImage = 0xFD;
 
+// The three commands that draw a rectangle: a textured one, a textured one
+// flipped, and a filled one. All three carry their corners in the same fields,
+// and RT64 applies the same alignment and aspect state to all three.
+//
+// The filled one was missing here, and that is what left the pause screen's
+// dim at 4:3 with a bright band down its left: the dim is a fill rectangle,
+// so it was never classified and never stretched, however the test that
+// decides what to stretch was written.
+constexpr uint8_t kOpTexRect = 0xE4;
+constexpr uint8_t kOpTexRectFlip = 0xE5;
+constexpr uint8_t kOpFillRect = 0xF6;
+
+bool is_rect(uint8_t op) {
+    return op == kOpTexRect || op == kOpTexRectFlip || op == kOpFillRect;
+}
+
 constexpr uint32_t kMtxProjection = 0x01;
 constexpr uint32_t kMtxLoad = 0x02;
 constexpr uint32_t kMtxPush = 0x04;
@@ -305,6 +321,7 @@ struct Walker {
     Class cls = Class::Auto;
     uint32_t centred_sections = 0;
     uint32_t class_changes = 0;
+    uint32_t draws_2d = 0;      // how many 2D elements the list drew
 
     // The union of the scissors the game set for its drawing this frame. A
     // scissor covering the whole framebuffer is a clear, not drawing, and is
@@ -484,7 +501,7 @@ struct Walker {
 
     static bool run_command(uint8_t op) {
         switch (op) {
-            case 0xE4: case 0xE5:                       // rectangles
+            case kOpTexRect: case kOpTexRectFlip: case kOpFillRect:
             case 0xFD: case 0xF5: case 0xF2: case 0xF3: // texture image, tile, tile size, load block
             case 0xF4: case 0xE6: case 0xE7: case 0xE8: // load tile, syncs
             case 0xE9: case 0xFA: case 0xFB: case 0xFC: // sync, colours, combine
@@ -582,13 +599,14 @@ struct Walker {
         }
     }
 
-    void set_rect_class(Class next) {
+    void set_rect_class(Class next, const Extent& e = Extent{}) {
         if (next == rect_cls) return;
+        (void)e;
         widen_scissor(next == Class::Left || next == Class::Right);
-        const int inset_q = static_cast<int>(inset * 4.0f);
         if (rect_cls == Class::Stretch) {
             if (GfxCommand* cmd = reserve(1)) gEXSetRectAspect(cmd, G_EX_ASPECT_AUTO);
         }
+        const int inset_q = static_cast<int>(inset * 4.0f);
         switch (next) {
             case Class::Left:
                 if (GfxCommand* cmd = reserve(2)) {
@@ -603,6 +621,13 @@ struct Walker {
                 break;
             }
             case Class::Stretch:
+                // Widen the element by however much the frame was widened,
+                // about its centre. Pinning its own edges to the frame's
+                // edges instead was tried and reverted: it made no difference
+                // to the MAX POWER banner, whose last letter is clipped by
+                // the game's own rectangle rather than by the frame, and it
+                // undid the select screens' backgrounds, which this gets
+                // right.
                 if (GfxCommand* cmd = reserve(2)) {
                     gEXSetRectAlign(cmd, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE, 0, 0, 0, 0);
                 }
@@ -634,6 +659,7 @@ struct Walker {
     }
 
     void classify_rect(const Extent& e, uint32_t dl_segmented, const std::vector<uint32_t>& textures) {
+        ++draws_2d;
         const std::string tex_id = hex_identity("tex", textures.empty() ? texture : textures.front());
         const std::string dl_id = dl_segmented != 0 ? hex_identity("dl", dl_segmented) : std::string{};
         Class next = classify(e, tex_id, dl_id);
@@ -655,24 +681,30 @@ struct Walker {
                           projection_is_perspective ? "persp" : "ortho", class_name(next));
             trace->append(line);
         }
-        if (!noemit) set_rect_class(next);
+        if (!noemit) set_rect_class(next, e);
     }
 
     // Whether a draw spans the frame from side to side, and so should be
     // stretched across the widened one.
     //
-    // Measured against the region the game draws into, not the framebuffer.
-    // This game's full-screen overlays -- the tint over the world, the dim the
-    // pause screen lays over it, a fade -- span its own drawn region, 8 to
-    // 311, because that is what its scissor allows; against the framebuffer's
-    // 0 to 320 they fall eight pixels short at each end and were left at 4:3,
-    // which showed as a brighter band of untinted picture down both edges.
-    // Height is not part of the test: the dim is drawn as horizontal strips,
-    // each spanning the width and a slice of the height.
+    // The test is on width alone, against the width of the region the game
+    // draws into, and asks for nine tenths of it rather than the whole thing.
+    //
+    // Neither looseness is arbitrary. Height is out because the pause screen's
+    // dim is drawn as horizontal strips, each a slice of the height. And the
+    // overlays do not sit where a full-screen overlay might be expected to: the
+    // dim spans columns 32 to 336 of a 320-wide screen -- offset right, and
+    // over the edge at the far end -- while the tint over a race spans 9 to
+    // 310. Demanding that a draw reach both edges of the drawn region rejected
+    // the dim, which was measured off a capture of the pause screen: it left
+    // an undimmed band 267 window pixels wide down the left, exactly where an
+    // unstretched rectangle starting at column 32 lands. Nine tenths of the
+    // width takes both overlays and still refuses the widest HUD element,
+    // which reaches five sixths.
     bool covers_width(const Extent& e) const {
         const float left = has_scissor() ? float(scissor_left) : 0.0f;
         const float right = has_scissor() ? float(scissor_right) : float(kFramebufferWidth);
-        return e.left_px() <= left + 1.0f && e.right_px() >= right - 1.0f;
+        return (e.right_px() - e.left_px()) >= 0.9f * (right - left);
     }
 
     Class classify(const Extent& e, const std::string& identity, const std::string& identity2) {
@@ -740,7 +772,7 @@ struct Walker {
                 continue;
             }
             if (op == kOpSetTextureImage) { texture = w1; continue; }
-            if (op == 0xE4 || op == 0xE5) { rects.add(rect_extent(w0, w1)); continue; }
+            if (is_rect(op)) { rects.add(rect_extent(w0, w1)); continue; }
             if (op == kOpPopMtx) { if (mv_depth > 0) --mv_depth; continue; }
             if (op == kOpMtx) {
                 const uint32_t params = (w0 >> 16) & 0xFF;
@@ -866,10 +898,13 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             traced_state = state;
             traced_lists = 0;
         }
-        if (traced_lists < 6) {
-            trace_text.clear();
-            w.trace = &trace_text;
-        }
+        // Every list is traced into the buffer; the buffer is printed only for
+        // the first few of a state and, after that, whenever the list draws a
+        // different number of 2D elements than the one before it. Screens that
+        // appear without changing the game's state -- the pause menu over a
+        // race is the one that matters -- are otherwise never seen.
+        trace_text.clear();
+        w.trace = &trace_text;
     }
 
     // RT64 forgets the extended GBI at the end of every list, so every list
@@ -888,7 +923,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
         // Rectangles are held back with the commands between them until their
         // run ends (see push_rect); anything else ends the run.
-        if (w.hud && (op == 0xE4 || op == 0xE5)) {
+        if (w.hud && is_rect(op)) {
             w.push_rect(w0, w1);
             continue;
         }
@@ -1056,7 +1091,10 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
         }
     }
 
-    if (w.trace != nullptr && w.written >= 30) {
+    static uint32_t last_draws = 0xFFFFFFFFu;
+    const bool composition_changed = w.draws_2d != last_draws;
+    last_draws = w.draws_2d;
+    if (w.trace != nullptr && w.written >= 30 && (traced_lists < 6 || composition_changed)) {
         ++traced_lists;
         std::fprintf(stderr, "[hud] ---- state 0x%02X list %u: %u commands, %u class changes, inset %.1f,"
                              " anchors %s, race %s (world-first %d, scissor %d,%d-%d,%d) ----\n%s",
