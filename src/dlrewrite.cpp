@@ -25,7 +25,10 @@
 //    table in the settings folder (hud.json) overrides the class per texture
 //    or per static list. Anchors are applied only when the HUD Placement
 //    setting asks for them; stretching is applied always, since a sun glare
-//    that stops at 4:3 is a defect in any mode.
+//    that stops at 4:3 is a defect in any mode. Stretching is for the 2D
+//    layer alone, though: a full-frame rectangle drawn under a perspective
+//    projection belongs to the 3D pass, which is already at the frame's
+//    width, and stretching it magnifies the picture. See classify().
 //
 //    RT64 anchors 2D geometry by the origin carried on its viewport, and
 //    stretches by a flag on its projection group, both per projection rather
@@ -65,7 +68,9 @@
 //
 // WR64_HUD_TRACE=1 prints every 2D draw of the first two drawing lists after
 // each change of game state, with its identity, its extent and the class it
-// was given; that is how a tag for hud.json is found. WR64_HUD_OFF=1 leaves
+// was given; that is how a tag for hud.json is found. It also reports any
+// element that is given one class in one frame and another in the next,
+// which flickers between the two however defensible each classification is. WR64_HUD_OFF=1 leaves
 // the 2D layer alone, WR64_NO_REWRITE=1 switches the rewriter off entirely,
 // and WR64_NO_SKY_INTERP=1 leaves the sky at the game's rate.
 //
@@ -781,6 +786,18 @@ struct Walker {
                           projection_is_perspective ? "persp" : "ortho", class_name(next));
             trace->append(line);
         }
+        // Every texture of the run, not just the run's identity: a run is a
+        // set of rectangles that were classified together, and which
+        // rectangles chain into one run changes as the elements move, so an
+        // element can be stretched one frame and centred the next without the
+        // run it was in ever being reported as having changed class.
+        if (textures.empty()) {
+            report_flip(tex_id, next);
+        }
+        else {
+            for (uint32_t t : textures) report_flip(hex_identity("tex", t), next);
+        }
+        report_flip(dl_id, next);
         if (!noemit) set_rect_class(next, e);
     }
 
@@ -814,7 +831,24 @@ struct Walker {
             return Class::Auto;
         }
         if (e.empty()) return Class::Auto;
-        if (covers_width(e)) return Class::Stretch;
+        // Stretching is for the 2D layer's own full-screen elements, and those
+        // are drawn under an orthographic projection: the tint over a race,
+        // the pause screen's dim, the fades between screens, the menus'
+        // backgrounds. Measured across the title, the main menu, the options
+        // and name-entry screens and a race, every one of them is orthographic.
+        //
+        // A rectangle that covers the frame under a perspective projection is
+        // a different thing -- it belongs to the 3D pass, which RT64 has
+        // already drawn at the frame's full width -- and stretching it scales
+        // the picture instead of widening an overlay. The intro is where that
+        // shows: the game composes it from full-frame rectangles under the
+        // world's own projection, present in some of its camera shots and not
+        // others, so the picture jumped between its proper width and a
+        // magnified one from shot to shot. Measured on the Wave Race logo in
+        // the corner, which the stretch dragged towards the frame's edge: 420
+        // window pixels wide in a shot without one, 524 in a shot with, at the
+        // same height.
+        if (covers_width(e) && !projection_is_perspective) return Class::Stretch;
         // Anchoring is for the race HUD, which is drawn under an orthographic
         // projection in a frame that drew its world first. A menu's layout is
         // 4:3 by design and stays so whatever the setting says.
@@ -827,6 +861,26 @@ struct Walker {
         if (c < -kAnchorThird) return Class::Left;
         if (c > kAnchorThird) return Class::Right;
         return Class::Auto;
+    }
+
+    // A 2D element that is given one class in one frame and another in the
+    // next flickers between them, and that is a defect however defensible
+    // each classification is on its own. Under WR64_HUD_TRACE it is reported
+    // as it happens, with both classes, so the element can be named and
+    // pinned in hud.json.
+    void report_flip(const std::string& identity, Class next) {
+        if (trace == nullptr || identity.empty()) return;
+        static std::unordered_map<std::string, Class> last;
+        const auto it = last.find(identity);
+        if (it == last.end()) {
+            last.emplace(identity, next);
+            return;
+        }
+        if (it->second == next) return;
+        std::fprintf(stderr, "[hud] flip: state 0x%02X %s %s -> %s\n", state, identity.c_str(),
+                     class_name(it->second), class_name(next));
+        std::fflush(stderr);
+        it->second = next;
     }
 
     static std::string hex_identity(const char* kind, uint32_t address) {
@@ -849,6 +903,7 @@ struct Walker {
                           class_name(next));
             trace->append(line);
         }
+        report_flip(dl_id.empty() ? tex_id : dl_id, next);
         if (!noemit) set_class(next);
     }
 
