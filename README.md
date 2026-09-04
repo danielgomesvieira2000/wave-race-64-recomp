@@ -1,79 +1,116 @@
 # Wave Race 64: Recompiled
 
-An in-progress native PC port of **Wave Race 64 (USA) v1.0**, built by
-statically recompiling the game's MIPS code to C with
-[N64Recomp](https://github.com/N64Recomp/N64Recomp) and running it on
-[N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime) with
-[RT64](https://github.com/rt64/rt64) as the renderer.
+> ## You need: Wave Race 64 (USA) (Rev A)
+>
+> Also called **v1.1**. Cartridge ID `WR`, region `E`, **revision `1`**,
+> 8 MiB `.z64`, header CRC `0x492F4B61 0x04E5146A`,
+> sha1 `508dfc2d4caa42b6f6de5263d0aed5e44ac7966a`.
+>
+> The original US release (v1.0, revision 0), the Japanese and European
+> versions and the Shindou edition **will not work**: their code is laid out
+> differently, and every address in this project is tied to Rev A. The
+> launcher checks the file you pick; from a shell,
+> `WaveRace64Recomp.exe --identify your.z64` prints what it is.
+>
+> Supply your own legally obtained dump. This project does not include one,
+> and never will.
 
-> **No game code or assets are distributed by this repository.** Everything here
-> is tooling and original source. Building or running anything requires a
-> legally obtained Wave Race 64 dump that you supply yourself. This project is
-> unofficial and not affiliated with Nintendo.
+A native PC port of Wave Race 64, made by statically recompiling the game's
+MIPS code to C with [N64Recomp](https://github.com/N64Recomp/N64Recomp) and
+running it on [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime)
+with [RT64](https://github.com/rt64/rt64) as the renderer and
+[RecompFrontend](https://github.com/N64Recomp/RecompFrontend) for the menus
+and controller support. It is unofficial and not affiliated with Nintendo.
 
-## Status
+## Getting it
 
-**Phase 00 — scaffolding.** The repository builds a ROM identification tool.
-The recompiler has not been run and the game does not boot. See
-[docs/PLAN.md](docs/PLAN.md) for the phase plan and
-[docs/BUILDING.md](docs/BUILDING.md) for build instructions.
+**Download.** The release for Windows x64 is on the Releases page: unzip,
+run `WaveRace64Recomp.exe`, pick your dump in the launcher. That is all. The
+zip contains the program, the three DLLs it needs, and the menu's fonts and
+icons; it contains none of the game's assets, which are loaded from your dump
+each time it runs. What it does contain is the game's *code*, recompiled --
+that is what a recompiled port is. See *Licensing* below before
+redistributing it.
 
-| Phase | | Status |
-|---|---|---|
-| 00 | Ground rules and skeleton | in progress |
-| 01 | Split the ROM | not started |
-| 02 | First recompile | not started |
-| 03 | Runtime harness | not started |
-| 04 | Boot bring-up | not started |
-| 05 | Graphics and audio correctness | not started |
-| 06 | Enhancements and release | not started |
+**Build it yourself.** [docs/BUILDING.md](docs/BUILDING.md) takes you from
+installing the toolchain on Windows to the first race: clone with submodules,
+check your dump, disassemble and recompile the game from it, build.
 
-## Target dump
+Settings, controller profiles and saves live in
+`%LOCALAPPDATA%\WaveRace64Recomp`. Started by double-click, the program writes
+its log to `wr64.log` in that folder; attach that file to a bug report.
 
-Everything in this project — every splat segment address, every symbol, every
-generated function — is pinned to one dump:
+## What 0.1 is
 
-| | |
-|---|---|
-| Title | Wave Race 64 (USA), v1.0 -- the original US release |
-| Cartridge ID | `WR`, region `E`, revision `0` |
-| Size | 8 MiB |
-| Format | `.z64`, big endian |
-| Entry point | `0x80046800` |
-| Header CRC | `0x7DE11F53 0x74872F9D` |
-| sha1 | `887ab588c2ecc64c52fb2065f06b0a1ee4af13dc` |
+The game boots, its menus work, and championship and time trial races run
+with audio, at speed, with records saved to the emulated EEPROM. Not every
+course has been played in both directions yet, and stunt mode and the
+championship ceremony have had less testing than the rest; reports of anything
+wrong there are welcome. Beyond running natively, the port adds:
 
-**This is not the revision the existing Wave Race 64 reverse engineering
-targets.** LLONSIT's decomp supports "US, Rev1" only, and both prior
-recompilation attempts use Rev A. We target v1.0 anyway, because the evidence
-says the revisions share a link layout: the decomp's Rev A `entry` segment sits
-at vram `0x80046800`, which is exactly the entry point in the v1.0 header. Rev A
-stays useful as a symbol donor. See [docs/PLAN.md](docs/PLAN.md).
+- **Widescreen** at the display's resolution and aspect ratio, with the HUD
+  kept at its original shape and the game's own black overscan borders
+  removed.
+- **High frame rate.** The game keeps its own update rate (30 Hz in a race, 20
+  in the menus and Time Trial, by its own choice) and RT64 interpolates each
+  object's movement between game frames, so it presents at your display's
+  refresh rate. Physics, camera and timers are untouched.
+- A launcher with a ROM picker, a settings menu, and controller remapping with
+  per-device profiles, from RecompFrontend.
+- Audio through the recompiled RSP microcode.
 
-A Rev A or PAL dump will configure, build, and then fail in ways that look like
-recompiler bugs. Check yours before starting:
+Known issues:
 
-```
-WaveRace64Recomp --identify path/to/your.z64
-```
+- In a 4:3 window the picture is letterboxed. The game draws a 303x199 region
+  of its 320x240 framebuffer, which does not fit a 4:3 window without bars.
+  Fullscreen on a widescreen display, the default, has no bars.
+- **HUD Placement** in the Graphics tab does nothing for this game.
+- Windows only, for now.
 
 ## Layout
 
 ```
-lib/        upstream submodules (N64ModernRuntime, RT64, RecompFrontend)
-tools/      python and powershell tooling (committed)
-recomp/     N64Recomp configuration and symbol tables
-src/        the port's own platform layer
-include/    the port's own headers
-patches/    RECOMP_PATCH replacements for game functions
-docs/       plan and build instructions
+src/        the port: platform layer, renderer binding, input, audio, launcher wiring
+include/    its headers
+patches/    replacements and wrappers for individual game functions
+recomp/     N64Recomp configuration
+tools/      the build pipeline's scripts, and diagnostics (see tools/README.md)
+assets/     the launcher's stylesheet, icons and fonts
+docs/       the build guide, the phase plan, and what each phase found
+lib/        upstream submodules
 ```
 
-`RecompiledFuncs/`, `asm/` and any ROM-derived file are generated locally and
-are refused by `.gitignore`.
+Everything derived from a dump -- the disassembly, `RecompiledFuncs/`, the
+ELF -- is generated locally and refused by `.gitignore`. So is the splat
+config, which is derived from the reference decompilation's.
+
+## Licensing
+
+The project's own code and artwork are under the MIT License (`LICENSE`).
+
+A built executable is another matter. It links N64ModernRuntime statically,
+and N64ModernRuntime is **GPL-3.0**, so the executable as a whole is a
+GPL-3.0 combined work: anyone who distributes one must provide its complete
+source under the GPL's terms, and this repository at the tagged commit,
+with the submodules it pins, is that source. RecompFrontend, which supplies
+the menus, has published **no license** at the time of this release. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list.
+
+## How this was made
+
+The entire project -- every line of code, every script, every document
+including this one -- was written by Claude, Anthropic's AI model, working in
+[Claude Code](https://claude.com/claude-code) under the direction of Daniel
+Gomes Vieira, who set the goals, made the decisions, played the builds and
+reported what he saw. The launcher artwork and the executable's icon were
+generated with Claude as well. The work was done in phases (see
+[docs/PLAN.md](docs/PLAN.md)), and each phase's findings are written up under
+`docs/`, in the same way: by Claude, as the work was done.
 
 ## Credits
 
-The recompilation toolchain is by Mr-Wiseguy and the N64Recomp contributors;
-RT64 is by Darío. Prior Wave Race 64 reverse engineering by LLONSIT, WACOMalt
-and chronic8000.
+The recompilation toolchain and runtime are by Mr-Wiseguy and the N64Recomp
+contributors; RT64 is by Darío and the RT64 contributors. The function names
+this project leans on come from the Wave Race 64 decompilation by LLONSIT and
+contributors. Earlier recompilation attempts by WACOMalt and chronic8000 showed
+what to expect.

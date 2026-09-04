@@ -1,18 +1,48 @@
 # tools
 
 Committed tooling. Everything here is original code that operates on a ROM the
-user supplies; nothing here contains game data.
+user supplies; nothing here contains game data. The `wsl_*.sh` scripts run
+under WSL because the disassembler and the MIPS assembler are Linux tools; the
+rest run wherever Python or PowerShell does.
 
-| Script | Phase | Purpose |
-|---|---|---|
-| `check_toolchain.ps1` | 00 | Reports which build tools are present on Windows. |
-| `patch_rt64.py` | 06 | Patches RT64 so this game's inset frame is kept at 4:3 for the HUD and presented without its black borders. Idempotent; rerun after a submodule update. |
-| `splat_to_syms.py` | 01 | *(planned)* Convert splat output into an N64Recomp symbol table, applying size corrections and libultra renames. |
-| `jal_scan.py` | 01 | *(planned)* Scan `.text` for JAL targets splat did not classify as functions. |
-| `fix_zero_loads.py` | 02 | *(planned)* Strip assignments to `$zero` from recompiler output. |
-| `find_bad_labels.py` | 02 | *(planned)* Detect unresolved jump tables in recompiler output. |
+`docs/BUILDING.md` says which to run and in what order. This is the index.
 
-The last four are the standard set every non-decompiled recomp project ends up
-writing. Prior art worth reading before writing our own:
-[GGA-Recomp/tools](https://github.com/dantheman11294/GGA-Recomp) and
-[WACOMalt/WaveRace64-Recomp](https://github.com/WACOMalt/WaveRace64-Recomp).
+## Building the port
+
+| Script | Purpose |
+|---|---|
+| `check_toolchain.ps1` | Reports which build tools are present on Windows. |
+| `patch_n64recomp.py` | Exposes N64Recomp's `use_lookup_for_all_function_calls` as a config option, which overlay dispatch needs. Idempotent. |
+| `patch_librecomp.py` | Makes librecomp's function-lookup failures report the address they failed on. Idempotent. |
+| `patch_rsprecomp.py` | Makes RSPRecomp's indirect jumps ignore the low two bits of the target, as the hardware does. Idempotent. |
+| `patch_rt64.py` | Patches RT64 so this game's inset frame is kept at 4:3 for the HUD and presented without its black borders. Idempotent. |
+| `wsl_setup_splat.sh` | Prepares a Python environment for the vendored splat. |
+| `wsl_run_splat.sh` | Disassembles the dump with the config written for it. |
+| `wsl_run_splat_asmonly.sh` | Produces an assembly-only disassembly of the dump. |
+| `make_asm_only_yaml.py` | Derives the asm-only splat config from the decomp's config. |
+| `fix_asmonly_ld.py` | Repoints three orphan data objects in the asm-only linker script. |
+| `pad_data_objects.py` | Pads each generated object's data sections to their true length. |
+| `pad_segment_tails.py` | Pads each segment out to its declared ROM length. |
+| `wsl_build_elf.sh` | Assembles the disassembly into an ELF with symbols. |
+| `wsl_verify_elf.sh` | Checks the assembled ELF is faithful to the ROM. |
+| `wsl_build_all.sh` | The whole pipeline above, ROM to verified ELF, in order. |
+| `wsl_build_recompiler.sh` | Builds the N64Recomp and RSPRecomp tools under Linux. |
+| `jal_scan.py` | Finds call targets that carry no function symbol, for the recompiler config. |
+| `wsl_recompile.sh` | Runs the recompiler and regenerates the declarations header. |
+| `wsl_recompile_rsp.sh` | Recompiles the audio microcode. |
+| `gen_reimplemented_decls.py` | Declares the libultra functions the runtime reimplements. |
+| `gen_runtime_func_table.py` | Registers runtime-provided libultra functions in the address lookup. |
+| `fix_overlay_relocs.py` | Drops the relocation entries N64Recomp emits with no type. |
+| `package_release.ps1` | Stages a built tree into a release folder and zips it. See the script for what it deliberately leaves out. |
+
+## Testing and diagnosis
+
+| Script | Purpose |
+|---|---|
+| `capture_window.ps1` | Photographs the running port at intervals, in physical pixels. |
+| `instrument_funcs.py` | Traces when specific recompiled functions run. |
+| `wsl_check_pc16.sh` | Checks whether the `R_MIPS_PC16` relocations in the overlay sections are safe to discard. |
+| `wsl_diag_asm.sh` | Explains why assembling splat's output fails, when it does. |
+| `wsl_reloc_types.sh` | Lists which relocation types the assembled ELF contains. |
+| `probe_delta.py`, `probe_layout.py`, `probe_piecewise.py` | Phase 01 measurements of how the Rev A segment map relates to the v1.0 dump, kept for the record. |
+| `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race. |

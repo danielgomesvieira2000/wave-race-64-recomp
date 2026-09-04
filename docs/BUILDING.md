@@ -58,6 +58,23 @@ If you already cloned without submodules:
 git submodule update --init --recursive
 ```
 
+## The reference decompilation
+
+The disassembly step runs inside a checkout of the Wave Race 64 decompilation
+by LLONSIT and contributors, whose splat configuration, symbol tables and
+linker scripts it uses. Clone it into `reference/` (which is ignored) and put
+your dump beside its config under the name it expects:
+
+```
+git clone https://github.com/LLONSIT/Wave-Race-64.git reference/wr64-decomp
+copy your.z64 reference\wr64-decomp\baserom.us.rev1.z64
+```
+
+Nothing from that checkout is committed here. The splat config this project
+runs, `recomp/wr64.us.rev1.asm.yaml`, is derived from the decompilation's at
+build time by `tools/make_asm_only_yaml.py` and is ignored as well; the
+pipeline scripts generate it when it is missing.
+
 ## Configure and build
 
 The project is phase-gated so a partially finished tree always builds. Phase 00
@@ -179,9 +196,16 @@ falls back to reporting each audio task complete without running it.
 
 ## Playing it
 
+Double-click `build-fe\WaveRace64Recomp.exe` and pick your dump in the
+launcher; it is remembered. From a shell, a path skips the launcher:
+
 ```
-build-rt/WaveRace64Recomp.exe <your dump>.z64
+build-fe/WaveRace64Recomp.exe <your dump>.z64
 ```
+
+Started by double-click, everything the port prints goes to `wr64.log` in the
+settings directory below, and no console window opens. Started from a shell it
+prints to the shell as before, so redirecting stderr to a file still works.
 
 It can be started from any directory, by double-click or from a shell, and a
 relative path to the dump is taken relative to where you typed it. Settings,

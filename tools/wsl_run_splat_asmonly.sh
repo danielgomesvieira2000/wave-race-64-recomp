@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 # Phase 01: produce an assembly-only disassembly of the Rev A dump.
 #
-# Our config lives in recomp/ and is committed; splat runs inside the reference
-# decomp checkout because the config's symbol tables, linker scripts and splat
-# extensions are all relative to that tree. So the config is copied in at run
-# time rather than the tree being restructured around it.
+# The config is derived from the reference decomp's own splat config by
+# tools/make_asm_only_yaml.py, into recomp/, and is not committed: the decomp
+# publishes no license, so a rewritten copy of its config is generated on the
+# builder's machine, from the builder's checkout, like everything else derived
+# from it. splat then runs inside that checkout because the config's symbol
+# tables, linker scripts and splat extensions are all relative to that tree,
+# so the config is copied in at run time rather than the tree being
+# restructured around it.
 set -euo pipefail
 
 VENV="$HOME/wr64venv"
 REPO="/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64"
 DECOMP="$REPO/reference/wr64-decomp"
 CONFIG="wr64.us.rev1.asm.yaml"
+
+if [ ! -f "$REPO/recomp/$CONFIG" ]; then
+    echo "=== deriving $CONFIG from the decomp's config ==="
+    "$VENV/bin/python" "$REPO/tools/make_asm_only_yaml.py"
+fi
 
 cd "$DECOMP"
 

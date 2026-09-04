@@ -22,8 +22,11 @@ What is deliberately NOT converted:
   data / rodata / bss / bin / textbin
         Not code. Unchanged.
 
-Output goes to recomp/, is committed, and is copied next to the ROM at run
-time by tools/wsl_run_splat_asmonly.sh.
+Output goes to recomp/ and is copied next to the ROM at run time by
+tools/wsl_run_splat_asmonly.sh, which runs this script itself when the file is
+missing. It is not committed: it is a rewrite of the decomp's own config, and
+that repository publishes no license, so the derivative stays on the builder's
+machine with the checkout it came from.
 
 Run from the repository root:
     python tools/make_asm_only_yaml.py

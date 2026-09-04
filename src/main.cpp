@@ -20,6 +20,7 @@
 #include <cstdlib>
 #if defined(_WIN32)
 #   include <crtdbg.h>
+#   include <io.h>
 #   define WIN32_LEAN_AND_MEAN
 #   include <windows.h>
 #endif
@@ -157,7 +158,7 @@ void print_usage(const char* argv0) {
 }
 
 void print_version() {
-    std::printf("Wave Race 64: Recompiled -- phase 03\n");
+    std::printf("Wave Race 64: Recompiled 0.1.0\n");
     std::printf("  recompiled game code : %s\n",
 #if WR64_WITH_RECOMPILED
         "linked");
@@ -297,7 +298,7 @@ int run(int argc, char** argv, const char* rom_arg) {
     recomp::Configuration config{};
     config.argc = argc;
     config.argv = argv;
-    config.project_version = recomp::Version{0, 3, 0, "-phase03"};
+    config.project_version = recomp::Version{0, 1, 0, ""};
     config.rsp_callbacks = wr64::rsp_callbacks();
 #if WR64_WITH_FRONTEND
     // RecompFrontend's renderer draws the game and the menus into the same
@@ -394,6 +395,51 @@ int main(int argc, char** argv) {
             }
         }
     }
+
+#if defined(_WIN32)
+    // Double-clicked, the program is a console application with no one at the
+    // console: Windows opens a black window beside the game for output nobody
+    // asked to see. If this process is the only one attached to its console,
+    // the console was created for it -- nobody typed the command -- so it is
+    // released, and everything the port prints goes to wr64.log in the settings
+    // directory instead. That file is what to attach to a bug report: the
+    // state transcript, the frame-rate lines and any crash report all land in
+    // it. Started from a shell, or with output redirected, nothing changes.
+    //
+    // The file is opened once, for stdout, and stderr is pointed at the same
+    // descriptor. Opening it a second time for stderr fails: freopen_s opens
+    // without sharing, so the second open is refused with EACCES -- and a
+    // failed freopen_s leaves the stream closed, so the port's first message
+    // to stderr then hit a closed stream, which the C runtime treats as a
+    // fatal invalid parameter (exit 0xC0000409, before the window ever opened).
+    // The redirection also happens before the console is released, while the
+    // old handles are still valid to close.
+    {
+        DWORD owners[2];
+        if (GetConsoleWindow() != nullptr && GetConsoleProcessList(owners, 2) == 1) {
+            const std::filesystem::path log = wr64::settings_directory() / "wr64.log";
+            std::error_code ec;
+            std::filesystem::create_directories(log.parent_path(), ec);
+            FILE* out = nullptr;
+            bool redirected = freopen_s(&out, log.string().c_str(), "w", stdout) == 0;
+            if (redirected) {
+                redirected = _dup2(_fileno(stdout), _fileno(stderr)) == 0;
+            }
+            else {
+                // Keep both streams valid whatever happens; output is lost, the
+                // game is not.
+                freopen_s(&out, "NUL", "w", stdout);
+            }
+            FreeConsole();
+            std::setvbuf(stdout, nullptr, _IONBF, 0);
+            std::setvbuf(stderr, nullptr, _IONBF, 0);
+            if (redirected) {
+                std::fprintf(stderr, "[wr64] output goes to this file when the game is started"
+                                     " without a terminal\n");
+            }
+        }
+    }
+#endif
 
 #if WR64_WITH_FRONTEND && WR64_WITH_RUNTIME && WR64_WITH_RECOMPILED
     // With the launcher, no arguments is the normal way to start: the player
