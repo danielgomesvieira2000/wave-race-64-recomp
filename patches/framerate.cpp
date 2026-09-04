@@ -18,6 +18,23 @@
 //
 // It is registered at osViSwapBuffer's cartridge address in src/overlays.cpp,
 // after the resident functions, for the same reason the PI DMA hook is.
+//
+// The same two-second window carries the second measurement this file exists
+// for, phase 07 B's: how well RT64's interpolation is pairing up. RT64 draws
+// the frames in between by pairing each object's transform with the previous
+// frame's, and an object that finds no pair is drawn at the newer frame and
+// held there -- it steps at the game's rate while everything around it glides.
+// tools/patch_rt64.py has RT64 count that, and this reports the rate.
+//
+// Two counts, because the plain one misleads. Most transforms that fail to
+// pair are the course's static scenery, whose matrix is the same every frame
+// and is often submitted twice, which is what ties a matcher that goes by
+// position; an unpaired object that is not moving looks no different for it.
+// The second count keeps only those whose matrix appears nowhere in the
+// previous frame, and that is the number worth watching.
+//
+// WR64_PAIRING=1 asks for it; without it nothing is printed and the accessor
+// is not called.
 
 #include "recomp.h"
 
@@ -30,7 +47,46 @@
 
 extern "C" void osViSwapBuffer_recomp(uint8_t* rdram, recomp_context* ctx);
 
+// Provided by RT64 through tools/patch_rt64.py, so that nothing here needs
+// RT64's headers. The totals run for the life of the process; the rates come
+// from the difference between two readings.
+extern "C" void RT64_GetTransformPairing(unsigned long long* frames, unsigned long long* total,
+                                         unsigned long long* unpaired,
+                                         unsigned long long* unpaired_moved);
+
 namespace wr64 {
+
+// Reports the pairing over the window that just closed. Called from the same
+// place, and on the same schedule, as the frame-rate report.
+void report_pairing() {
+    static const bool wanted = std::getenv("WR64_PAIRING") != nullptr;
+    if (!wanted) {
+        return;
+    }
+
+    unsigned long long frames = 0, total = 0, unpaired = 0, unpaired_moved = 0;
+    RT64_GetTransformPairing(&frames, &total, &unpaired, &unpaired_moved);
+
+    static unsigned long long last_frames = 0, last_total = 0, last_unpaired = 0, last_moved = 0;
+    const unsigned long long d_frames = frames - last_frames;
+    const unsigned long long d_total = total - last_total;
+    const unsigned long long d_unpaired = unpaired - last_unpaired;
+    const unsigned long long d_moved = unpaired_moved - last_moved;
+    last_frames = frames;
+    last_total = total;
+    last_unpaired = unpaired;
+    last_moved = unpaired_moved;
+    if (d_frames == 0) {
+        return;
+    }
+
+    std::fprintf(stderr,
+                 "[wr64] interpolation: %.0f transforms a frame, %.1f unpaired"
+                 " (%.1f of them moved or new)\n",
+                 double(d_total) / d_frames, double(d_unpaired) / d_frames,
+                 double(d_moved) / d_frames);
+    std::fflush(stderr);
+}
 
 // The divider the game's video-interrupt handler counts retraces against
 // before it lets the game thread run a frame: D_800D461C in the decompilation,
@@ -51,6 +107,8 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     if (elapsed < std::chrono::seconds(2)) {
         return;
     }
+
+    report_pairing();
 
     const double seconds = std::chrono::duration<double>(elapsed).count();
     const int rate = static_cast<int>(std::lround(swaps / seconds));

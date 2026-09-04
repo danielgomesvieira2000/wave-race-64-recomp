@@ -49,6 +49,18 @@ nothing hides them, and RT64 makes two decisions that go wrong because of them.
    first stretches the game's 4:3 frustum across a wide viewport, which looks
    like a stretched image rather than a wider view.
 
+4. There is no way to tell how well interpolation is doing.
+
+   RT64 interpolates an object by pairing its transform with the previous
+   frame's, and an object that finds no pair is drawn at the newer frame and
+   holds there. Nothing reports how often that happens, so every change to
+   interpolation had to be argued rather than measured. The patch counts, per
+   frame, how many world transforms there were, how many found no pair, and how
+   many of those had a matrix that appears nowhere in the previous frame -- the
+   last being the number that costs something, since an unpaired object that is
+   not moving looks no different for it. A port reads the running totals through
+   an extern "C" accessor and reports the rates; see patches/framerate.cpp.
+
 Scripted and idempotent because they patch a submodule: a submodule update
 would otherwise revert them silently.
 
@@ -227,6 +239,108 @@ PROJ_REPLACEMENT = """                    // wr64: the same tolerance as the wid
 """
 
 
+# --- 4. the interpolation measurement ---------------------------------------
+
+GAME_FRAME = RT64 / "hle" / "rt64_game_frame.cpp"
+
+PAIRING_INCLUDE_ANCHOR = """#include "xxHash/xxh3.h"
+"""
+
+PAIRING_INCLUDE_REPLACEMENT = """#include "xxHash/xxh3.h"
+
+// wr64: for the transform-pairing counters below.
+#include <unordered_set>
+"""
+
+PAIRING_ANCHOR = """        matchScenes(perspectiveScenes, prevFrame.perspectiveScenes);
+        matchScenes(orthographicScenes, prevFrame.orthographicScenes);
+"""
+
+PAIRING_REPLACEMENT = """        matchScenes(perspectiveScenes, prevFrame.perspectiveScenes);
+        matchScenes(orthographicScenes, prevFrame.orthographicScenes);
+
+        // wr64: count what failed to pair, so the port can report it.
+        //
+        // RT64 interpolates an object by pairing this frame's transform with
+        // the previous frame's; one that finds no pair is drawn at the newer
+        // frame and holds there (see TransformProcessor::process). The plain
+        // count of those is a poor measure, because most of them are the
+        // course's static scenery -- the same matrix every frame, often
+        // submitted twice, which is exactly what ties a matcher that goes by
+        // position -- and an unpaired object that is not moving looks no
+        // different for it.
+        //
+        // So they are counted twice: every transform that found no pair, and
+        // the subset whose matrix appears nowhere in the previous frame at
+        // all. The second number is the one that costs something, because an
+        // object that is both moving and unpaired is an object stepping at the
+        // game's rate while everything around it glides.
+        {
+            thread_local std::unordered_set<uint64_t> wr64PrevMatrices;
+            wr64PrevMatrices.clear();
+            for (uint32_t w : workloads) {
+                const GameFrameMap::WorkloadMap &map = frameMap.workloads[w];
+                if (!map.mapped) {
+                    continue;
+                }
+
+                const Workload &prevWorkload = workloadQueue.workloads[map.prevWorkloadIndex];
+                for (const interop::float4x4 &m : prevWorkload.drawData.worldTransforms) {
+                    wr64PrevMatrices.insert(XXH3_64bits(&m, sizeof(m)));
+                }
+            }
+
+            uint32_t total = 0, unpaired = 0, unpairedMoved = 0;
+            for (uint32_t w : workloads) {
+                const GameFrameMap::WorkloadMap &map = frameMap.workloads[w];
+                const Workload &curWorkload = workloadQueue.workloads[w];
+                for (size_t t = 0; t < map.transforms.size(); t++) {
+                    total++;
+                    if (map.transforms[t].mapped) {
+                        continue;
+                    }
+
+                    unpaired++;
+                    const interop::float4x4 &m = curWorkload.drawData.worldTransforms[t];
+                    if (wr64PrevMatrices.find(XXH3_64bits(&m, sizeof(m))) == wr64PrevMatrices.end()) {
+                        unpairedMoved++;
+                    }
+                }
+            }
+
+            wr64PairingFrames++;
+            wr64PairingTotal += total;
+            wr64PairingUnpaired += unpaired;
+            wr64PairingUnpairedMoved += unpairedMoved;
+        }
+"""
+
+PAIRING_COUNTERS_ANCHOR = """namespace RT64 {
+    // GameFrame
+"""
+
+PAIRING_COUNTERS_REPLACEMENT = """// wr64: running totals of the transform pairing, read by the port through the
+// accessor below. Written on the workload thread and read on the game thread
+// without synchronisation, which is sound enough for a counter that is only
+// ever reported: the reader wants a rate over seconds, not an exact instant.
+static uint64_t wr64PairingFrames = 0;
+static uint64_t wr64PairingTotal = 0;
+static uint64_t wr64PairingUnpaired = 0;
+static uint64_t wr64PairingUnpairedMoved = 0;
+
+extern "C" void RT64_GetTransformPairing(unsigned long long *frames, unsigned long long *total,
+                                         unsigned long long *unpaired, unsigned long long *unpairedMoved) {
+    *frames = wr64PairingFrames;
+    *total = wr64PairingTotal;
+    *unpaired = wr64PairingUnpaired;
+    *unpairedMoved = wr64PairingUnpairedMoved;
+}
+
+namespace RT64 {
+    // GameFrame
+"""
+
+
 def patch(target, anchor, replacement, name):
     text = target.read_text()
     if replacement in text:
@@ -240,7 +354,7 @@ def patch(target, anchor, replacement, name):
 
 
 def main():
-    for target in (FB_RENDERER, VI_RENDERER, VI_HEADER, PROJ_PROCESSOR):
+    for target in (FB_RENDERER, VI_RENDERER, VI_HEADER, PROJ_PROCESSOR, GAME_FRAME):
         if not target.exists():
             sys.exit(f"missing {target}. Run: git submodule update --init --recursive")
 
@@ -250,6 +364,9 @@ def main():
     patch(VI_HEADER, VI_HEADER_ANCHOR, VI_HEADER_REPLACEMENT, "content crop (header)")
     patch(VI_RENDERER, VI_FUNC_ANCHOR, VI_FUNC_REPLACEMENT, "content crop (setter)")
     patch(VI_RENDERER, VI_MAP_ANCHOR, VI_MAP_REPLACEMENT, "content crop (blit)")
+    patch(GAME_FRAME, PAIRING_INCLUDE_ANCHOR, PAIRING_INCLUDE_REPLACEMENT, "pairing counters (include)")
+    patch(GAME_FRAME, PAIRING_COUNTERS_ANCHOR, PAIRING_COUNTERS_REPLACEMENT, "pairing counters (accessor)")
+    patch(GAME_FRAME, PAIRING_ANCHOR, PAIRING_REPLACEMENT, "pairing counters (count)")
     print("Rebuild to pick it up.")
 
 

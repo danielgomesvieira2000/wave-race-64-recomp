@@ -157,21 +157,33 @@ frame's by draw-call signature and nearest position, and pairs about 98% of
 transforms; the rest, and the wrong pairs, are the flickers seen during play.
 The rewriter is the fix here too: it can tag any matrix with an explicit group.
 
-1. *Measure before tagging.* Extend the frame-rate report with RT64's count of
-   unpaired transforms per frame, by game state, and collect the player's
-   descriptions of what flickers and when. Expected suspects, from how the
-   game draws: spray and splash particles that die and respawn (a wrong pair
-   streaks between the two), buoys and scenery entering the view (a shifted
-   pair for one frame), billboards built by the look-at helper, and the
-   render-to-texture pass the game draws at 1:1 before the main frame.
-2. *Tag by class.* Objects that respawn get `G_EX_ID_IGNORE` (drawn at the
-   newer frame, never interpolated). Racers, buoys and scenery get an explicit
-   ID from the matrix pool slot and the model drawn, with linear ordering, so
-   pairing no longer depends on the heuristic. The camera keeps simple
-   interpolation. RT64's velocity tolerance for automatic pairs is a compile-
-   time constant; if a class needs a different one, it becomes another
-   idempotent patch in `tools/patch_rt64.py`.
-3. *The sky.* Done. The sky is drawn the same way the world is -- under an
+1. *Measure before tagging.* Done. `tools/patch_rt64.py` has RT64 count, per
+   frame, how many world transforms there were, how many found no pair, and how
+   many of those had a matrix that appears nowhere in the previous frame;
+   `patches/framerate.cpp` reports the rates on the same two-second window as
+   the frame rate, under `WR64_PAIRING=1`.
+
+   What it says, measured in a race: 100 to 200 world transforms a frame, of
+   which 2 to 3 find no pair and 1 to 2 of those are moving or new. The rest
+   are the course's static scenery -- the same matrix every frame, often
+   submitted twice, which is exactly what ties a matcher that goes by position
+   -- and one transform with no address that never pairs in any frame. None of
+   those cost anything: an unpaired transform is drawn at its current matrix
+   (`TransformProcessor::process`), so an object that is not moving looks no
+   different for it. The plain count of unpaired transforms is therefore the
+   wrong number to chase, and the second count is in the report for that
+   reason. Whole-frame failures do happen -- 52 of 52, 142 of 142 -- but only
+   at scene cuts, where nothing should be interpolated anyway.
+2. *Tag by class.* Only where the measurement asks for it. So far that is the
+   sky and the water, which are drawn under the game's identity matrix: several
+   transforms with the same matrix are what ties the matcher, and both now
+   carry an explicit ID with linear ordering, matched by identity before the
+   heuristic runs. Objects that respawn would get `G_EX_ID_IGNORE` (drawn at
+   the newer frame, never interpolated) if the report names them; the spray and
+   splash particles rebuilt through segment 5 every frame are the candidates,
+   and they have not been tagged, because nothing yet says they need it.
+3. *The sky, and the water.* Done, and they are the same defect. The sky is
+   drawn the same way the world is -- under an
    identity model matrix, with the camera on the projection stack -- but it
    is not part of the world: the game rebuilds its three bands' vertices into
    a scratch buffer behind segment 6 every frame, following the camera and
@@ -181,15 +193,28 @@ The rewriter is the fix here too: it can tag any matrix with an explicit group.
    60 Hz. The rewriter gives that section a matrix group asking for the
    vertices and their texture coordinates to be interpolated as well; RT64
    then carries a per-vertex velocity, and the sky moves with everything else.
-4. *What stays at the game's rate, on purpose.* The water surface's waves and
-   the HUD's counters are rebuilt from vertices every game frame. The camera
-   moves smoothly over the water because the water is in world space under an
-   interpolated view; the waves themselves animate at 20 or 30 Hz, and that is
-   how the game looks.
 
-Verification: the unpaired count per state drops to what the class table
-predicts, and a playtest of a championship, a time trial and stunt mode finds
-nothing that streaks or judders that did not on the cartridge.
+   The water surface is the same story and was fixed the same way. It is a
+   lattice of rows marching away from the camera, fifty vertex blocks reached
+   through segment 3 under that same identity matrix, and the game recomputes
+   it every frame: across four consecutive race frames, forty-one of the fifty
+   carry different vertex data each time while the course and the models
+   (segments 1, 8 and 13) are byte-for-byte identical. Interpolating a rebuilt
+   mesh is only safe when index i means the same point in both frames, which is
+   why this was left alone until it was checked -- and it holds: every block's
+   vertex count is the same every frame, and every block's first vertex is
+   bit-for-bit identical, so the lattice is fixed and only the heights on it
+   move.
+4. *What stays at the game's rate, on purpose.* The HUD's counters, which are
+   2D and are drawn without interpolation deliberately, and anything drawn at a
+   scene cut, where nothing should be carried across.
+
+Verification: `WR64_PAIRING=1` reports what fails to pair, and a playtest of a
+championship, a time trial and stunt mode finds nothing that streaks or judders
+that did not on the cartridge. Both sections have a switch --
+`WR64_NO_SKY_INTERP=1` and `WR64_NO_WATER_INTERP=1` -- because whether
+interpolating a rebuilt mesh is an improvement or makes it swim is a question
+only a side-by-side can answer.
 
 **Gate:** HUD Placement and Aspect Ratio each do what their names say on
 every screen, and a full championship shows no interpolation artefact.

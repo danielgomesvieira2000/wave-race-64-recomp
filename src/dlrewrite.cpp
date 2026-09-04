@@ -40,12 +40,13 @@
 //    interpolation: the same projection is reissued several times per frame
 //    with different flags, and RT64 must never blend one with another.
 //
-// 4. The sky (phase 07, step B). The game rebuilds the sky's vertices every
-//    frame under an unchanging identity matrix, so RT64 pairs that matrix
-//    perfectly, finds no motion, and holds the sky still between the game's
-//    frames while the world moves. The section that draws it is given a
-//    matrix group that asks for the vertices and their texture coordinates
-//    to be interpolated as well. See the sky section below.
+// 4. The sky and the water (phase 07, step B). The game rebuilds both from
+//    vertices every frame, under an unchanging identity matrix, so RT64 pairs
+//    that matrix perfectly, finds no motion, and holds them still between the
+//    game's frames while the world moves. Each is given a matrix group asking
+//    for the vertices and their texture coordinates to be interpolated as
+//    well, and an explicit transform id so the pairing they depend on cannot
+//    be lost to a tie. See the sky and water sections below.
 //
 // How the list is read. The game builds one top-level list per frame with
 // every matrix load inline, and calls its model and HUD lists from it. This
@@ -72,7 +73,10 @@
 // element that is given one class in one frame and another in the next,
 // which flickers between the two however defensible each classification is. WR64_HUD_OFF=1 leaves
 // the 2D layer alone, WR64_NO_REWRITE=1 switches the rewriter off entirely,
-// and WR64_NO_SKY_INTERP=1 leaves the sky at the game's rate.
+// WR64_NO_SKY_INTERP=1 leaves the sky at the game's rate and
+// WR64_NO_WATER_INTERP=1 leaves the water's waves at it. WR64_PAIRING=1, read
+// in patches/framerate.cpp rather than here, reports how much of the frame
+// RT64 is managing to interpolate at all.
 //
 // WR64_3D_TRACE names a file and writes the whole of a few race frames into
 // it -- every matrix load, vertex load and call, with each block's hash and
@@ -537,25 +541,48 @@ struct Walker {
     //
     // WR64_NO_SKY_INTERP=1 switches it off, for comparison.
 
+    static constexpr uint32_t kSkyId = 0x57A00001u;
+    static constexpr uint32_t kWaterId = 0x57A00002u;
+
     enum class SkySection { Before, Open, Done };
     SkySection sky = SkySection::Before;
     bool sky_interp = true;
 
-    // Only the vertex and texture-coordinate components differ from RT64's
-    // defaults; every other field is passed as RT64 would have set it, so
-    // that closing the section restores the renderer's own behaviour exactly.
+    // The group both the sky and the water are drawn under, and the one that
+    // puts RT64's defaults back afterwards. Only the vertex and
+    // texture-coordinate components differ from those defaults; every other
+    // field is passed as RT64 would have set it, so that closing a section
+    // restores the renderer's own behaviour exactly.
     //
     // G_EX_COMPONENT_INTERPOLATE rather than G_EX_COMPONENT_AUTO for the
     // texture coordinates: automatic means "only when the positions did not
-    // change", which is the pure texture scroll of a waterfall, and the sky's
-    // positions do change.
-    void sky_group(bool interpolate_vertices) {
-        const uint32_t v = interpolate_vertices ? G_EX_COMPONENT_INTERPOLATE : G_EX_COMPONENT_SKIP;
+    // change", which is the pure texture scroll of a waterfall, and both of
+    // these move their positions.
+    //
+    // Each section is given an explicit transform id rather than G_EX_ID_AUTO,
+    // with linear ordering, and that is not decoration. Both the sky and the
+    // water are drawn under the game's identity matrix, and identical matrices
+    // are exactly what ties a matcher that pairs by position: RT64 was
+    // measured leaving them unpaired in some frames. A transform that finds no
+    // pair never reaches matchTransform, and it is matchTransform that
+    // computes the per-vertex velocities both sections depend on, so a tie lost
+    // meant the sky quietly falling back to the game's rate for a frame. An
+    // explicit id is matched first and by identity, before any of that
+    // (GameFrame::match), and several transforms sharing one id pair up in the
+    // order they were submitted, which is what the sky's two want.
+    //
+    // The values only have to be distinct from each other and from RT64's
+    // G_EX_ID_IGNORE (0) and G_EX_ID_AUTO (~0); nothing else in this port
+    // gives a transform an id.
+    void vertex_interp_group(uint32_t id) {
+        const bool on = id != G_EX_ID_AUTO;
+        const uint32_t v = on ? G_EX_COMPONENT_INTERPOLATE : G_EX_COMPONENT_SKIP;
+        const uint32_t order = on ? G_EX_ORDER_LINEAR : G_EX_ORDER_AUTO;
         if (GfxCommand* cmd = reserve(2)) {
-            gEXMatrixGroup(cmd, G_EX_ID_AUTO, G_EX_INTERPOLATE_DECOMPOSE, G_EX_NOPUSH, 0,
+            gEXMatrixGroup(cmd, id, G_EX_INTERPOLATE_DECOMPOSE, G_EX_NOPUSH, 0,
                            G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,
                            G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, v,
-                           G_EX_COMPONENT_AUTO, G_EX_ORDER_AUTO, G_EX_EDIT_NONE,
+                           G_EX_COMPONENT_AUTO, order, G_EX_EDIT_NONE,
                            G_EX_ASPECT_AUTO, v, G_EX_COMPONENT_AUTO);
         }
     }
@@ -569,7 +596,7 @@ struct Walker {
         if (params & kMtxProjection) {
             if ((params & kMtxLoad) && sky == SkySection::Before &&
                 projection_is_perspective && segments[6] != 0) {
-                sky_group(true);
+                vertex_interp_group(kSkyId);
                 sky = SkySection::Open;
             }
             return;
@@ -579,9 +606,88 @@ struct Walker {
 
     void sky_close() {
         if (sky == SkySection::Open) {
-            sky_group(false);
+            vertex_interp_group(G_EX_ID_AUTO);
             sky = SkySection::Done;
         }
+    }
+
+    // ---- the water ------------------------------------------------------
+    //
+    // The waves are the sky's problem again, in the place where it is most
+    // worth solving. The water surface is a lattice of rows marching away
+    // from the camera, fifty vertex blocks reached through segment 3 under
+    // the same identity matrix the sky uses, and the game recomputes it every
+    // frame: measured across four consecutive race frames, forty-one of the
+    // fifty blocks carry different vertex data each time while the course and
+    // the models (segments 1, 8 and 13) are byte-for-byte identical. So the
+    // waves moved at the game's twenty or thirty frames a second under a
+    // camera gliding at sixty.
+    //
+    // Interpolating them is safe here in a way it would not be for every
+    // rebuilt mesh. RT64 takes the per-vertex difference by index, guarded
+    // only by the block's vertex count being unchanged, so a mesh whose
+    // vertices mean something different from one frame to the next would
+    // smear rather than animate. This one does not: each block's vertex count
+    // is the same every frame (13, 14, 15, then 16 for the rest), and each
+    // block's first vertex is bit-for-bit identical across frames -- the
+    // lattice is fixed and only the heights on it move. Index i is the same
+    // point on the surface in both frames, and the difference between them is
+    // exactly the wave.
+    //
+    // The whole surface is drawn from one of the game's static lists, so the
+    // group can be put around the call rather than threaded through the list:
+    // RT64 does not create a world transform when a matrix is loaded but when
+    // the first vertex after it is, so a group set before the call is the one
+    // the water's transform is created under, and a group restoring the
+    // defaults after the call leaves everything else as it was.
+    //
+    // WR64_NO_WATER_INTERP=1 switches it off, for comparison.
+
+    bool water_interp = true;
+
+    // The segment a called list draws its first vertices from, or 0 for a
+    // list that draws none. The game's drawing lists are static and are
+    // called by the same segmented address every frame, so each is scanned
+    // once and answered from the table afterwards.
+    uint32_t first_vertex_segment(uint32_t segmented) {
+        static std::unordered_map<uint32_t, uint32_t> cache;
+        const auto it = cache.find(segmented);
+        if (it != cache.end()) return it->second;
+        const uint32_t found = scan_first_vertex_segment(physical(segmented), 0);
+        cache.emplace(segmented, found);
+        return found;
+    }
+
+    uint32_t scan_first_vertex_segment(uint32_t physical_addr, int depth) const {
+        uint32_t cursor = physical_addr;
+        for (uint32_t steps = 0; steps < 512; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint32_t w0 = c[0];
+            const uint32_t w1 = c[1];
+            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
+            cursor += 8;
+            if (op == kOpEndDisplayList) return 0;
+            if (op == kOpVtx) return (w1 >> 24) & 0xF;
+            if (op == kOpDisplayList) {
+                const bool branch = ((w0 >> 16) & 0xFF) != 0;
+                if (branch) { cursor = physical(w1); continue; }
+                if (depth < 3) {
+                    const uint32_t found = scan_first_vertex_segment(physical(w1), depth + 1);
+                    if (found != 0) return found;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Whether a call about to be written out draws the water, and so should
+    // be wrapped. Segment 3 is where the game builds the frame's own
+    // geometry; in a race frame the whole of it is the water surface.
+    static constexpr uint32_t kWaterSegment = 3;
+
+    bool draws_water(uint32_t segmented_list) {
+        return water_interp && projection_is_perspective &&
+               first_vertex_segment(segmented_list) == kWaterSegment;
     }
 
     // ---- rectangles -----------------------------------------------------
@@ -1239,6 +1345,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     static const bool anchors_disabled = std::getenv("WR64_HUD_NO_ANCHORS") != nullptr;
     static const bool sky_interp_off = std::getenv("WR64_NO_SKY_INTERP") != nullptr;
     w.sky_interp = !sky_interp_off;
+    static const bool water_interp_off = std::getenv("WR64_NO_WATER_INTERP") != nullptr;
+    w.water_interp = !water_interp_off;
     w.anchors = !anchors_disabled &&
                 config.hr_option != ultramodern::renderer::HUDRatioMode::Original;
     w.inset = wr64::display::anchor_inset();
@@ -1313,7 +1421,13 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 if (!e.empty()) w.classify_draw(e, w1);
                 if (!rects.empty()) w.classify_rect(rects, w1, {});
             }
+            // The water surface is drawn from one of the game's static lists;
+            // the group goes around the call, since the transform inside it is
+            // created at its first vertex rather than at its matrix load.
+            const bool water = w.draws_water(w1);
+            if (water) w.vertex_interp_group(Walker::kWaterId);
             w.emit(w0, w1);
+            if (water) w.vertex_interp_group(G_EX_ID_AUTO);
             continue;
         }
 
