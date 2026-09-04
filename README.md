@@ -40,7 +40,7 @@ Settings, controller profiles and saves live in
 `%LOCALAPPDATA%\WaveRace64Recomp`. Started by double-click, the program writes
 its log to `wr64.log` in that folder; attach that file to a bug report.
 
-## What 0.2 is
+## What 0.3 is
 
 The game boots, its menus work, and championship, time trial and two-player
 races run with audio, at speed, with records saved to the emulated EEPROM.
@@ -48,18 +48,29 @@ Not every course has been played in both directions yet, and stunt mode and
 the championship ceremony have had less testing than the rest; reports of
 anything wrong there are welcome.
 
-New in 0.2: the 3D models on the watercraft and rider select screens sit in
-their frames again in widescreen, where 0.1 spread them out with the frustum;
-and two-player split screen is presented in full, where 0.1 cut its top and
-bottom off. Both come from a display-list rewriter in the port that inserts
-RT64's extended commands into the game's lists before RT64 sees them, without
-touching the game's code (see `docs/PLAN.md`, phase 07).
+New in 0.3, all of it widescreen work on the 2D layer: the race HUD is laid
+out across the frame rather than kept at 4:3 in the middle of it -- time
+top-left, rank and lap centre, speed and the leaderboard right, MISS and power
+along the bottom -- while menus keep the 4:3 layouts their frames are drawn
+for. The game's full-screen overlays, the tint over a race and the pause
+screen's dim, now reach the edges instead of leaving a brighter band down each
+side. And the warm-up round is widescreen like every other race, truly so
+rather than a stretched 4:3 picture.
+
+From 0.2: the 3D models on the watercraft and rider select screens sit in
+their frames in widescreen, and two-player split screen is presented in full.
+
+All of it comes from a display-list rewriter in the port, which inserts RT64's
+extended commands into the game's lists before RT64 sees them without touching
+the game's code, and from four scripted patches to RT64 (see `docs/PLAN.md`,
+phase 07, and `tools/patch_rt64.py`).
 
 Beyond running natively, the port adds:
 
-- **Widescreen** at the display's resolution and aspect ratio, with the HUD
-  kept at its original shape and the game's own black overscan borders
-  removed.
+- **Widescreen** at the display's resolution and aspect ratio, with the game's
+  own black overscan borders removed. **HUD Placement** in the Graphics tab
+  chooses whether the race HUD is laid out across the frame or kept at 4:3 in
+  the middle of it.
 - **High frame rate.** The game keeps its own update rate (30 Hz in a race, 20
   in the menus and Time Trial, by its own choice) and RT64 interpolates each
   object's movement between game frames, so it presents at your display's
@@ -73,10 +84,9 @@ Known issues:
 - In a 4:3 window the picture is letterboxed. The game draws a 303x199 region
   of its 320x240 framebuffer, which does not fit a 4:3 window without bars.
   Fullscreen on a widescreen display, the default, has no bars.
-- Full-screen 2D effects drawn by the game, such as the sun's glare, are kept
-  at 4:3 in the middle of the widened frame with the rest of the HUD, so they
-  do not reach the sides. The HUD itself stays at 4:3 in the centre.
-- **HUD Placement** in the Graphics tab does nothing for this game yet.
+- The **results screen**'s layout is wrong when HUD Placement is set larger
+  than Original.
+- The **MAX POWER** banner loses its last letter while the HUD layout is on.
 - Windows only, for now.
 
 ## Layout

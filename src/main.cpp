@@ -158,7 +158,7 @@ void print_usage(const char* argv0) {
 }
 
 void print_version() {
-    std::printf("Wave Race 64: Recompiled 0.2.0\n");
+    std::printf("Wave Race 64: Recompiled 0.3.0\n");
     std::printf("  recompiled game code : %s\n",
 #if WR64_WITH_RECOMPILED
         "linked");
@@ -298,7 +298,7 @@ int run(int argc, char** argv, const char* rom_arg) {
     recomp::Configuration config{};
     config.argc = argc;
     config.argv = argv;
-    config.project_version = recomp::Version{0, 2, 0, ""};
+    config.project_version = recomp::Version{0, 3, 0, ""};
     config.rsp_callbacks = wr64::rsp_callbacks();
 #if WR64_WITH_FRONTEND
     // RecompFrontend's renderer draws the game and the menus into the same
