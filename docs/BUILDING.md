@@ -376,6 +376,21 @@ than the region, and the window shows as much of it as its shape allows -- the
 frame a wider CRT would have shown, with nothing black around it. The HUD sits
 at 4:3 inside that, where the cartridge put it.
 
+**A 3D pass that covers the drawn region is not always widened.** RT64 widens
+a 3D pass only when it reaches both edges of the frame it draws into. This
+game scissors its world to (8, 20)-(311, 219), and in most frames nothing else
+touches the framebuffer, so the frame's scissor is that same region and the
+test passes. In the championship's warm-up round something else in the frame
+touches the whole 320x240 framebuffer: the frame's scissor becomes the whole
+thing, the world falls eight pixels short at each end, and the warm-up alone
+was rendered at 4:3. The patch allows a sixteenth of the frame's width in
+tolerance, which is more than the border and far less than the inset boxes the
+select screens draw their models into. RT64 asks the question in two places --
+once to render the pass across the widened frame, once to widen the frustum
+that fills it -- and both are patched; answering only the first stretches the
+game's 4:3 frustum across a wide viewport, which looks like a stretched image
+rather than a wider view.
+
 **HUD Placement** in the Graphics tab does nothing for this game. It moves 2D
 content that names an edge through RT64's extended GBI, and the cartridge
 predates that.

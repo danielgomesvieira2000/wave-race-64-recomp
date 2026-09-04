@@ -32,6 +32,23 @@ nothing hides them, and RT64 makes two decisions that go wrong because of them.
    The region is set through an extern "C" function so the port needs no RT64
    headers, and it defaults to off, so RT64 behaves as before until a port asks.
 
+3. A 3D pass that covers the drawn region is not widened, in some frames.
+
+   RT64 widens a 3D pass only when it reaches both edges of the frame it is
+   drawing into. This game scissors its world to (8, 20)-(311, 219), and in
+   most frames nothing else touches the framebuffer, so the frame's scissor is
+   that same region and the test passes. In the championship's warm-up round
+   something else in the frame touches the whole 320x240 framebuffer: the
+   frame's scissor becomes the whole thing, the world falls eight pixels short
+   at each end, and the warm-up alone was rendered at 4:3. The patch allows a
+   sixteenth of the frame's width in tolerance -- about twenty pixels, more
+   than the border and far less than the inset boxes the select screens draw
+   their models into, which must keep failing the test. RT64 asks the question
+   in two places -- once to render the pass across the widened frame, once to
+   widen the frustum that fills it -- and both are patched: answering only the
+   first stretches the game's 4:3 frustum across a wide viewport, which looks
+   like a stretched image rather than a wider view.
+
 Scripted and idempotent because they patch a submodule: a submodule update
 would otherwise revert them silently.
 
@@ -48,6 +65,7 @@ RT64 = REPO / "lib" / "RT64" / "src"
 FB_RENDERER = RT64 / "render" / "rt64_framebuffer_renderer.cpp"
 VI_RENDERER = RT64 / "render" / "rt64_vi_renderer.cpp"
 VI_HEADER = RT64 / "render" / "rt64_vi_renderer.h"
+PROJ_PROCESSOR = RT64 / "render" / "rt64_projection_processor.cpp"
 
 MARKER = "wr64"
 
@@ -166,6 +184,49 @@ VI_MAP_REPLACEMENT = """        // wr64: fit the game's content region to the wi
 """
 
 
+# --- 3. widening a 3D pass that covers the drawn region ---------------------
+
+WIDEN_ANCHOR = """                bool coversWholeWidth = !intersectionRect.isEmpty() && (intersectionRect.ulx <= fbPair.scissorRect.ulx) && (intersectionRect.lrx >= fbPair.scissorRect.lrx);
+"""
+
+WIDEN_REPLACEMENT = """                // wr64: a 3D pass that reaches nearly both edges of the frame is
+                // covering it. The exact test fails on this game's eight-pixel
+                // border. It scissors its world to the region it draws into,
+                // (8, 20)-(311, 219), and in most frames nothing else touches
+                // the framebuffer, so the frame's scissor is that same region
+                // and the test passes. In the championship's warm-up round
+                // something else in the frame does touch the whole 320x240
+                // framebuffer; the frame's scissor becomes the whole thing, the
+                // world falls eight pixels short at each end, and the warm-up
+                // was rendered at 4:3 while every other race was widened.
+                //
+                // A sixteenth of the frame's width is about twenty pixels here:
+                // comfortably more than the border, and far less than the inset
+                // boxes the select screens draw their models into, which reach
+                // barely half the width and must keep failing this test.
+                const int32_t coverTolerance = (fbPair.scissorRect.lrx - fbPair.scissorRect.ulx) / 16;
+                bool coversWholeWidth = !intersectionRect.isEmpty() && (intersectionRect.ulx <= fbPair.scissorRect.ulx + coverTolerance) && (intersectionRect.lrx >= fbPair.scissorRect.lrx - coverTolerance);
+"""
+
+
+PROJ_ANCHOR = """                    bool coversWholeWidth = (intersectionRect.ulx <= fbPair.scissorRect.ulx) && (intersectionRect.lrx >= fbPair.scissorRect.lrx);
+"""
+
+PROJ_REPLACEMENT = """                    // wr64: the same tolerance as the widening test above, and it
+                    // has to be here as well. RT64 asks this question twice: once
+                    // to decide whether to render the pass across the widened
+                    // frame, and once to decide whether to widen the frustum that
+                    // fills it. Answering only the first leaves the game's 4:3
+                    // frustum stretched across a wide viewport, which is a wider
+                    // picture of the same view rather than more of the view -- it
+                    // reads as a horizontally stretched image, and that is exactly
+                    // how the warm-up round looked when only the other one was
+                    // patched.
+                    const int32_t coverTolerance = (fbPair.scissorRect.lrx - fbPair.scissorRect.ulx) / 16;
+                    bool coversWholeWidth = (intersectionRect.ulx <= fbPair.scissorRect.ulx + coverTolerance) && (intersectionRect.lrx >= fbPair.scissorRect.lrx - coverTolerance);
+"""
+
+
 def patch(target, anchor, replacement, name):
     text = target.read_text()
     if replacement in text:
@@ -179,11 +240,13 @@ def patch(target, anchor, replacement, name):
 
 
 def main():
-    for target in (FB_RENDERER, VI_RENDERER, VI_HEADER):
+    for target in (FB_RENDERER, VI_RENDERER, VI_HEADER, PROJ_PROCESSOR):
         if not target.exists():
             sys.exit(f"missing {target}. Run: git submodule update --init --recursive")
 
     patch(FB_RENDERER, FB_ANCHOR, FB_REPLACEMENT, "main-frame test")
+    patch(FB_RENDERER, WIDEN_ANCHOR, WIDEN_REPLACEMENT, "widening test")
+    patch(PROJ_PROCESSOR, PROJ_ANCHOR, PROJ_REPLACEMENT, "widening test (frustum)")
     patch(VI_HEADER, VI_HEADER_ANCHOR, VI_HEADER_REPLACEMENT, "content crop (header)")
     patch(VI_RENDERER, VI_FUNC_ANCHOR, VI_FUNC_REPLACEMENT, "content crop (setter)")
     patch(VI_RENDERER, VI_MAP_ANCHOR, VI_MAP_REPLACEMENT, "content crop (blit)")
