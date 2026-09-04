@@ -254,10 +254,9 @@ struct Mat4 {
 struct Extent {
     float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
     bool empty() const { return max_x < min_x; }
-    bool full_frame() const {
-        return min_x <= -kFrameEdge && max_x >= kFrameEdge &&
-               min_y <= -kFrameEdge && max_y >= kFrameEdge;
-    }
+    // The draw's horizontal extent in the game's own screen pixels.
+    float left_px() const { return (min_x + 1.0f) * (kFramebufferWidth / 2.0f); }
+    float right_px() const { return (max_x + 1.0f) * (kFramebufferWidth / 2.0f); }
     float center_x() const { return (min_x + max_x) / 2.0f; }
     void add(const Extent& o) {
         min_x = std::min(min_x, o.min_x); max_x = std::max(max_x, o.max_x);
@@ -659,6 +658,23 @@ struct Walker {
         if (!noemit) set_rect_class(next);
     }
 
+    // Whether a draw spans the frame from side to side, and so should be
+    // stretched across the widened one.
+    //
+    // Measured against the region the game draws into, not the framebuffer.
+    // This game's full-screen overlays -- the tint over the world, the dim the
+    // pause screen lays over it, a fade -- span its own drawn region, 8 to
+    // 311, because that is what its scissor allows; against the framebuffer's
+    // 0 to 320 they fall eight pixels short at each end and were left at 4:3,
+    // which showed as a brighter band of untinted picture down both edges.
+    // Height is not part of the test: the dim is drawn as horizontal strips,
+    // each spanning the width and a slice of the height.
+    bool covers_width(const Extent& e) const {
+        const float left = has_scissor() ? float(scissor_left) : 0.0f;
+        const float right = has_scissor() ? float(scissor_right) : float(kFramebufferWidth);
+        return e.left_px() <= left + 1.0f && e.right_px() >= right - 1.0f;
+    }
+
     Class classify(const Extent& e, const std::string& identity, const std::string& identity2) {
         Class tagged;
         if (tags != nullptr && (tags->lookup(identity, tagged) || tags->lookup(identity2, tagged))) {
@@ -666,7 +682,7 @@ struct Walker {
             return Class::Auto;
         }
         if (e.empty()) return Class::Auto;
-        if (e.full_frame()) return Class::Stretch;
+        if (covers_width(e)) return Class::Stretch;
         // Anchoring is for the race HUD, which is drawn under an orthographic
         // projection in a frame that drew its world first. A menu's layout is
         // 4:3 by design and stays so whatever the setting says.

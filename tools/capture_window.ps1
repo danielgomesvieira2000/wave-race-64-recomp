@@ -50,6 +50,8 @@ public class Win32Window {
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    public static uint ProcessOf(IntPtr h) { uint pid; GetWindowThreadProcessId(h, out pid); return pid; }
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
     public static IntPtr ByTitle(string wanted) {
@@ -82,9 +84,22 @@ if ($handle -eq [IntPtr]::Zero) {
     exit 1
 }
 
-# Bring it up front once. Anything covering the window would otherwise be
-# captured instead of the game, silently.
-[void][Win32Window]::SetForegroundWindow($handle)
+# Bring it up front. Anything covering the window is captured instead of the
+# game, silently.
+#
+# This often fails, and there is no fixing it from here: Windows refuses
+# SetForegroundWindow to a process that is not itself in the foreground, and
+# this script is started from a terminal that usually is. Driving it through
+# the shell's AppActivate is not refused, but it can raise the Start menu over
+# the game instead, which is worse -- and worse still on a machine somebody is
+# working at. So the call is left to fail, and the window has to be visible
+# when a capture is taken. A screenshot of something else is obvious enough
+# when it happens.
+function Raise-Game {
+    [void][Win32Window]::SetForegroundWindow($handle)
+}
+
+Raise-Game
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -92,8 +107,8 @@ for ($i = 0; $i -lt $Count; $i++) {
     # Raised before every shot, not once: this captures the desktop where the
     # window sits, so anything that comes to the front in between is what would
     # be photographed instead of the game.
-    [void][Win32Window]::SetForegroundWindow($handle)
-    Start-Sleep -Milliseconds 150
+    Raise-Game
+    Start-Sleep -Milliseconds 250
 
     $rect = New-Object Win32Window+RECT
     if (-not [Win32Window]::GetClientRect($handle, [ref]$rect)) { break }
