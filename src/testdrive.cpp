@@ -237,6 +237,10 @@ void set_rdram_base(uint8_t* rdram) {
     g_rdram = rdram;
 }
 
+uint32_t current_game_state() {
+    return g_rdram != nullptr ? read_word(kGameState) : 0;
+}
+
 void poll_game_state() {
     if (g_rdram == nullptr) {
         return;

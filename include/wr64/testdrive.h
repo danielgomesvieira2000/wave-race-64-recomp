@@ -40,4 +40,8 @@ void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y);
 void set_rdram_base(uint8_t* rdram);
 void poll_game_state();
 
+// The game's state variable as it is right now, or 0 before RDRAM is known.
+// The display-list rewriter reads it to tell a race from a menu.
+uint32_t current_game_state();
+
 }  // namespace wr64

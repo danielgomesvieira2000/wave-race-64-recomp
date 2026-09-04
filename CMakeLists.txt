@@ -185,7 +185,7 @@ set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 # overlays.cpp cannot even compile without recomp_overlays.inl.
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp
-                             src/testdrive.cpp src/display.cpp)
+                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
@@ -230,6 +230,8 @@ if(WR64_WITH_RUNTIME)
         __PRFCHWINTRIN_H)
 
     target_include_directories(WaveRace64Recomp PRIVATE
+        # The extended GBI header the display-list rewriter builds its commands with.
+        "${WR64_LIB_DIR}/RT64/include"
         "${WR64_LIB_DIR}/RT64/src"
         "${WR64_LIB_DIR}/RT64/src/contrib"
         "${WR64_LIB_DIR}/RT64/src/contrib/plume"

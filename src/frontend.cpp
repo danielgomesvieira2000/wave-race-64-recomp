@@ -25,6 +25,7 @@
 #include <librecomp/game.hpp>
 #include <ultramodern/config.hpp>
 
+#include "wr64/dlrewrite.h"
 #include "wr64/rom.h"
 
 // The two globals recompui expects the port to define. It declares them extern
@@ -59,11 +60,59 @@ ultramodern::renderer::PresentationMode presentation_mode();
 // The two differ by one argument: ultramodern's callback does not carry a
 // presentation mode, and RecompFrontend's context wants one. See
 // presentation_mode() below for what it decides.
+// Sits between ultramodern and RecompFrontend's renderer so that every
+// display list can be rewritten before RT64 sees it (see wr64/dlrewrite.h).
+// Everything else is forwarded untouched.
+class RewritingContext final : public ultramodern::renderer::RendererContext {
+public:
+    RewritingContext(uint8_t* rdram,
+                     std::unique_ptr<ultramodern::renderer::RendererContext> inner)
+        : rdram_(rdram), inner_(std::move(inner)) {
+        setup_result = inner_->get_setup_result();
+        chosen_api = inner_->get_chosen_api();
+    }
+
+    bool valid() override { return inner_->valid(); }
+    ultramodern::renderer::SetupResult get_setup_result() const override {
+        return inner_->get_setup_result();
+    }
+    ultramodern::renderer::GraphicsApi get_chosen_api() const override {
+        return inner_->get_chosen_api();
+    }
+    bool update_config(const ultramodern::renderer::GraphicsConfig& old_config,
+                       const ultramodern::renderer::GraphicsConfig& new_config) override {
+        return inner_->update_config(old_config, new_config);
+    }
+    void enable_instant_present() override { inner_->enable_instant_present(); }
+    void send_dummy_workload(uint32_t fb_address) override { inner_->send_dummy_workload(fb_address); }
+    void update_screen() override { inner_->update_screen(); }
+    void shutdown() override { inner_->shutdown(); }
+    uint32_t get_display_framerate() const override { return inner_->get_display_framerate(); }
+    float get_resolution_scale() const override { return inner_->get_resolution_scale(); }
+
+    void send_dl(const OSTask* task) override {
+        const uint32_t rewritten =
+            wr64::dlrewrite::rewrite(rdram_, static_cast<uint32_t>(task->t.data_ptr));
+        if (rewritten == 0) {
+            inner_->send_dl(task);
+            return;
+        }
+        OSTask copy = *task;
+        copy.t.data_ptr = rewritten;
+        inner_->send_dl(&copy);
+    }
+
+private:
+    uint8_t* rdram_;
+    std::unique_ptr<ultramodern::renderer::RendererContext> inner_;
+};
+
 std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
         uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle,
         bool developer_mode) {
-    return recompui::renderer::create_render_context(
-        rdram, window_handle, presentation_mode(), developer_mode);
+    return std::make_unique<RewritingContext>(
+        rdram, recompui::renderer::create_render_context(
+                   rdram, window_handle, presentation_mode(), developer_mode));
 }
 
 // Which frame RT64 puts on screen, and when.
