@@ -101,6 +101,88 @@ are tied to a 30 Hz update, so the game keeps its rate and RT64 interpolates
 each object's transform between game frames, as the other ports do. Then CI that
 builds without a ROM, and a first-run flow that explains the ROM requirement.
 **Gate:** a stranger with a dump and no context can build and play it.
+*Met: 0.1.0, 2026-09-04.*
+
+### 07 — 0.2: widescreen 2D, and the frames in between
+
+Two families of visual defect are left over from 06, and one tool fixes both:
+a **display-list rewriter** in the port that copies each graphics task's list
+into scratch RDRAM and inserts RT64's extended GBI commands where they are
+needed, before RT64 sees it. The game's code and data are untouched; the
+cartridge predates the extended GBI, but RT64 honours its commands from any
+list that starts with `gEXEnable`, and its Fast3D microcode leaves the opcode
+free. The rewriter tracks the segment table and the matrix stack as it walks
+the list, so it can read a viewport, a matrix or a vertex from RDRAM and decide
+from what it finds.
+
+**A. The 2D layer, first.** The game draws all of its 2D -- HUD, menus,
+fades -- as triangles under an orthographic projection, not as texture
+rectangles. RT64 keeps such a layer at 4:3 in the centre of the widened frame,
+which is right for a race HUD but wrong twice over:
+
+1. *Screens that mix 2D layout with 3D objects.* On the watercraft and rider
+   select screens the 2D frames stay at 4:3 while the 3D models are drawn in
+   the widened frustum, so the models land outside the frames meant for them.
+   Every perspective projection drawn in a menu state gets a matrix group with
+   `G_EX_ASPECT_ADJUST`, which squeezes the projection to its 4:3 proportions
+   in the centre, where the 2D layout is. Race states are left widened. The
+   game's state variable says which is which. This is the smallest change and
+   the first deliverable: it validates the rewriter on one inserted command.
+2. *HUD Placement does nothing.* RT64 anchors 2D geometry to a screen edge by
+   the origin carried on its viewport. The rewriter classifies each 2D draw by
+   where its vertices fall on the 320-wide screen -- left third, middle, right
+   third, or spanning it -- and, around each class, pushes the viewport, sets
+   a viewport alignment for that edge (with the offset that cancels RT64's own
+   origin displacement, so the game's viewport data is reissued unchanged),
+   widens the scissor so the anchored element is not clipped, and pops
+   afterwards. Full-width backgrounds are stretched across the frame. With the
+   origins in place the menu's option works as designed: *Original* pulls every
+   anchor to the centre (the HUD as it is today), *16:9* anchors to a virtual
+   16:9 frame, *Expand* to the display's edges. Aspect Ratio and HUD Placement
+   then act independently, which was asked for in 06.
+3. *The edges have to be the window's edges.* The present crop that removes
+   the game's overscan borders fits the 303x199 drawn region to the window's
+   height, so the widened frame overhangs the window by a tenth of its width on
+   each side, and an element anchored to RT64's left edge would sit off screen.
+   The crop changes to fit the widened frame's width to the window's, with the
+   borders still cropped; the same picture in fullscreen 16:9, and edges that
+   mean what they say.
+
+Verification: captures of title, main menu, options, rider and watercraft
+select, course overview, a race HUD and the pause menu, in each HUD Placement
+mode, at 16:9 and in a 4:3 window. Nothing may be cut off or drawn twice.
+
+**B. The frames in between.** RT64 pairs each object's matrix with the previous
+frame's by draw-call signature and nearest position, and pairs about 98% of
+transforms; the rest, and the wrong pairs, are the flickers seen during play.
+The rewriter is the fix here too: it can tag any matrix with an explicit group.
+
+1. *Measure before tagging.* Extend the frame-rate report with RT64's count of
+   unpaired transforms per frame, by game state, and collect the player's
+   descriptions of what flickers and when. Expected suspects, from how the
+   game draws: spray and splash particles that die and respawn (a wrong pair
+   streaks between the two), buoys and scenery entering the view (a shifted
+   pair for one frame), billboards built by the look-at helper, and the
+   render-to-texture pass the game draws at 1:1 before the main frame.
+2. *Tag by class.* Objects that respawn get `G_EX_ID_IGNORE` (drawn at the
+   newer frame, never interpolated). Racers, buoys and scenery get an explicit
+   ID from the matrix pool slot and the model drawn, with linear ordering, so
+   pairing no longer depends on the heuristic. The camera keeps simple
+   interpolation. RT64's velocity tolerance for automatic pairs is a compile-
+   time constant; if a class needs a different one, it becomes another
+   idempotent patch in `tools/patch_rt64.py`.
+3. *What stays at the game's rate, on purpose.* The water surface's waves and
+   the HUD's counters are rebuilt from vertices every game frame. The camera
+   moves smoothly over the water because the water is in world space under an
+   interpolated view; the waves themselves animate at 20 or 30 Hz, and that is
+   how the game looks.
+
+Verification: the unpaired count per state drops to what the class table
+predicts, and a playtest of a championship, a time trial and stunt mode finds
+nothing that streaks or judders that did not on the cartridge.
+
+**Gate:** HUD Placement and Aspect Ratio each do what their names say on
+every screen, and a full championship shows no interpolation artefact.
 
 ## Standing constraints
 
