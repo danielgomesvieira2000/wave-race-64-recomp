@@ -171,7 +171,17 @@ The rewriter is the fix here too: it can tag any matrix with an explicit group.
    interpolation. RT64's velocity tolerance for automatic pairs is a compile-
    time constant; if a class needs a different one, it becomes another
    idempotent patch in `tools/patch_rt64.py`.
-3. *What stays at the game's rate, on purpose.* The water surface's waves and
+3. *The sky.* Done. The sky is drawn the same way the world is -- under an
+   identity model matrix, with the camera on the projection stack -- but it
+   is not part of the world: the game rebuilds its three bands' vertices into
+   a scratch buffer behind segment 6 every frame, following the camera and
+   scrolling the clouds. The matrix RT64 interpolates is therefore identical
+   from frame to frame, it pairs perfectly, finds no motion, and holds the sky
+   still between the game's frames, which is the shimmer along the horizon at
+   60 Hz. The rewriter gives that section a matrix group asking for the
+   vertices and their texture coordinates to be interpolated as well; RT64
+   then carries a per-vertex velocity, and the sky moves with everything else.
+4. *What stays at the game's rate, on purpose.* The water surface's waves and
    the HUD's counters are rebuilt from vertices every game frame. The camera
    moves smoothly over the water because the water is in world space under an
    interpolated view; the waves themselves animate at 20 or 30 Hz, and that is

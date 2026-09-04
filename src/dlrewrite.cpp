@@ -37,6 +37,13 @@
 //    interpolation: the same projection is reissued several times per frame
 //    with different flags, and RT64 must never blend one with another.
 //
+// 4. The sky (phase 07, step B). The game rebuilds the sky's vertices every
+//    frame under an unchanging identity matrix, so RT64 pairs that matrix
+//    perfectly, finds no motion, and holds the sky still between the game's
+//    frames while the world moves. The section that draws it is given a
+//    matrix group that asks for the vertices and their texture coordinates
+//    to be interpolated as well. See the sky section below.
+//
 // How the list is read. The game builds one top-level list per frame with
 // every matrix load inline, and calls its model and HUD lists from it. This
 // walks the top-level list, copying each command, following branches in
@@ -59,7 +66,16 @@
 // WR64_HUD_TRACE=1 prints every 2D draw of the first two drawing lists after
 // each change of game state, with its identity, its extent and the class it
 // was given; that is how a tag for hud.json is found. WR64_HUD_OFF=1 leaves
-// the 2D layer alone, WR64_NO_REWRITE=1 switches the rewriter off entirely.
+// the 2D layer alone, WR64_NO_REWRITE=1 switches the rewriter off entirely,
+// and WR64_NO_SKY_INTERP=1 leaves the sky at the game's rate.
+//
+// WR64_3D_TRACE names a file and writes the whole of a few race frames into
+// it -- every matrix load, vertex load and call, with each block's hash and
+// its clip-space extent -- which is how the sky was found: two consecutive
+// frames diffed against each other say which geometry the game rebuilds
+// rather than moves. WR64_3D_TRACE_FRAMES sets how many frames (two by
+// default) and WR64_3D_TRACE_STATE takes a game state in hexadecimal for the
+// screens that are not races.
 
 #include "wr64/dlrewrite.h"
 #include "wr64/display.h"
@@ -479,6 +495,90 @@ struct Walker {
         ++class_changes;
     }
 
+    // ---- the sky --------------------------------------------------------
+    //
+    // The sky is the one thing in a race frame that RT64 cannot smooth on its
+    // own, and the reason is worth stating: it does not move.
+    //
+    // Wave Race 64 puts the camera on the projection stack and draws the
+    // world under an identity model matrix, so the world is smooth because
+    // the camera's matrix is interpolated. The sky is drawn the same way --
+    // three seven-vertex bands, the haze, the horizon and the clouds, under
+    // that same identity matrix -- but it is not part of the world: the game
+    // rebuilds its vertices every frame into a scratch buffer reached through
+    // segment 6, following the camera and scrolling the clouds. So the
+    // matrix RT64 interpolates is identical from one frame to the next, RT64
+    // pairs it perfectly, computes no motion, and holds the sky still for
+    // every frame it generates in between. The sky then jumps once per game
+    // frame while everything around it moves smoothly, which is the shimmer
+    // along the horizon at 60 frames per second and worse above it.
+    //
+    // The fix is to tell RT64 to interpolate the vertices themselves, which
+    // it will do -- it takes the per-vertex difference from the previous
+    // frame and carries it as a velocity -- but not by default: a transform
+    // group's vertex and texture-coordinate components are G_EX_COMPONENT_SKIP
+    // unless something asks for them, because most geometry that changes its
+    // vertices between frames is geometry that has been replaced rather than
+    // moved. The sky is the opposite case: the same seven points, in the same
+    // order, a little further along.
+    //
+    // The section is opened at the frame's first perspective projection, and
+    // closed at the first world matrix the top-level list loads for itself --
+    // the sky's own two matrix loads are inside the game's static lists, so
+    // the top level's first one is the course, and it must be created under
+    // RT64's defaults. Segment 6 having a base at all is what says the sky is
+    // about to be drawn. If any of that does not hold, the section simply
+    // never opens and RT64 behaves as it did.
+    //
+    // WR64_NO_SKY_INTERP=1 switches it off, for comparison.
+
+    enum class SkySection { Before, Open, Done };
+    SkySection sky = SkySection::Before;
+    bool sky_interp = true;
+
+    // Only the vertex and texture-coordinate components differ from RT64's
+    // defaults; every other field is passed as RT64 would have set it, so
+    // that closing the section restores the renderer's own behaviour exactly.
+    //
+    // G_EX_COMPONENT_INTERPOLATE rather than G_EX_COMPONENT_AUTO for the
+    // texture coordinates: automatic means "only when the positions did not
+    // change", which is the pure texture scroll of a waterfall, and the sky's
+    // positions do change.
+    void sky_group(bool interpolate_vertices) {
+        const uint32_t v = interpolate_vertices ? G_EX_COMPONENT_INTERPOLATE : G_EX_COMPONENT_SKIP;
+        if (GfxCommand* cmd = reserve(2)) {
+            gEXMatrixGroup(cmd, G_EX_ID_AUTO, G_EX_INTERPOLATE_DECOMPOSE, G_EX_NOPUSH, 0,
+                           G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,
+                           G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, v,
+                           G_EX_COMPONENT_AUTO, G_EX_ORDER_AUTO, G_EX_EDIT_NONE,
+                           G_EX_ASPECT_AUTO, v, G_EX_COMPONENT_AUTO);
+        }
+    }
+
+    // Called for every matrix command the top-level list carries, after the
+    // walk has taken account of it and before the command itself is written
+    // out. A projection multiply -- the camera, which follows the projection
+    // load -- is neither end of the section and is passed over.
+    void sky_matrix(uint32_t params) {
+        if (!sky_interp) return;
+        if (params & kMtxProjection) {
+            if ((params & kMtxLoad) && sky == SkySection::Before &&
+                projection_is_perspective && segments[6] != 0) {
+                sky_group(true);
+                sky = SkySection::Open;
+            }
+            return;
+        }
+        sky_close();
+    }
+
+    void sky_close() {
+        if (sky == SkySection::Open) {
+            sky_group(false);
+            sky = SkySection::Done;
+        }
+    }
+
     // ---- rectangles -----------------------------------------------------
     //
     // The race HUD is drawn as texture rectangles, which RT64 anchors through
@@ -853,6 +953,198 @@ struct Walker {
     }
 };
 
+
+// ---- the 3D trace ------------------------------------------------------
+//
+// Diagnosis only, and read-only: WR64_3D_TRACE names a file, and the first
+// few race frames' drawing is written to it in full -- every matrix load,
+// vertex load, call and triangle batch, with each vertex block's hash and
+// its clip-space extent. Two consecutive frames diffed against each other
+// say which geometry the game rebuilds from scratch every frame, which is
+// the geometry RT64 has nothing to interpolate between unless it is told to
+// interpolate the vertices themselves.
+struct Tracer {
+    uint8_t* rdram = nullptr;
+    std::FILE* f = nullptr;
+    uint32_t segments[16] = {};
+    Mat4 projection = Mat4::identity();
+    Mat4 modelview[16];
+    int modelview_depth = 0;
+    uint32_t texture = 0;
+    uint32_t vtx_loads = 0;
+
+    Tracer() { modelview[0] = Mat4::identity(); }
+
+    uint32_t physical(uint32_t segmented) const {
+        return (segments[(segmented >> 24) & 0xF] + (segmented & 0x00FFFFFFu)) & 0x00FFFFF8u;
+    }
+    const uint32_t* words(uint32_t addr) const {
+        return reinterpret_cast<const uint32_t*>(rdram + (addr & 0x00FFFFFFu));
+    }
+    uint16_t half(uint32_t addr) const {
+        return *reinterpret_cast<const uint16_t*>(rdram + ((addr & 0x00FFFFFFu) ^ 2));
+    }
+    int16_t signed_half(uint32_t addr) const { return static_cast<int16_t>(half(addr)); }
+
+    Mat4 read_matrix(uint32_t addr) const {
+        Mat4 r{};
+        for (int i = 0; i < 16; ++i) {
+            const uint32_t full = (uint32_t(half(addr + 2 * i)) << 16) | half(addr + 32 + 2 * i);
+            r.m[i / 4][i % 4] = static_cast<float>(static_cast<int32_t>(full)) / 65536.0f;
+        }
+        return r;
+    }
+
+    // FNV-1a over a block of RDRAM, so a frame-to-frame diff says at a glance
+    // whether the game rewrote it.
+    uint32_t hash(uint32_t addr, uint32_t bytes) const {
+        uint32_t h = 2166136261u;
+        for (uint32_t i = 0; i < bytes; ++i) {
+            h = (h ^ rdram[((addr + i) & 0x00FFFFFFu) ^ 3]) * 16777619u;
+        }
+        return h;
+    }
+
+    void walk(uint32_t cursor, int depth) {
+        for (uint32_t steps = 0; steps < 8192; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint32_t w0 = c[0];
+            const uint32_t w1 = c[1];
+            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
+            cursor += 8;
+
+            switch (op) {
+                case kOpEndDisplayList:
+                    std::fprintf(f, "%*send\n", depth * 2, "");
+                    return;
+                case kOpDisplayList: {
+                    const bool branch = ((w0 >> 16) & 0xFF) != 0;
+                    std::fprintf(f, "%*s%s 0x%08X (phys 0x%06X)\n", depth * 2, "",
+                                 branch ? "branch" : "call", w1, physical(w1));
+                    if (branch) { cursor = physical(w1); continue; }
+                    if (depth < 6) {
+                        const int saved = modelview_depth;
+                        walk(physical(w1), depth + 1);
+                        modelview_depth = saved;
+                    }
+                    continue;
+                }
+                case kOpMoveWord:
+                    if ((w0 & 0xFF) == kMoveWordSegment) {
+                        segments[(w0 >> 10) & 0xF] = w1 & 0x00FFFFFFu;
+                        std::fprintf(f, "%*sseg %u = 0x%06X\n", depth * 2, "",
+                                     (w0 >> 10) & 0xF, w1 & 0x00FFFFFFu);
+                    }
+                    continue;
+                case kOpPopMtx:
+                    if (modelview_depth > 0) --modelview_depth;
+                    std::fprintf(f, "%*spop -> depth %d\n", depth * 2, "", modelview_depth);
+                    continue;
+                case kOpMtx: {
+                    const uint32_t params = (w0 >> 16) & 0xFF;
+                    const uint32_t addr = physical(w1);
+                    const Mat4 loaded = read_matrix(addr);
+                    if (params & kMtxProjection) {
+                        projection = (params & kMtxLoad) ? loaded : loaded * projection;
+                        std::fprintf(f, "%*sproj %s 0x%08X (phys 0x%06X) hash %08X"
+                                        " [1][1]=%.4f [3][3]=%.4f t=(%.1f,%.1f,%.1f)\n",
+                                     depth * 2, "", (params & kMtxLoad) ? "load" : "mul", w1, addr,
+                                     hash(addr, 64), loaded.m[1][1], loaded.m[3][3],
+                                     loaded.m[3][0], loaded.m[3][1], loaded.m[3][2]);
+                        continue;
+                    }
+                    if ((params & kMtxPush) && modelview_depth < 15) {
+                        modelview[modelview_depth + 1] = modelview[modelview_depth];
+                        ++modelview_depth;
+                    }
+                    modelview[modelview_depth] =
+                        (params & kMtxLoad) ? loaded : loaded * modelview[modelview_depth];
+                    std::fprintf(f, "%*smtx %s%s 0x%08X (phys 0x%06X) hash %08X t=(%.1f,%.1f,%.1f)"
+                                    " depth %d\n",
+                                 depth * 2, "", (params & kMtxLoad) ? "load" : "mul",
+                                 (params & kMtxPush) ? "+push" : "", w1, addr, hash(addr, 64),
+                                 loaded.m[3][0], loaded.m[3][1], loaded.m[3][2], modelview_depth);
+                    continue;
+                }
+                case kOpSetTextureImage:
+                    texture = w1;
+                    std::fprintf(f, "%*stimg 0x%08X\n", depth * 2, "", w1);
+                    continue;
+                case kOpVtx: {
+                    const uint32_t count = (w0 >> 9) & 0x7F;
+                    const uint32_t addr = physical(w1);
+                    const Mat4 mvp = modelview[modelview_depth] * projection;
+                    float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
+                    for (uint32_t i = 0; i < count && i < 64; ++i) {
+                        const uint32_t v = addr + i * 16;
+                        const float x = signed_half(v + 0);
+                        const float y = signed_half(v + 2);
+                        const float z = signed_half(v + 4);
+                        const float cx = x * mvp.m[0][0] + y * mvp.m[1][0] + z * mvp.m[2][0] + mvp.m[3][0];
+                        const float cy = x * mvp.m[0][1] + y * mvp.m[1][1] + z * mvp.m[2][1] + mvp.m[3][1];
+                        const float cw = x * mvp.m[0][3] + y * mvp.m[1][3] + z * mvp.m[2][3] + mvp.m[3][3];
+                        if (cw <= 0.0f) continue;
+                        min_x = std::min(min_x, cx / cw); max_x = std::max(max_x, cx / cw);
+                        min_y = std::min(min_y, cy / cw); max_y = std::max(max_y, cy / cw);
+                    }
+                    std::fprintf(f, "%*svtx #%u 0x%08X (phys 0x%06X) n=%u hash %08X tex 0x%08X"
+                                    " v0=(%d,%d,%d) clip x[%.2f..%.2f] y[%.2f..%.2f]\n",
+                                 depth * 2, "", vtx_loads++, w1, addr, count, hash(addr, count * 16),
+                                 texture, signed_half(addr), signed_half(addr + 2),
+                                 signed_half(addr + 4),
+                                 max_x < min_x ? 0.0f : min_x, max_x < min_x ? 0.0f : max_x,
+                                 min_y > max_y ? 0.0f : min_y, min_y > max_y ? 0.0f : max_y);
+                    continue;
+                }
+                default:
+                    continue;
+            }
+        }
+        std::fprintf(f, "%*s(walk cut off)\n", depth * 2, "");
+    }
+};
+
+// Writes one race frame's drawing to the file named by WR64_3D_TRACE, for
+// the first WR64_3D_TRACE_FRAMES frames (two by default), and reports when
+// it is done.
+void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
+    static const char* path = std::getenv("WR64_3D_TRACE");
+    if (path == nullptr) return;
+    // Race frames by default; WR64_3D_TRACE_STATE names another game state,
+    // in hexadecimal, for the screens that are not races.
+    static const char* state_env = std::getenv("WR64_3D_TRACE_STATE");
+    static const long wanted_state = state_env != nullptr ? std::strtol(state_env, nullptr, 16) : -1;
+    if (wanted_state >= 0 ? (state != uint32_t(wanted_state)) : !racing(state)) return;
+
+    static const char* frames_env = std::getenv("WR64_3D_TRACE_FRAMES");
+    static const int wanted = frames_env != nullptr ? std::atoi(frames_env) : 2;
+    static int written = 0;
+    static std::FILE* f = nullptr;
+    if (written >= wanted) return;
+    if (f == nullptr) {
+        f = std::fopen(path, "w");
+        if (f == nullptr) {
+            written = wanted;
+            std::fprintf(stderr, "[wr64] 3D trace: cannot write %s\n", path);
+            return;
+        }
+    }
+
+    ++written;
+    std::fprintf(f, "==== frame %d (state 0x%02X, list 0x%08X) ====\n", written, state, list_vaddr);
+    Tracer t{};
+    t.rdram = rdram;
+    t.f = f;
+    t.walk(list_vaddr & 0x00FFFFFFu, 0);
+    std::fflush(f);
+    if (written >= wanted) {
+        std::fclose(f);
+        f = nullptr;
+        std::fprintf(stderr, "[wr64] 3D trace: %d frames written to %s\n", written, path);
+        std::fflush(stderr);
+    }
+}
+
 }  // namespace
 
 namespace wr64::dlrewrite {
@@ -876,6 +1168,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     const uint32_t state = wr64::current_game_state();
     const auto& config = ultramodern::renderer::get_graphics_config();
 
+    trace_3d(rdram, list_vaddr, state);
+
     Walker w{};
     w.rdram = rdram;
     w.state = state;
@@ -888,6 +1182,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     // whether a frame is a race is read from the frame (see RaceTest), not
     // from this state number. WR64_HUD_NO_ANCHORS switches anchoring off.
     static const bool anchors_disabled = std::getenv("WR64_HUD_NO_ANCHORS") != nullptr;
+    static const bool sky_interp_off = std::getenv("WR64_NO_SKY_INTERP") != nullptr;
+    w.sky_interp = !sky_interp_off;
     w.anchors = !anchors_disabled &&
                 config.hr_option != ultramodern::renderer::HUDRatioMode::Original;
     w.inset = wr64::display::anchor_inset();
@@ -940,6 +1236,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // RDP state and has to be put back by hand.
             w.set_rect_class(Class::Auto);
             w.leave_class(false);
+            w.sky_close();
             w.emit(w0, w1);
             break;
         }
@@ -1044,6 +1341,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             if (projection_load && !w.projection_is_perspective) {
                 w.seen_ortho = true;
             }
+            w.sky_matrix(params);
             w.emit(w0, w1);
             continue;
         }
@@ -1103,6 +1401,24 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                      w.race_test.world_first ? 1 : 0, w.scissor_left, w.scissor_top,
                      w.scissor_right, w.scissor_bottom,
                      trace_text.c_str());
+        std::fflush(stderr);
+    }
+
+    // The sky section is reported the first time it is found and the first
+    // time a race frame goes without it, so a course that draws its sky some
+    // other way says so in the log rather than quietly staying at the game's
+    // rate.
+    static bool reported_sky = false, reported_no_sky = false;
+    if (w.sky != Walker::SkySection::Before && !reported_sky) {
+        reported_sky = true;
+        std::fprintf(stderr, "[wr64] the sky's vertices are interpolated (state 0x%02X)\n", state);
+        std::fflush(stderr);
+    }
+    else if (w.sky == Walker::SkySection::Before && w.sky_interp && w.race_test.race() &&
+             !reported_no_sky) {
+        reported_no_sky = true;
+        std::fprintf(stderr, "[wr64] no sky section found in a race frame (state 0x%02X);"
+                             " the sky stays at the game's rate\n", state);
         std::fflush(stderr);
     }
 
