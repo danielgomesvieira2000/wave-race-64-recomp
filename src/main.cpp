@@ -158,7 +158,7 @@ void print_usage(const char* argv0) {
 }
 
 void print_version() {
-    std::printf("Wave Race 64: Recompiled 0.3.0\n");
+    std::printf("Wave Race 64: Recompiled 0.4.0\n");
     std::printf("  recompiled game code : %s\n",
 #if WR64_WITH_RECOMPILED
         "linked");
