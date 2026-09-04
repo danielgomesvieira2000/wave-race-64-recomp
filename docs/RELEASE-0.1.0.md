@@ -12,8 +12,11 @@ launcher checks the file you pick.
 `WaveRace64Recomp-0.1.0-windows-x64.zip`: unzip anywhere, run
 `WaveRace64Recomp.exe`, pick your dump. Settings and saves go to
 `%LOCALAPPDATA%\WaveRace64Recomp`, and so does `wr64.log`, the file to attach
-to a bug report. `WaveRace64Recomp-0.1.0-windows-x64-symbols.zip` holds the
-debug symbols; you only need it if asked for a readable crash report.
+to a bug report. `WaveRace64Recomp-0.1.0-windows-x64-debug-symbols.zip` is
+not a second build: it holds the debug symbols (`WaveRace64Recomp.pdb`) for
+the same executable. You only need it if asked for a readable crash report,
+in which case unzip the file next to `WaveRace64Recomp.exe` and reproduce the
+crash; `wr64.log` will then name the function and line.
 
 The zip contains the recompiled game code and none of the game's assets; the
 executable is a GPL-3.0 combined work (see the README's *Licensing*), and its

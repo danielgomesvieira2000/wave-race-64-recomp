@@ -67,7 +67,7 @@ Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
 
 $pdb = Join-Path $BuildDir "WaveRace64Recomp.pdb"
 if (Test-Path $pdb) {
-    $symbols = Join-Path $OutDir "$name-symbols.zip"
+    $symbols = Join-Path $OutDir "$name-debug-symbols.zip"
     if (Test-Path $symbols) { Remove-Item $symbols }
     Compress-Archive -Path $pdb -DestinationPath $symbols
     Write-Host "symbols: $symbols"
