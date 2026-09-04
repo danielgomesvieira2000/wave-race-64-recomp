@@ -183,6 +183,14 @@ falls back to reporting each audio task complete without running it.
 build-rt/WaveRace64Recomp.exe <your dump>.z64
 ```
 
+It can be started from any directory, by double-click or from a shell, and a
+relative path to the dump is taken relative to where you typed it. Settings,
+controller profiles and mod state live in `%LOCALAPPDATA%\WaveRace64Recomp`
+on Windows (`$XDG_DATA_HOME/WaveRace64Recomp` or `~/.local/share/WaveRace64Recomp`
+elsewhere), beside the files RT64 keeps there; the first line the port prints
+says where. A file called `portable.txt` next to the executable keeps them next
+to the executable instead.
+
 A gamepad is used if one is attached. On the keyboard: arrow keys are the analog
 stick, `X` is A, `C` is B, `Z` is Z, `Enter` is Start, `A` and `S` are the
 shoulder buttons, `I`/`J`/`K`/`L` are the C buttons (the camera) and
@@ -341,3 +349,57 @@ at 4:3 inside that, where the cartridge put it.
 **HUD Placement** in the Graphics tab does nothing for this game. It moves 2D
 content that names an edge through RT64's extended GBI, and the cartridge
 predates that.
+
+## Frame rate
+
+**Framerate** in the Graphics tab is RT64's interpolation, the same mechanism
+the other recompiled ports use. *Original* shows the game's own frames.
+*Display* presents at the display's refresh rate and *Manual* at a chosen rate,
+capped at the display's; in both, RT64 draws the frames in between two game
+frames by interpolating each object's transform -- position, rotation and scale
+-- from one to the next. The game itself is untouched: Wave Race 64's physics,
+camera and timers run at the rate the cartridge chose, and that rate varies.
+The game writes a divider that its video-interrupt handler counts retraces
+against: 3 in the menus and the attract demo (20 frames per second), 2 in a
+race (30), 1 briefly at boot (60). RT64 measures it from the swaps and follows
+it as it changes.
+
+Nothing in the game had to be tagged for this. RT64 pairs each object's matrix
+with the previous frame's on its own, by matching draw calls of the same
+combiner, render mode and triangle count and then by nearest position, and in
+the title, menus and attract demo it pairs about 98% of transforms per frame.
+The remaining few are drawn where the newer frame puts them, so an object that
+fails to pair judders at the game's rate against a smooth background rather than
+smearing. Anything the game rebuilds every frame from vertices -- the water
+surface's waves, the HUD -- animates at the game's rate; the camera's movement
+over the water is smooth because the water is drawn in world space under the
+interpolated view. Zelda 64: Recompiled tags every matrix with the actor it
+belongs to from inside the game's code; that needs the drawing code to be
+decompiled, and two thirds of this game's is not. If a specific object turns
+out to pair badly, the port can rewrite the display list before RT64 sees it
+and tag that object by hand; nothing so far has needed it.
+
+**How frames are presented had to change for any of that to work.** The
+frontend was handing RT64 the *Console* presentation mode: show the buffer the
+N64's video interface would have shown, which for this triple-buffered game is
+the one finished two frames earlier. RT64 only interpolates when the buffer it
+has just drawn is the one being presented, which under Console never happens
+for a game that buffers at all -- so the Framerate setting did nothing, however
+it was set. The port now uses *PresentEarly*, as the other ports do: each frame
+is shown as soon as it is drawn, two frames of latency go away, and
+interpolation is possible. `WR64_PRESENT_MODE=console|skip|early` selects a
+mode by name for comparing them; it is a testing knob, not a setting.
+
+Two rates matter when something looks wrong, and the port prints both whenever
+the first changes:
+
+```
+[wr64] the game is running at 30 frames per second; presenting at 60 (display 60 Hz)
+```
+
+The first is measured at `osViSwapBuffer`, which the game calls once per frame
+it finishes (`patches/framerate.cpp`), so it says whether the machine is
+keeping up with the game -- a race that keeps dropping from 30 to 20 says so
+each time. The second is what the Framerate setting resolved to. With Display
+selected on a 60 Hz panel the menus are presented at three times the game's
+rate and a race at twice; a 144 Hz panel gets 144 either way.

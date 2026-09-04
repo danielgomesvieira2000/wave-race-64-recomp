@@ -96,8 +96,9 @@ directions plus stunt mode.
 
 ### 06 — Enhancements and release
 Widescreen and arbitrary resolution through RT64, RecompFrontend for menus and
-rebindable input. High frame rate is invasive here — physics and camera are
-tied to a 30 Hz update — so patch deliberately rather than hope. Then CI that
+rebindable input. High frame rate without touching the game: physics and camera
+are tied to a 30 Hz update, so the game keeps its rate and RT64 interpolates
+each object's transform between game frames, as the other ports do. Then CI that
 builds without a ROM, and a first-run flow that explains the ROM requirement.
 **Gate:** a stranger with a dump and no context can build and play it.
 

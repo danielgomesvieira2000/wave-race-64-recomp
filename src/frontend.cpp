@@ -11,7 +11,9 @@
 #include "wr64/frontend.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include <recompui/recompui.h>
@@ -20,6 +22,7 @@
 #include <recompui/renderer.h>
 
 #include <librecomp/config.hpp>
+#include <librecomp/game.hpp>
 #include <ultramodern/config.hpp>
 
 #include "wr64/rom.h"
@@ -39,34 +42,58 @@ SDL_Window* window = nullptr;
 
 namespace {
 
-// Where recompui keeps its settings: beside the executable, which is where
-// general.json and the rest appear.
+// Where recompui keeps its settings: the directory main.cpp registered with
+// librecomp, which is what recompui's own load and save use. This used to look
+// beside the executable, while librecomp -- never told otherwise -- wrote the
+// files into whatever directory the game was started from. The two agreed only
+// when the game was launched from its own directory, and disagreed silently
+// otherwise: settings saved in the menu came back as defaults on the next run.
 std::filesystem::path config_directory() {
-    char* base = SDL_GetBasePath();
-    std::filesystem::path path = base != nullptr ? std::filesystem::path{ base }
-                                                 : std::filesystem::current_path();
-    if (base != nullptr) {
-        SDL_free(base);
-    }
-    return path;
+    return recomp::get_config_path();
 }
+
+ultramodern::renderer::PresentationMode presentation_mode();
 
 // Adapts RecompFrontend's renderer to the callback ultramodern asks for.
 //
 // The two differ by one argument: ultramodern's callback does not carry a
-// presentation mode, and RecompFrontend's context wants one. It comes from the
-// graphics config, which is where the setting the player chose in the menu
-// lives, so reading it here is what makes that setting take effect.
+// presentation mode, and RecompFrontend's context wants one. See
+// presentation_mode() below for what it decides.
 std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
         uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle,
         bool developer_mode) {
     return recompui::renderer::create_render_context(
-        rdram, window_handle,
-        // Console: present exactly as the hardware did. The other modes trade
-        // faithfulness for latency, which is a choice worth exposing later but
-        // not one to make silently on the player's behalf.
-        ultramodern::renderer::PresentationMode::Console,
-        developer_mode);
+        rdram, window_handle, presentation_mode(), developer_mode);
+}
+
+// Which frame RT64 puts on screen, and when.
+//
+// Console shows what the N64's video interface would have shown: the buffer
+// the game finished two frames ago, because this game triple-buffers. That is
+// the faithful choice, and it also switches the Framerate setting off. RT64
+// only generates frames between two game frames when the buffer it just drew
+// is the one being presented, which under Console never happens for a game
+// that buffers at all -- so the menu's Display and Manual options changed
+// nothing, and the game was shown at its own rate: 20 frames per second in the
+// menus and in Time Trial, 30 in the championship.
+//
+// PresentEarly shows each frame as soon as it is drawn, which is what the other
+// recompiled ports do. It takes two frames of latency off, and it is what lets
+// RT64 interpolate. SkipBuffering is the middle ground -- it presents the
+// buffer the game meant to show, but as soon as the game has finished it --
+// and also allows interpolation. WR64_PRESENT_MODE picks one by name for
+// comparing them; it is a testing knob, not a setting.
+ultramodern::renderer::PresentationMode presentation_mode() {
+    using Mode = ultramodern::renderer::PresentationMode;
+    const char* env = std::getenv("WR64_PRESENT_MODE");
+    if (env != nullptr) {
+        const std::string_view value{ env };
+        if (value == "console") return Mode::Console;
+        if (value == "skip")    return Mode::SkipBuffering;
+        if (value == "early")   return Mode::PresentEarly;
+        std::fprintf(stderr, "[wr64] WR64_PRESENT_MODE=%s not recognised (console, skip, early); using early\n", env);
+    }
+    return Mode::PresentEarly;
 }
 
 // Builds the launcher's menu. Called once, when the launcher is created.
