@@ -13,6 +13,8 @@
 // screen, the attract sequence and a championship race; all three agree.
 // Right and bottom are exclusive, like the scissor's.
 
+struct SDL_Window;
+
 namespace wr64::display {
 
 constexpr int kContentLeft = 8;
@@ -26,6 +28,18 @@ constexpr int kContentBottom = 219;
 // rewriter reads the scissor the game sets each frame and reports the drawn
 // region here; the crop follows it, and a change is logged once.
 void set_content(int left, int top, int right, int bottom);
+
+// The window, for its shape. The display-list rewriter needs to know how much
+// of RT64's widened frame the presentation shows, and that follows from the
+// window's aspect ratio and the region above.
+void set_window(::SDL_Window* window);
+
+// How far, in framebuffer pixels, the visible picture's left edge lies inside
+// RT64's widened frame, less the game's own left border: the offset that puts
+// an element anchored to RT64's left edge at the same distance from the
+// picture's edge that the game gave it from its content edge. Zero when the
+// frame is not widened. The right edge mirrors it.
+float anchor_inset();
 
 // Tells the renderer to present that region, scaled to fit the window, rather
 // than the whole framebuffer. Call once, before the first frame.

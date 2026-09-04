@@ -25,6 +25,7 @@
 #include <librecomp/game.hpp>
 #include <ultramodern/config.hpp>
 
+#include "wr64/display.h"
 #include "wr64/dlrewrite.h"
 #include "wr64/rom.h"
 
@@ -263,6 +264,7 @@ void publish_game(const recomp::GameEntry& game) {
 
 void publish_window(SDL_Window* sdl_window) {
     ::window = sdl_window;
+    wr64::display::set_window(sdl_window);
 }
 
 ultramodern::renderer::callbacks_t renderer_callbacks() {
