@@ -89,7 +89,7 @@ pwsh -File tools/build_windows.ps1 -Package
 The script locates Visual Studio (preferring 2022), loads its x64 SDK/toolchain,
 uses `clang-cl`, applies the required patches and builds with all three runtime
 options enabled. It validates and bundles all 1,828 HD texture mappings and nine
-replacement recordings. High water, Modern appearance, HD textures and Custom
+replacement recordings. High water, Aqua appearance, HD textures and Custom
 music are the first-run defaults. The executable is
 `build-windows/WaveRace64Recomp.exe`; the ZIP is under `dist/`.
 WSL is only a build-time dependency; the finished game runs natively on Windows.
@@ -135,9 +135,10 @@ stop tick, exit status, game state and renderer frame traces are still checked.
 
 The Windows build was smoke-tested on an NVIDIA RTX 5090 using Direct3D 12,
 60 Hz presentation and 4x MSAA. The Original and High replays exited cleanly;
-all 49 gameplay checkpoints through tick 1410 matched. The High run used the
-shipped HD/Custom/Modern defaults, loaded all 1,828 texture mappings and nine
-recordings, and reached Sunny Beach. This is a startup/race smoke test, not a
+all 49 gameplay checkpoints through tick 1410 matched. The latest High run used
+the shipped HD/Custom/Aqua defaults and Events-only haptics, loaded all 1,828
+texture mappings and nine recordings, and completed a 2,000-tick Sunny Beach
+fixture with a clean exit. This is a startup/race smoke test, not a
 complete playthrough of every mode or course. Vulkan shader compilation passes,
 but this Windows run did not test Vulkan playback.
 

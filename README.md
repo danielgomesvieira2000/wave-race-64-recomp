@@ -29,10 +29,11 @@ and controller support. It is unofficial and not affiliated with Nintendo.
 ## Getting it
 
 **Windows (x64).** Download `WaveRace64Recomp-0.4.0-windows-x64.zip` from
-[the Windows download release](https://github.com/elliotttate/wave-race-64-recomp/releases/tag/v0.4.0-macos.2),
+[the Windows and Mac release](https://github.com/elliotttate/wave-race-64-recomp/releases/tag/v0.4.0-macos.3),
 extract the entire ZIP, and run `WaveRace64Recomp.exe`. Pick your USA Rev A dump
-in the launcher. HD textures, the replacement soundtrack, High/Modern water,
-and the required DLLs are bundled. See [installation and controls](docs/WINDOWS_RELEASE.md).
+in the launcher. HD textures, the replacement soundtrack, adjustable High/Aqua
+water, event haptics, and the required DLLs are bundled.
+See [installation and controls](docs/WINDOWS_RELEASE.md).
 
 **macOS (Apple Silicon).** Download the ZIP from
 [this fork's latest release](https://github.com/elliotttate/wave-race-64-recomp/releases/latest),

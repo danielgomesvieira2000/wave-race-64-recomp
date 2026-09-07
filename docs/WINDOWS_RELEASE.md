@@ -23,14 +23,24 @@ personal settings.
   remakes are joined by seven recordings from Retro Game Remix's *Dolphin Park*
   album. Credits and loop metadata are included. Effects and announcer audio
   retain the original sound.
-- **Modern water:** reflections, refraction, shoreline wash, wakes, and spray.
-  The original wave mesh and game physics remain authoritative.
+- **Aqua water:** a lighter teal palette and clearer shallows, with reflections,
+  refraction, shoreline wash, wakes, and spray. Water brightness, Aqua tint and
+  Water clarity sliders default to 50%; press Apply to save adjustments. Modern
+  and Classic appearances remain available. The original wave mesh and game
+  physics remain authoritative.
+- **Event haptics:** feedback for wave contacts, jumps, collisions, buoys, power
+  gains, countdowns and race outcomes. Events only is the default at 80% strength;
+  Full adds engine/water ambience, and Off disables output. Feedback stops in
+  pause/settings and when unfocused. Trigger vibration needs device/driver
+  support; adaptive trigger resistance is not included.
 
 Fresh installs select **Graphics → Textures → HD**, **Graphics → Water → High**,
-**Water → Appearance → Modern**, and **Sound → Music → Custom**. Choose Original
+**Water → Appearance → Aqua**, **Sound → Music → Custom**, and
+**Haptics → Events only**. Choose Original
 under Textures, Water quality, or Music to restore that feature's original
 presentation. Saved preferences are preserved when upgrading;
-select the enhanced options manually if you previously chose Original.
+select Aqua or the enhanced options manually if you previously chose another
+appearance or Original. See the [haptics guide](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.2/docs/HAPTICS.md).
 A user-installed texture pack takes precedence over the bundled pack.
 
 ## Controls and saved data
@@ -53,20 +63,28 @@ Get-FileHash -Algorithm SHA256 .\WaveRace64Recomp-0.4.0-windows-x64.zip
 
 The Windows build was tested on an NVIDIA RTX 5090 using Direct3D 12 with
 60 Hz presentation and 4x MSAA. A Sunny Beach Time Trial replay with the shipped
-HD/Custom/High/Modern defaults completed 1,800 ticks and exited cleanly. All 49
-game-state checkpoints through tick 1410 matched an Original-water replay.
-Captured audio confirmed active game audio and replacement music mixing.
+HD/Custom/High/Aqua defaults completed 2,000 ticks and exited cleanly. All 49
+game-state checkpoints through tick 1410 matched the previous Windows build's
+Original-water replay. Captured audio confirmed active game audio and replacement
+music mixing. Haptics traces recorded countdown, GO, wave, jump, buoy, collision,
+power, miss and retirement events with nonzero motor levels.
 
 All 32 DXIL/SPIR-V water shader compilations passed. Nine bundled-asset
-tests and four default-setting tests passed, along with patch reconstruction
-and asset integrity checks. This is startup and race smoke coverage, not a
+tests, five default-setting tests, and the gameplay haptics mixer test passed,
+along with patch reconstruction and asset integrity checks. The Windows-native
+SDL virtual-controller test passed checks for both channels, refresh/expiry,
+mute, rerouting, reconnects, unsupported capabilities and output failures.
+Physical controller feedback and subjective feel have not been verified here.
+This is startup and race smoke coverage, not a
 complete playthrough of every course and mode. Windows Vulkan playback and
 other GPU families have not been directly tested here. Screen-space reflections
 depend on visible scene geometry.
 
 This build includes the Direct3D 12 water root-signature fix and corrected
-CPU/RSP source generation. Windows release source is tagged
-[`v0.4.0-windows.1`](https://github.com/elliotttate/wave-race-64-recomp/tree/v0.4.0-windows.1).
-See [build instructions](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.1/docs/BUILDING.md),
-[texture details](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.1/docs/HD_TEXTURES.md),
-and [music mapping and credits](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.1/docs/MUSIC.md).
+CPU/RSP source generation. It incorporates the Aqua/haptics update from
+`c4659b2`. The archive's `BUILD.json` records its exact source and executable
+checksum. Windows release source is tagged
+[`v0.4.0-windows.2`](https://github.com/elliotttate/wave-race-64-recomp/tree/v0.4.0-windows.2).
+See [build instructions](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.2/docs/BUILDING.md),
+[texture details](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.2/docs/HD_TEXTURES.md),
+and [music mapping and credits](https://github.com/elliotttate/wave-race-64-recomp/blob/v0.4.0-windows.2/docs/MUSIC.md).
