@@ -1,5 +1,9 @@
 # Wave Race 64: Recompiled
 
+[![Watch the Wave Race 64 showcase](https://i.ytimg.com/vi/3uaqfG4Wzcg/hqdefault.jpg)](https://youtu.be/3uaqfG4Wzcg)
+
+[Watch the showcase on YouTube](https://youtu.be/3uaqfG4Wzcg).
+
 > ## You need: Wave Race 64 (USA) (Rev A)
 >
 > Also called **v1.1**. Cartridge ID `WR`, region `E`, **revision `1`**,
