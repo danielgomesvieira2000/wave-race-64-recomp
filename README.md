@@ -29,7 +29,7 @@ and controller support. It is unofficial and not affiliated with Nintendo.
 ## Getting it
 
 **Windows (x64).** Download `WaveRace64Recomp-0.4.0-windows-x64.zip` from
-[this fork's latest release](https://github.com/elliotttate/wave-race-64-recomp/releases/latest),
+[the Windows download release](https://github.com/elliotttate/wave-race-64-recomp/releases/tag/v0.4.0-macos.2),
 extract the entire ZIP, and run `WaveRace64Recomp.exe`. Pick your USA Rev A dump
 in the launcher. HD textures, the replacement soundtrack, High/Modern water,
 and the required DLLs are bundled. See [installation and controls](docs/WINDOWS_RELEASE.md).
@@ -93,6 +93,15 @@ Beyond running natively, the port adds:
   per-device profiles, from RecompFrontend.
 - Audio through the recompiled RSP microcode.
 
+## Controller haptics
+
+**Settings → Haptics** adds distinct feedback for wave landings, collisions,
+buoys, power gains, and race milestones, with a subtle engine and water feel.
+Events only feedback is enabled by default. Adjust its strength, select Full,
+or turn it off. Supported controllers can also use trigger vibration. Feedback
+stops during pause/settings and when the game loses focus. See the
+[haptics guide](docs/HAPTICS.md) for controls and implementation details.
+
 ## Replacement soundtrack
 
 Source builds of this fork include nine replacement recordings: Bryan EL's
@@ -134,23 +143,30 @@ See [credits](assets/textures/nano-banana-2/CREDITS.md) and
 
 [Watch the water shader in motion on YouTube](https://www.youtube.com/watch?v=ikUGbLmPbvA).
 
-The source build enables **High water with Modern appearance by default**.
+The source build enables **High water with Aqua appearance by default**.
 In **Graphics → Water**,
 choose **Modern** for detailed ripples, sun/sky lighting, depth color,
 refraction, shoreline wash and persistent wakes, or **High** to add screen-space reflections
 and fine spray. Choose **Original** to restore original rendering. Press **F9** for a comparison
 from the current camera; **F10** cycles the rendering diagnostics.
 
-The **Water** tab adds **Modern / Classic** appearance and **Soft / Normal /
-Strong** surface ripples. Classic preserves the original course colors,
+The **Water** tab adds **Modern / Classic / Aqua** appearance and **Soft / Normal /
+Strong** surface ripples. Aqua offers lighter teal water and clearer shallows
+using the full Modern renderer, including its lighting, refraction, reflections,
+foam and wakes. Classic preserves the original course colors,
 transparency and broad wave highlights while adding reflections, wakes and
-spray. Modern with Normal ripples keeps the earlier appearance. Both styles
+spray. Modern with Normal ripples keeps the earlier appearance. All three styles
 use irregular foam breakup to avoid a square pattern behind the craft. Wave
 heights and reflection highlights interpolate at the selected display rate,
 including when the original water grid recenters around the camera. **Spray
 particles → Off** removes the added airborne spray while retaining surface foam
 and wakes. Spray close to the camera also fades out before it can fill the screen. Fine
 ripples use irregular wind-stretched patterns to avoid repeating crossed bands.
+
+Selecting **Aqua** reveals **Water brightness**, **Aqua tint**, and **Water
+clarity** sliders. Each defaults to **50%**, preserving the reviewed Aqua look.
+Adjust them and press **Apply**; they are saved independently of the other water
+styles. Existing explicit Modern or Classic preferences are preserved.
 
 The original wave mesh and game physics remain authoritative. Water assets
 are procedural and course settings are in `assets/water/profiles.json`.

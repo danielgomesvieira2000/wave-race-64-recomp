@@ -19,7 +19,8 @@
 namespace wr64::water {
 namespace {
 std::atomic<uint32_t> selected{uint32_t(Quality::High)};
-std::atomic<uint32_t> selectedStyle{uint32_t(Style::Modern)};
+std::atomic<uint32_t> selectedStyle{uint32_t(Style::Aqua)};
+std::atomic<float> aquaBrightness{0.5f}, aquaTint{0.5f}, aquaClarity{0.5f};
 std::atomic<uint32_t> selectedRipples{uint32_t(RippleDetail::Normal)};
 std::atomic<bool> selectedSpray{true};
 std::atomic<uint32_t> debugView{0};
@@ -27,6 +28,8 @@ std::atomic<bool> comparisonFlip{false};
 std::atomic<bool> raceResetRequested{false};
 interop::WaterMaterial frame{};
 uint32_t frameRipples=uint32_t(RippleDetail::Normal);
+Style frameStyle=Style::Aqua;
+float frameBrightness=0.5f, frameTint=0.5f, frameClarity=0.5f;
 struct PendingFrame { uint32_t list; interop::WaterMaterial material; };
 std::deque<PendingFrame> pendingFrames;
 std::mutex frameMutex;
@@ -181,7 +184,10 @@ Quality quality() {
     return static_cast<Quality>(comparisonFlip.load() ? (value ? 0 : 1) : value);
 }
 void set_quality(Quality value) { selected.store(std::min(uint32_t(value), 3u)); comparisonFlip.store(false); }
-void set_style(Style value) { selectedStyle.store(std::min(uint32_t(value), 1u)); }
+void set_style(Style value) { selectedStyle.store(std::min(uint32_t(value), 2u)); }
+void set_aqua_brightness(float percent) { aquaBrightness.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
+void set_aqua_tint(float percent) { aquaTint.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
+void set_aqua_clarity(float percent) { aquaClarity.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
 void set_ripple_detail(RippleDetail value) { selectedRipples.store(std::min(uint32_t(value), 2u)); }
 void set_spray_enabled(bool enabled) { selectedSpray.store(enabled); }
 void toggle() {
@@ -200,7 +206,8 @@ void publish_frame(const uint8_t *rdram, uint32_t display_list) {
                 (std::strcmp(v,"modern")==0 || std::strcmp(v,"1")==0) ? 1 : 0);
         }
         if (const char *v = std::getenv("WR64_WATER_STYLE")) {
-            set_style(std::strcmp(v,"classic")==0 ? Style::Classic : Style::Modern);
+            set_style(std::strcmp(v,"classic")==0 ? Style::Classic :
+                std::strcmp(v,"aqua")==0 ? Style::Aqua : Style::Modern);
         }
         if (const char *v = std::getenv("WR64_WATER_RIPPLES")) {
             set_ripple_detail(std::strcmp(v,"soft")==0 ? RippleDetail::Soft :
@@ -211,8 +218,9 @@ void publish_frame(const uint8_t *rdram, uint32_t display_list) {
         }
         if (const char *v = std::getenv("WR64_WATER_DEBUG")) debugView.store(std::clamp(std::atoi(v),0,14));
         const char *rippleNames[]={"Soft","Normal","Strong"};
+        const char *styleNames[]={"Modern","Classic","Aqua"};
         std::fprintf(stderr,"[water] appearance: %s, %s ripples, spray %s\n",
-            selectedStyle.load()==uint32_t(Style::Classic) ? "Classic" : "Modern",rippleNames[selectedRipples.load()],
+            styleNames[selectedStyle.load()],rippleNames[selectedRipples.load()],
             selectedSpray.load() ? "On" : "Off");
         initialized = true;
     }
@@ -310,7 +318,13 @@ void begin_frame(uint32_t display_list) {
     frame.identity.y = float(debugView.load());
     // All water draws in this display list must agree on resource needs, even
     // if the menu applies a new preference while the list is being rewritten.
-    frame.optics.w = float(selectedStyle.load());
+    frameStyle = static_cast<Style>(selectedStyle.load());
+    frameBrightness = aquaBrightness.load();
+    frameTint = aquaTint.load();
+    frameClarity = aquaClarity.load();
+    // This renderer field is a boolean selecting the original raster base,
+    // not the menu enum. Aqua must take the complete Modern shading path.
+    frame.optics.w = frameStyle == Style::Classic ? 1.0f : 0.0f;
     frameRipples = selectedRipples.load();
     frame.effects.x = selectedSpray.load() ? 1.0f : 0.0f;
 }
@@ -322,6 +336,30 @@ interop::WaterMaterial material(uint32_t view) {
     // current preference once, so repeated draws cannot amplify the ripples.
     constexpr float rippleScales[]={0.5f,1.0f,1.7f};
     result.animation.z *= rippleScales[frameRipples];
+    if (frameStyle == Style::Aqua) {
+        // Lift the course's own palette toward clear aqua in linear light.
+        // Scaling retains sunset/night lighting instead of painting every
+        // course tropical blue. Roughness, normals and all effects stay intact.
+        result.deepColor.x *= 2.0f;
+        result.deepColor.y *= 1.85f;
+        result.deepColor.z *= 1.35f;
+        result.shallowColor.x *= 1.7f;
+        result.shallowColor.y *= 1.30f;
+        result.shallowColor.z *= 1.22f;
+        // All sliders are centered on the reviewed Aqua look. Tint shifts
+        // blue toward turquoise without altering the reflected sky/scenery.
+        const float brightness = 0.65f + frameBrightness * 0.70f;
+        const float tint = frameTint * 2.0f - 1.0f;
+        for (auto *color : {&result.deepColor, &result.shallowColor}) {
+            color->x *= brightness * (1.0f - tint * 0.20f);
+            color->y *= brightness * (1.0f + tint * 0.12f);
+            color->z *= brightness * (1.0f - tint * 0.12f);
+        }
+        result.deepColor.w *= 1.0f - frameClarity * 0.80f;
+        // Keep the finite visibility fade: beyond the authored underwater
+        // geometry the shader must still resolve to water, never exposed sky.
+        result.optics.x = std::min(result.optics.x * (1.0f + frameClarity * 0.80f), 140.0f);
+    }
     return result;
 }
 }

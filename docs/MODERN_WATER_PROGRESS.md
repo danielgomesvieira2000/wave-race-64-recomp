@@ -410,3 +410,27 @@ in that one capture pair; both have all 603 expected race render records. This i
 rendering-workload evidence, not an isolated benchmark or display-FPS guarantee.
 The exact signed/tested bundle was installed, the temporary CMake output override
 removed, and the normal app reopened with Modern / Strong / Spray Off preserved.
+
+## Optional Aqua appearance
+
+The Water tab now offers Aqua alongside Modern and Classic. Aqua retains the
+Modern render path and changes only the per-draw optical material: brighter
+teal body colors, reduced absorption and a longer but bounded underwater
+visibility fade. Course palette and lighting remain the basis, including
+sunset and night courses. Wave geometry, interpolation, ripple detail,
+roughness, reflections, caustics, foam, wakes and spray are unchanged.
+
+The style enum remains backward compatible (Modern 0, Classic 1, Aqua 2).
+The renderer's classic-base flag is still boolean: only Classic sets it.
+Material adjustments operate on a copy, so repeated draws and split-screen
+views cannot accumulate brightness or visibility changes. Aqua is now the
+default for fresh settings, with existing explicit style choices preserved.
+Selecting Aqua reveals brightness, tint, and clarity sliders; 50% on each
+restores the reviewed preset. Their values are captured once per display list
+and applied only to Aqua, with bounded clarity to retain underwater edge fades.
+`WR64_WATER_STYLE=aqua` and the replay/capture tools' `--style aqua`
+option allow process-local comparisons.
+
+The macOS build and seven configuration/haptics regression checks pass. A
+2,001-tick native High/Aqua replay at a 120 Hz presentation target completed
+with a clean exit; the Sunny Beach water was visually inspected in that run.

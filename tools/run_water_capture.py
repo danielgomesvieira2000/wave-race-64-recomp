@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--moving", action="store_true")
     parser.add_argument("--quality", choices=["original", "modern", "high"], default="high")
-    parser.add_argument("--style", choices=["modern", "classic"], default="modern")
+    parser.add_argument("--style", choices=["modern", "classic", "aqua"], default="modern")
     parser.add_argument("--ripples", choices=["soft", "normal", "strong"], default="normal")
     parser.add_argument("--spray", choices=["off", "on"], default="on")
     parser.add_argument("--msaa", type=int, choices=[1, 2, 4, 8])

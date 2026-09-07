@@ -19,7 +19,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--quality", choices=["original", "modern", "high"], default="high")
     p.add_argument("--saved-quality", action="store_true", help="verify the saved UI setting instead of overriding water quality")
-    p.add_argument("--style", choices=["modern", "classic"], default="modern")
+    p.add_argument("--style", choices=["modern", "classic", "aqua"], default="modern")
     p.add_argument("--ripples", choices=["soft", "normal", "strong"], default="normal")
     p.add_argument("--spray", choices=["off", "on"], default="on")
     p.add_argument("--saved-appearance", action="store_true", help="verify saved water style and ripple settings instead of overriding them")

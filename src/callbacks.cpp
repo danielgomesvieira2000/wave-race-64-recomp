@@ -46,6 +46,7 @@
 #include "wr64/renderer.h"
 #include "wr64/water.h"
 #include "wr64/music.h"
+#include "wr64/haptics.h"
 
 // The recompiled audio microcode, produced by RSPRecomp from the cartridge.
 //
@@ -283,12 +284,11 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
 }
 
 void set_rumble(int controller_num, bool rumble) {
-    if (controller_num != 0 || g_controller == nullptr) {
-        return;
-    }
-    // Wave Race predates the Rumble Pak, but the runtime may still ask.
-    SDL_GameControllerRumble(g_controller, rumble ? 0xFFFF : 0, rumble ? 0xFFFF : 0,
-                             rumble ? 1000 : 0);
+    // No Rumble Pak is advertised to this pre-Rumble-Pak game. Host effects
+    // own both motors on the main thread; a guest boolean must not overwrite
+    // their envelopes or invoke SDL through a borrowed pad on a game thread.
+    (void)controller_num;
+    (void)rumble;
 }
 
 ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
@@ -882,6 +882,11 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     }
     ++ticks;
     poll_input();
+    bool feedback_allowed = g_window && (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS);
+#if WR64_WITH_FRONTEND
+    feedback_allowed = feedback_allowed && !wr64::frontend::capturing_input();
+#endif
+    wr64::haptics::update_output(g_controller, feedback_allowed);
     wr64::poll_game_state();
 }
 
@@ -924,6 +929,7 @@ ultramodern::renderer::callbacks_t renderer_callbacks() {
 }
 
 void shutdown_platform() {
+    wr64::haptics::shutdown(g_controller);
     if (g_controller != nullptr) {
         SDL_GameControllerClose(g_controller);
         g_controller = nullptr;

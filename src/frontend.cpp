@@ -30,6 +30,7 @@
 #include "wr64/water.h"
 #include "wr64/music.h"
 #include "wr64/textures.h"
+#include "wr64/haptics.h"
 #include "wr64/rom.h"
 
 // The two globals recompui expects the port to define. It declares them extern
@@ -226,14 +227,36 @@ void init(bool auto_start) {
         });
     }
 
-    // The prefab tabs. Wave Race predates the Rumble Pak and has no gyro or
-    // mouse control, so the general tab keeps only what applies.
+    // Host haptics use a dedicated tab; the original game's boolean Rumble
+    // Pak option does not describe the independent two-motor effects.
     recompui::config::GeneralTabOptions general{};
     general.has_rumble_strength = false;
     general.has_gyro_sensitivity = false;
     general.has_mouse_sensitivity = false;
 
     recompui::config::create_general_tab(general);
+    auto &haptics = recompui::config::create_config_tab("Haptics", "haptics", true);
+    haptics.add_enum_option("haptics_mode", "Controller feedback", "Feel wave landings, collisions, buoys, power gains and race milestones. Full adds a subtle engine and water feel. Events only removes the continuous feedback.",
+        {{0, "off", "Off"}, {1, "events", "Events only"}, {2, "full", "Full"}}, 1u);
+    haptics.add_option_change_callback("haptics_mode", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary)
+            wr64::haptics::set_mode(static_cast<wr64::haptics::Mode>(std::get<uint32_t>(value)));
+    });
+    haptics.add_percent_number_option("haptics_strength", "Feedback strength", "Overall controller vibration strength. Zero disables all haptics. Changes take effect after Apply.", 80.0);
+    haptics.add_option_change_callback("haptics_strength", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary)
+            wr64::haptics::set_strength(std::get<double>(value));
+    });
+    haptics.add_percent_number_option("haptics_ambience", "Engine and water", "Continuous feedback in Full mode. Keep this low for clear landing and buoy cues, or raise it for more engine and surface texture.", 35.0);
+    haptics.add_option_change_callback("haptics_ambience", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary)
+            wr64::haptics::set_ambience(std::get<double>(value));
+    });
+    haptics.add_bool_option("haptics_triggers", "Trigger rumble", "Add acceleration and impact feedback on controllers with trigger vibration motors. Other controllers still use normal rumble.", true);
+    haptics.add_option_change_callback("haptics_triggers", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary)
+            wr64::haptics::set_triggers(std::get<bool>(value));
+    });
     auto &graphics = recompui::config::create_graphics_tab();
     graphics.add_enum_option("texture_quality", "Textures", "Use the bundled HD texture pack or your installed replacement pack. Textures without a replacement keep their original appearance.",
         {{0, "original", "Original"}, {1, "hd", "HD"}}, 1u);
@@ -250,12 +273,27 @@ void init(bool auto_start) {
         }
     });
     auto &water = recompui::config::create_config_tab("Water", "water", true);
-    water.add_enum_option("water_style", "Water style", "Modern keeps the richer, darker water. Classic preserves the original game's water colors, transparency and wave highlights while retaining modern effects. Applies to Modern and High water.",
-        {{0, "modern", "Modern"}, {1, "classic", "Classic"}}, 0u);
+    water.add_enum_option("water_style", "Water style", "Modern has richer, darker water. Aqua keeps the full modern rendering with lighter teal color and clearer shallows. Classic uses the original water colors and highlights with modern effects. Applies to Modern and High water.",
+        {{0, "modern", "Modern"}, {1, "classic", "Classic"}, {2, "aqua", "Aqua"}}, 2u);
     water.add_option_change_callback("water_style", [](auto value, auto, auto context) {
         if (context != recomp::config::OptionChangeContext::Temporary) {
             wr64::water::set_style(static_cast<wr64::water::Style>(std::get<uint32_t>(value)));
         }
+    });
+    water.add_percent_number_option("aqua_brightness", "Water brightness", "Darken or lighten the Aqua water color. 50% restores the default look. Reflections and foam keep their natural brightness.", 50.0);
+    water.add_percent_number_option("aqua_tint", "Aqua tint", "Shift Aqua from cooler blue toward greener turquoise. 50% restores the default aqua color.", 50.0);
+    water.add_percent_number_option("aqua_clarity", "Water clarity", "Control how clearly you see through the shallows. Higher values reveal more submerged detail; 50% restores the default look.", 50.0);
+    water.add_option_hidden_dependency("aqua_brightness", "water_style", 0u, 1u);
+    water.add_option_hidden_dependency("aqua_tint", "water_style", 0u, 1u);
+    water.add_option_hidden_dependency("aqua_clarity", "water_style", 0u, 1u);
+    water.add_option_change_callback("aqua_brightness", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) wr64::water::set_aqua_brightness(float(std::get<double>(value)));
+    });
+    water.add_option_change_callback("aqua_tint", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) wr64::water::set_aqua_tint(float(std::get<double>(value)));
+    });
+    water.add_option_change_callback("aqua_clarity", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) wr64::water::set_aqua_clarity(float(std::get<double>(value)));
     });
     water.add_enum_option("water_ripples", "Surface ripples", "Adjusts the fine surface ripples in Modern and High water. Normal preserves the current detail. The original game's waves and handling stay the same.",
         {{0, "soft", "Soft"}, {1, "normal", "Normal"}, {2, "strong", "Strong"}}, 1u);

@@ -4,7 +4,7 @@ This is the Apple Silicon release from
 [elliotttate/wave-race-64-recomp](https://github.com/elliotttate/wave-race-64-recomp),
 based on upstream 0.4.0 with native Metal support and configurable modern water.
 
-[Watch the water showcase](https://www.youtube.com/watch?v=ikUGbLmPbvA).
+[Watch the enhanced graphics and music showcase](https://youtu.be/3uaqfG4Wzcg).
 
 ## Requirements
 
@@ -15,11 +15,12 @@ based on upstream 0.4.0 with native Metal support and configurable modern water.
   other regions, and Shindou are incompatible. The required big-endian `.z64`
   SHA-1 is `508dfc2d4caa42b6f6de5263d0aed5e44ac7966a`.
 
-The `v0.4.0-macos.2` package includes the required libraries,
+The `v0.4.0-macos.3` package includes the required libraries,
 replacement music and the reviewed HD texture pack; Homebrew and Xcode are not
 needed to play. No ROM, original asset dumps, saves or personal settings are
 included. The older `v0.4.0-macos.1` download predates the bundled music/texture
 updates; download `v0.4.0-macos.2` or newer for these additions.
+Version `v0.4.0-macos.3` adds configurable Aqua water and controller haptics.
 
 ## Install and play
 
@@ -37,15 +38,34 @@ in the settings menu.
 
 ## Water settings
 
-This release defaults to **High** water with **Modern** appearance.
+This release defaults to **High** water with **Aqua** appearance.
 High adds screen-space reflections and fine spray. **Graphics → Water** also
 offers Modern and Original rendering. HD textures and Custom music are enabled
 by default in the Graphics and Sound tabs. Saved explicit choices are respected.
 
-The **Water** tab provides Modern/Classic appearance, Soft/Normal/Strong surface
-ripples, and Spray particles Off/On. Classic retains the original palette and
+The **Water** tab provides Modern/Classic/Aqua appearance, Soft/Normal/Strong
+surface ripples, and Spray particles Off/On. Aqua uses the full modern renderer
+with a brighter teal color and clearer shallows. Selecting Aqua reveals
+**Water brightness**, **Aqua tint**, and **Water clarity** sliders. All three
+default to **50%**; press **Apply** to save adjustments. They only affect Aqua.
+Classic retains the original palette and
 transparency. Turning spray off keeps surface foam, wakes, and original splashes.
 **F9** compares with Original; **F10** cycles diagnostic views.
+
+## Controller haptics
+
+**Settings → Haptics** defaults to **Events only** at 80% strength, with distinct
+cues for waves, landings, collisions, crashes, buoy passes and misses, power
+gains, countdowns, laps and finishes. Choose **Full** to add continuous engine
+and water vibration, or **Off** to disable feedback. Strength and ambience
+are adjustable; optional trigger vibration requires controller/driver support.
+Feedback stops in pause/settings and when the game loses focus. DualSense
+motor output was verified on Mac; adaptive trigger resistance is not included.
+
+Existing saved style and haptics choices are respected. When upgrading, select
+**Water → Aqua** and **Haptics → Events only** to use these release defaults.
+
+## Saved settings
 
 Settings and saves are stored in
 `~/Library/Application Support/WaveRace64Recomp`. Replacing the app preserves

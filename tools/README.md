@@ -53,3 +53,4 @@ rest run wherever Python or PowerShell does.
 | `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race. |
 | `textures/` | Texture capture inventory, decoding, atlas assembly, replacement refinement, and mip generation. See [HD texture workflow](../docs/HD_TEXTURES.md). |
 | `tests/test_bundled_assets.py`, `tests/test_default_options.py` | Check bundle integrity, fresh defaults, saved preferences, and texture-pack discovery. |
+| `tests/test_haptics_mixer.py`, `tests/test_haptics_output.py` | Verify game-event feedback, pause/watchdog behavior, and SDL output using virtual controllers. |

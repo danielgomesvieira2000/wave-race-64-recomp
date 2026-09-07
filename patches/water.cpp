@@ -1,5 +1,6 @@
 #include "recomp.h"
 #include "wr64/water.h"
+#include "wr64/haptics.h"
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -34,6 +35,7 @@ void water_test_course_hook(uint8_t *rdram,recomp_context *ctx) {
     // Also runs for a same-course restart, where course ID and the global
     // game counter may stay unchanged. Clear visual histories explicitly.
     water::reset_for_race();
+    haptics::reset_for_race();
 }
 
 void water_test_seed_hook(uint8_t *rdram,recomp_context *ctx) {
@@ -50,6 +52,7 @@ void water_task_submit_hook(uint8_t *rdram, recomp_context *ctx) {
     // OSTask::t.data_ptr is the 32-bit cartridge pointer at offset 0x30.
     // The game has completed geometry and camera updates at this boundary.
     const uint32_t list = MEM_W(0x30,ctx->r4);
+    haptics::capture_frame(rdram);
     water::publish_frame(rdram,list);
     SysMain_SendGfxTaskSetMesg(rdram,ctx);
 }
