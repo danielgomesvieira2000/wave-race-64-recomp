@@ -4,6 +4,8 @@ The Apple Silicon build uses SDL2, RT64's Metal renderer, the RecompFrontend
 launcher/settings UI, and the recompiled RSP audio. It builds a double-clickable
 application and bundles its non-system dynamic libraries.
 
+For a ready-to-run download, see [the macOS release guide](MACOS_RELEASE.md).
+
 Prerequisites: Xcode with the Metal Toolchain component, Clang, CMake, Ninja,
 Python 3.10+, SDL2 and FreeType. SDL2 and FreeType can be installed with
 `brew install sdl2 freetype`; the build does not use a Windows compatibility layer.
@@ -32,6 +34,29 @@ Settings and saves are under `~/Library/Application Support/WaveRace64Recomp`.
 
 Keyboard defaults: arrow keys steer, X accelerates (A), C is B, Enter is Start,
 and Escape opens the settings menu. Controllers can be remapped in settings.
+
+## Portable release packaging
+
+The default deployment target is macOS 15 (`WR64_MACOS_TARGET` overrides it).
+RT64's native code and Metal shaders both honor that target. Homebrew bottles
+may require a newer OS; release builds use separately compiled dependencies:
+
+```sh
+bash tools/build_macos_dependencies.sh
+WR64_BUILD_DIR=build-macos-release \
+WR64_DEPENDENCY_PREFIX="$PWD/build-macos-deps/install" \
+bash tools/build_macos.sh
+python3 tools/package_release_macos.py --version 0.4.0-macos.1 \
+  --dependency-prefix build-macos-deps/install \
+  --dependency-manifest build-macos-deps/dependencies.json
+```
+
+The dependency script verifies pinned source checksums and builds SDL2,
+FreeType, and libpng for the selected target. The packaging script preserves
+the signed app, includes notices/source provenance, rejects ROM/save files,
+and writes a ZIP plus SHA-256 checksum under `dist/`. It refuses to replace
+existing release outputs. The app's minimum-version metadata is derived from
+the executable and bundled libraries. Test the extracted ZIP before publishing.
 
 The build applies the repository's existing runtime patches and
 `tools/patch_macos.py`, which fixes a missing standard-library include in the

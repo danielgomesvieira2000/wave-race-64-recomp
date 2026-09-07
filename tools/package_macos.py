@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -39,16 +40,26 @@ def main():
                 raise SystemExit(f"Unresolved dependency in {binary}: {dep}")
             source = Path(dep)
             dest = frameworks / source.name
-            if not dest.exists():
-                shutil.copy2(source.resolve(), dest)
-                dest.chmod(0o755)
-                run("install_name_tool", "-id", f"@executable_path/../Frameworks/{dest.name}", dest)
+            # A relink may select a newly rebuilt library with the same name.
+            # Refresh it instead of silently retaining an older packaged dylib.
+            shutil.copy2(source.resolve(), dest)
+            dest.chmod(0o755)
+            run("install_name_tool", "-id", f"@executable_path/../Frameworks/{dest.name}", dest)
             run("install_name_tool", "-change", dep, f"@executable_path/../Frameworks/{dest.name}", binary)
             pending.append(dest)
     info_path = app / "Contents/Info.plist"
     with info_path.open("rb") as f:
         info = plistlib.load(f)
     info["NSHighResolutionCapable"] = True
+    # Derive the advertised minimum from every shipped Mach-O, rather than the
+    # host SDK. A bundled Homebrew library can require a newer OS than the app.
+    minimum = []
+    for binary in seen:
+        commands = subprocess.check_output(["otool", "-l", str(binary)], text=True)
+        minimum.extend(re.findall(r"^\s*minos (\d+(?:\.\d+){0,2})$", commands, re.MULTILINE))
+    if not minimum:
+        raise SystemExit("No macOS deployment target found in the bundle")
+    info["LSMinimumSystemVersion"] = max(minimum, key=lambda value: tuple(map(int, value.split("."))))
     with info_path.open("wb") as f:
         plistlib.dump(info, f)
     for binary in sorted(seen):

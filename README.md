@@ -24,6 +24,12 @@ and controller support. It is unofficial and not affiliated with Nintendo.
 
 ## Getting it
 
+**macOS (Apple Silicon).** Download the ZIP from
+[this fork's latest release](https://github.com/elliotttate/wave-race-64-recomp/releases/latest),
+extract it, and drag `WaveRace64Recomp.app` to Applications. Requires macOS 15
+or later and your USA Rev A dump. Libraries are bundled; no build tools are
+needed. See [installation and first-launch instructions](docs/MACOS_RELEASE.md).
+
 **Download.** The upstream release for Windows x64 is on the
 [original project's Releases page](https://github.com/danielgomesvieira2000/wave-race-64-recomp/releases): unzip,
 run `WaveRace64Recomp.exe`, pick your dump in the launcher. That is all. The
@@ -118,8 +124,7 @@ Known issues:
 - The **results screen**'s layout is wrong when HUD Placement is set larger
   than Original.
 - The **MAX POWER** banner loses its last letter while the HUD layout is on.
-- Downloadable releases are Windows-only; native Apple Silicon builds are
-  available from source (see the macOS build guide above).
+- The macOS download supports Apple Silicon; Intel Macs have not been validated.
 
 ## Layout
 

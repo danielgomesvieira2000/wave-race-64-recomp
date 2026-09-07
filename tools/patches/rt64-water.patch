@@ -1,7 +1,18 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -116,7 +116,7 @@
+@@ -5,7 +5,9 @@
+ 
+ if (APPLE)
+     enable_language(OBJC OBJCXX)
+-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
++    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
++        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
++    endif()
+ endif()
+ 
+ option(RT64_STATIC "Build RT64 as a static library" OFF)
+@@ -116,7 +118,7 @@
  function(build_shader_spirv_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
      add_custom_command(OUTPUT ${OUTNAME}.spv
          COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
@@ -10,7 +21,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
      add_custom_command(OUTPUT ${OUTNAME}.spirv.c
          COMMAND file_to_c ${OUTNAME}.spv ${TARGET_NAME}BlobSPIRV ${OUTNAME}.spirv.c ${OUTNAME}.spirv.h
          DEPENDS ${OUTNAME}.spv file_to_c
-@@ -127,7 +127,7 @@
+@@ -127,7 +129,7 @@
  function(build_shader_dxil_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
      add_custom_command(OUTPUT ${OUTNAME}.dxil
          COMMAND ${DXC} ${DXC_DXIL_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.dxil
@@ -19,7 +30,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
      add_custom_command(OUTPUT ${OUTNAME}.dxil.c
          COMMAND file_to_c ${OUTNAME}.dxil ${TARGET_NAME}BlobDXIL ${OUTNAME}.dxil.c ${OUTNAME}.dxil.h
          DEPENDS ${OUTNAME}.dxil file_to_c
-@@ -138,7 +138,7 @@
+@@ -138,12 +140,12 @@
  function(build_shader_msl_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
      add_custom_command(OUTPUT ${OUTNAME}.spv
              COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
@@ -28,7 +39,13 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
      add_custom_command(OUTPUT ${OUTNAME}.metal
              COMMAND spirv_cross_msl ${OUTNAME}.spv ${OUTNAME}.metal
              DEPENDS ${OUTNAME}.spv spirv_cross_msl)
-@@ -157,6 +157,9 @@
+     add_custom_command(OUTPUT ${OUTNAME}.ir
+-            COMMAND xcrun -sdk macosx metal -o ${OUTNAME}.ir -c ${OUTNAME}.metal $<$<CONFIG:Debug>:-frecord-sources>
++            COMMAND xcrun -sdk macosx metal -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET} -o ${OUTNAME}.ir -c ${OUTNAME}.metal $<$<CONFIG:Debug>:-frecord-sources>
+             DEPENDS ${OUTNAME}.metal)
+     add_custom_command(OUTPUT ${OUTNAME}.metallib
+             COMMAND xcrun -sdk macosx metallib ${OUTNAME}.ir -o ${OUTNAME}.metallib
+@@ -157,6 +159,9 @@
  
  function(build_shader TARGETOBJ SHADERNAME OPTIONS)
      set(FILENAME "${PROJECT_SOURCE_DIR}/${SHADERNAME}")
@@ -38,7 +55,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
      if (${ARGC} GREATER 3)
          set(OUTNAME "${CMAKE_BINARY_DIR}/${ARGV3}")
      else()
-@@ -370,6 +373,7 @@
+@@ -370,6 +375,7 @@
  
      "${PROJECT_SOURCE_DIR}/src/render/rt64_buffer_uploader.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_framebuffer_renderer.cpp"
@@ -46,7 +63,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
      "${PROJECT_SOURCE_DIR}/src/render/rt64_geometry_mode.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_look_at_processor.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_native_target.cpp"
-@@ -529,6 +533,22 @@
+@@ -529,6 +535,22 @@
  build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl" "-D SUB_MODE" "-D NEGATIVE_MODE")
  build_compute_shader(rt64 "src/shaders/RSPModifyCS.hlsl")
  build_compute_shader(rt64 "src/shaders/RSPProcessCS.hlsl")
@@ -69,7 +86,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
  build_compute_shader(rt64 "src/shaders/RSPWorldCS.hlsl")
  build_compute_shader(rt64 "src/shaders/RSPSmoothNormalCS.hlsl")
  build_compute_shader(rt64 "src/shaders/RSPVertexTestZCS.hlsl")
-@@ -556,4 +576,3 @@
+@@ -556,4 +578,3 @@
  build_pixel_shader(  rt64 "src/shaders/PostProcessPS.hlsl")
  
  target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/src)
