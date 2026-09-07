@@ -21,7 +21,7 @@ namespace wr64::frontend {
 
 // Registers the fonts, the launcher menu and the config tabs. Must run before
 // recomp::start(), which is what eventually shows them.
-void init();
+void init(bool auto_start = false);
 
 // recompui reaches into the port for two globals rather than being told them:
 // a `supported_games` list and the SDL `window`. These publish ours into those,

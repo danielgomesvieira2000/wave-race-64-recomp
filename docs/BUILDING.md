@@ -135,11 +135,18 @@ registering it. Add that directory to your user PATH.
 
 ## Building with the runtime (phase 03 onward)
 
-Apply the project's patch to RT64 first (see *The game's own black borders*
-below for what it does and why it is a script):
+Apply the project's runtime patches first, in this order. The water patch
+supplies required renderer headers even when Original water is selected, and
+the shutdown patch fixes the runtime queue teardown. These scripts are
+idempotent and preserve the pinned upstream submodule revisions:
 
 ```
 python tools/patch_rt64.py
+python tools/patch_n64recomp.py
+python tools/patch_rsprecomp.py
+python tools/patch_librecomp.py
+python tools/patch_water.py
+python tools/patch_runtime_shutdown.py
 ```
 
 Use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`:

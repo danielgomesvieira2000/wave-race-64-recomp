@@ -1,0 +1,186 @@
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -994,6 +994,7 @@
+     game_thread.join();
+     ultramodern::join_event_threads();
+     ultramodern::join_thread_cleaner_thread();
++    ultramodern::join_timer_thread();
+     ultramodern::join_saving_thread();
+     
+     // Free rdram.
+diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -147,6 +147,7 @@
+ void quit();
+ void join_event_threads();
+ void join_thread_cleaner_thread();
++void join_timer_thread();
+ void join_saving_thread();
+ 
+ void set_audio_callbacks(const audio_callbacks_t& callbacks);
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -2,6 +2,8 @@
+ #include <thread>
+ #include <cassert>
+ #include <string>
++#include <mutex>
++#include <unordered_set>
+ 
+ #include "ultramodern/ultra64.h"
+ #include "ultramodern/ultramodern.hpp"
+@@ -15,6 +17,10 @@
+ #endif
+ 
+ static ultramodern::threads::callbacks_t threads_callbacks;
++extern std::atomic_bool exited;
++static std::mutex active_contexts_mutex;
++static std::unordered_set<UltraThreadContext*> active_contexts;
++static std::atomic_bool cleanup_shutdown_requested{false};
+ 
+ void ultramodern::threads::set_callbacks(const callbacks_t& callbacks) {
+     threads_callbacks = callbacks;
+@@ -151,7 +157,9 @@
+ #endif
+ 
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
++    if (exited.load()) throw ultramodern::thread_terminated{};
+     thread_context->running.wait();
++    if (exited.load()) throw ultramodern::thread_terminated{};
+     // If this thread's context was replaced by another thread or deleted, destroy it again from its own context.
+     // This will trigger thread cleanup instead.
+     if (TO_PTR(OSThread, ultramodern::this_thread())->context != thread_context) {
+@@ -165,6 +173,7 @@
+ }
+ 
+ void run_next_thread(RDRAM_ARG1) {
++    if (exited.load()) throw ultramodern::thread_terminated{};
+     if (ultramodern::thread_queue_empty(PASS_RDRAM ultramodern::running_queue)) {
+         throw std::runtime_error("No threads left to run!\n");
+     }
+@@ -208,7 +217,7 @@
+     }
+ 
+     // Make sure the thread wasn't replaced or destroyed before it was started.
+-    if (self->context == thread_context) {
++    if (!exited.load() && self->context == thread_context) {
+         debug_printf("[Thread] Thread started: %d\n", self->id);
+         try {
+             // Run the thread's function with the provided argument.
+@@ -222,7 +231,7 @@
+ 
+     // Check if the thread hasn't been destroyed or replaced. If so, then the thread terminated or destroyed itself,
+     // so mark this thread as destroyed and run the next queued thread.
+-    if (self->context == thread_context) {
++    if (!exited.load() && self->context == thread_context) {
+         self->context = nullptr;
+         run_next_thread(PASS_RDRAM1);
+     }
+@@ -249,6 +258,7 @@
+ }
+ 
+ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_func_t) entrypoint, PTR(void) arg, PTR(void) sp, OSPri pri) {
++    if (exited.load()) throw ultramodern::thread_terminated{};
+     debug_printf("[os] Create Thread %d\n", id);
+     OSThread *t = TO_PTR(OSThread, t_);
+     
+@@ -263,7 +273,12 @@
+     // Pass the context as an argument to the thread function to ensure that it can't get cleared before the thread captures its value.
+     UltraThreadContext* context = new UltraThreadContext{};
+     t->context = context;
+-    context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
++    {
++        // Publish the host handle before cleanup can observe this context.
++        std::lock_guard lock(active_contexts_mutex);
++        context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
++        active_contexts.insert(context);
++    }
+ 
+     // Wait until the thread is initialized to indicate that it's ready to be started.
+     context->initialized.wait();
+@@ -347,12 +362,18 @@
+ 
+ void thread_cleaner_func() {
+     using namespace std::chrono_literals;
+-    while (!exited) {
++    while (true) {
++        {
++            std::lock_guard lock(active_contexts_mutex);
++            if (cleanup_shutdown_requested.load() && active_contexts.empty()) break;
++        }
+         UltraThreadContext* to_delete;
+         if (deleted_threads.wait_dequeue_timed(to_delete, 10ms)) {
+             debug_printf("[Cleanup] Deleting thread context %p\n", to_delete);
+ 
++            std::lock_guard lock(active_contexts_mutex);
+             to_delete->host_thread.join();
++            active_contexts.erase(to_delete);
+             delete to_delete;
+         }
+     }
+@@ -367,5 +388,12 @@
+ }
+ 
+ void ultramodern::join_thread_cleaner_thread() {
++    // RDRAM cannot be unmapped while an audio/game worker is still using it.
++    // Wake suspended workers; wait_for_resumed unwinds at the scheduler boundary.
++    {
++        std::lock_guard lock(active_contexts_mutex);
++        cleanup_shutdown_requested.store(true);
++        for (auto *context:active_contexts) context->running.signal();
++    }
+     thread_cleaner_thread.join();
+ }
+diff --git a/ultramodern/src/timer.cpp b/ultramodern/src/timer.cpp
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -37,7 +37,8 @@
+     PTR(OSTimer) timer;
+ };
+ 
+-using Action = std::variant<AddTimerAction, RemoveTimerAction>;
++struct StopTimersAction {};
++using Action = std::variant<AddTimerAction, RemoveTimerAction, StopTimersAction>;
+ 
+ struct {
+     std::thread thread;
+@@ -101,12 +102,14 @@
+         // Empty the action queue
+         Action cur_action;
+         while (timer_context.action_queue.try_dequeue(cur_action)) {
++            if (std::holds_alternative<StopTimersAction>(cur_action)) return;
+             process_timer_action(cur_action);
+         }
+ 
+         // If there's no timer to act on, wait for one to come in from the action queue
+         while (active_timers.empty()) {
+             timer_context.action_queue.wait_dequeue(cur_action);
++            if (std::holds_alternative<StopTimersAction>(cur_action)) return;
+             process_timer_action(cur_action);
+         }
+ 
+@@ -122,6 +125,7 @@
+ 
+         // Wait for either the duration to complete or a new action to come through
+         if (wait_duration.count() >= 0 && timer_context.action_queue.wait_dequeue_timed(cur_action, wait_duration)) {
++            if (std::holds_alternative<StopTimersAction>(cur_action)) return;
+             // Timer was interrupted by a new action 
+             // Add the current timer back to the queue (done first in case the action is to remove this timer)
+             active_timers.insert(cur_timer_);
+@@ -142,7 +146,12 @@
+ 
+ void ultramodern::init_timers(RDRAM_ARG1) {
+     timer_context.thread = std::thread{ timer_thread, PASS_RDRAM1 };
+-    timer_context.thread.detach();
++}
++
++void ultramodern::join_timer_thread() {
++    if (!timer_context.thread.joinable()) return;
++    timer_context.action_queue.enqueue(StopTimersAction{});
++    timer_context.thread.join();
+ }
+ 
+ uint32_t ultramodern::get_speed_multiplier() {

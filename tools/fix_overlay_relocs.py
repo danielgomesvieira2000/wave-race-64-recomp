@@ -27,6 +27,7 @@ Run from the repository root, after the recompiler:
 """
 
 import re
+from toolchain import readelf_command
 import subprocess
 import sys
 from pathlib import Path
@@ -39,7 +40,7 @@ OVERLAY_RE = re.compile(r"ovl_|seg_1C3|segment_1B1FB0")
 
 def readelf(flag):
     return subprocess.run(
-        ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf", flag, ELF],
+        readelf_command() + [flag, ELF],
         capture_output=True, text=True, cwd=REPO).stdout
 
 

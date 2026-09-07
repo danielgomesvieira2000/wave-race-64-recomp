@@ -28,6 +28,9 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#if defined(__APPLE__)
+#   include <mach-o/dyld.h>
+#endif
 
 #include <librecomp/game.hpp>
 #include <ultramodern/ultramodern.hpp>
@@ -56,6 +59,10 @@ std::filesystem::path settings_directory() {
     if (base != nullptr) {
         root = base;
     }
+#elif defined(__APPLE__)
+    if ((base = std::getenv("HOME")) != nullptr) {
+        root = std::filesystem::path{base} / "Library" / "Application Support";
+    }
 #else
     base = std::getenv("XDG_DATA_HOME");
     if (base != nullptr && *base != '\0') {
@@ -79,6 +86,13 @@ std::filesystem::path executable_directory(const char* argv0) {
     const DWORD length = GetModuleFileNameW(nullptr, buffer, static_cast<DWORD>(std::size(buffer)));
     if (length > 0 && length < std::size(buffer)) {
         return std::filesystem::path{ buffer }.parent_path();
+    }
+#elif defined(__APPLE__)
+    uint32_t length = 0;
+    _NSGetExecutablePath(nullptr, &length);
+    std::vector<char> buffer(length);
+    if (_NSGetExecutablePath(buffer.data(), &length) == 0) {
+        return std::filesystem::weakly_canonical(buffer.data(), ec).parent_path();
     }
 #else
     const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", ec);
@@ -325,15 +339,7 @@ int run(int argc, char** argv, const char* rom_arg) {
     // waits forever for a start that has already been overtaken: the process
     // stays alive with a window open and never reaches the entry point.
 #if WR64_WITH_FRONTEND
-    wr64::frontend::init();
-
-    // With the launcher, the game is started from the menu -- by the player,
-    // once a dump has been accepted -- so nothing is started here. A ROM given
-    // on the command line still skips straight to the game, which is what the
-    // scripted verification runs rely on.
-    if (rom_path != nullptr) {
-        recomp::start_game(std::u8string{wr64::kGameId}, std::string{});
-    }
+    wr64::frontend::init(rom_path != nullptr);
 #else
     recomp::start_game(std::u8string{wr64::kGameId}, std::string{});
 #endif

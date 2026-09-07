@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <SDL.h>
+#include <ultramodern/ultramodern.hpp>
 
 namespace {
 
@@ -46,6 +47,17 @@ struct ScriptEntry {
 std::vector<ScriptEntry> g_script;
 bool g_script_loaded = false;
 Uint64 g_script_start_ticks = 0;
+uint8_t* g_rdram = nullptr;
+bool g_script_uses_ticks = false;
+bool g_script_exclusive = false;
+uint32_t g_script_first_tick = 0;
+bool g_script_tick_started = false;
+
+uint32_t game_tick() {
+    uint32_t tick = 0;
+    if (g_rdram) std::memcpy(&tick, g_rdram + 0x151960, sizeof(tick));
+    return tick;
+}
 
 double now_seconds() {
     if (g_script_start_ticks == 0) {
@@ -114,6 +126,12 @@ bool load_input_script() {
             line = line.substr(0, comment);
         }
         std::stringstream fields{ line };
+        if (line.find("@ticks") != std::string::npos) {
+            g_script_uses_ticks = true;
+            g_script_exclusive = true;
+            continue;
+        }
+        if (line.find("@exclusive") != std::string::npos) { g_script_exclusive = true; continue; }
         ScriptEntry entry;
         std::string button_field;
         if (!(fields >> entry.start_seconds >> entry.end_seconds >> button_field)) {
@@ -139,13 +157,29 @@ bool load_input_script() {
               });
 
     g_script_loaded = !g_script.empty();
-    std::fprintf(stderr, "[wr64] input script: %zu entries from %s\n", g_script.size(), path);
+    std::fprintf(stderr, "[wr64] input script: %zu entries from %s (%s)\n", g_script.size(), path,
+        g_script_uses_ticks ? "game updates" : "wall seconds");
     std::fflush(stderr);
     return g_script_loaded;
 }
 
 bool input_script_active() {
     return g_script_loaded;
+}
+
+bool input_script_exclusive() { return g_script_loaded && g_script_exclusive; }
+
+void trace_input(int controller, uint16_t buttons, float x, float y) {
+    static FILE *file=[]() {
+        const char *name=std::getenv("WR64_INPUT_TRACE");
+        FILE *f=name ? std::fopen(name,"w") : nullptr;
+        if (f) std::fprintf(f,"tick,controller,buttons,x,y\n");
+        return f;
+    }();
+    if (file) {
+        std::fprintf(file,"%u,%d,%u,%.6f,%.6f\n",game_tick(),controller,buttons,x,y);
+        std::fflush(file);
+    }
 }
 
 void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y) {
@@ -156,14 +190,18 @@ void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y) {
         return;
     }
 
-    const double t = now_seconds();
+    if (!g_script_tick_started) {
+        g_script_first_tick = game_tick();
+        g_script_tick_started = true;
+    }
+    const double t = g_script_uses_ticks ? double(game_tick() - g_script_first_tick) : now_seconds();
     for (ScriptEntry& entry : g_script) {
         if (t < entry.start_seconds || t >= entry.end_seconds) {
             continue;
         }
         if (!entry.announced) {
             entry.announced = true;
-            std::fprintf(stderr, "[wr64] t=%6.2f input: %s\n", t,
+            std::fprintf(stderr, "[wr64] %s=%6.2f input: %s\n", g_script_uses_ticks ? "tick" : "t", t,
                          entry.note.empty() ? "(no note)" : entry.note.c_str());
             std::fflush(stderr);
         }
@@ -178,8 +216,6 @@ void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y) {
 // ------------------------------------------------------- game state watch ---
 
 namespace {
-
-uint8_t* g_rdram = nullptr;
 
 // From the decomp's GameState enum. Only the named values are listed; anything
 // else is reported as a bare number, which is still useful -- a transition to
@@ -245,6 +281,18 @@ void poll_game_state() {
     if (g_rdram == nullptr) {
         return;
     }
+    static const uint32_t stopTick=[]() {
+        const char *v=std::getenv("WR64_TEST_STOP_TICK");
+        if (!v) return 0u;
+        char *end=nullptr; const unsigned long tick=std::strtoul(v,&end,10);
+        return end!=v && *end=='\0' && tick<=UINT32_MAX ? uint32_t(tick) : 0u;
+    }();
+    static bool stopped=false;
+    if (stopTick && !stopped && game_tick()>stopTick) {
+        stopped=true;
+        std::fprintf(stderr,"[wr64] replay reached stop tick %u\n",stopTick);
+        ultramodern::quit();
+    }
 
     static uint32_t last_state = 0xFFFFFFFFu;
     static uint32_t last_mode = 0xFFFFFFFFu;
@@ -270,8 +318,8 @@ void poll_game_state() {
         mode_text = mode_buf;
     }
 
-    std::fprintf(stderr, "[wr64] t=%6.2f state: %s (mode %s, phase %u)\n",
-                 now_seconds(), state_text, mode_text, read_word(kGameModeState));
+    std::fprintf(stderr, "[wr64] t=%6.2f tick=%u state: %s (mode %s, phase %u)\n",
+                 now_seconds(), game_tick(), state_text, mode_text, read_word(kGameModeState));
     std::fflush(stderr);
 }
 

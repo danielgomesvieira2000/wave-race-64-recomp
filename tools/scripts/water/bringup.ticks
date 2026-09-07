@@ -1,0 +1,14 @@
+# Initial menu traversal; validated state transcript identifies each transition.
+# Values are game updates from the first controller read, independent of display Hz.
+@ticks
+90 100 START # leave title
+200 210 A # accept menu
+320 330 A # accept menu
+440 450 A # accept menu
+560 570 A # accept menu
+680 690 A # accept menu
+800 810 A # accept menu
+950 3200 A # accelerate
+1200 1290 - 22 0 # right turn
+1500 1590 - -22 0 # left turn
+1800 1810 CUP # camera

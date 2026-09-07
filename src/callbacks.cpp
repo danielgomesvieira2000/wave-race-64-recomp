@@ -19,8 +19,12 @@
 #include <vector>
 
 #include <SDL.h>
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
 #   include <SDL_syswm.h>
+#endif
+#if defined(__APPLE__)
+#   include <SDL_metal.h>
+#   include <pthread.h>
 #endif
 
 #include <ultramodern/ultramodern.hpp>
@@ -40,6 +44,7 @@
 #include "wr64/display.h"
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
+#include "wr64/water.h"
 
 // The recompiled audio microcode, produced by RSPRecomp from the cartridge.
 //
@@ -85,6 +90,13 @@ void refresh_primary_controller() {
 #endif
 
 void poll_input() {
+#if defined(__APPLE__)
+    // osContStartReadData also invokes this callback on the game thread.
+    // Cocoa events must be pumped by update_gfx on the main thread only.
+    if (!pthread_main_np()) {
+        return;
+    }
+#endif
 #if WR64_WITH_FRONTEND
     // recompinput::handle_events() is the library's own polling loop, and it
     // has to be the only thing draining SDL's event queue: a hand-rolled loop
@@ -167,6 +179,8 @@ float axis_to_n64(Sint16 value) {
 }
 
 bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
+    static const bool twoPlayerFixture=[]() { const char *v=std::getenv("WR64_TEST_PLAYERS");return v && std::strcmp(v,"2")==0; }();
+    if (controller_num==1 && twoPlayerFixture) { *buttons=BTN_A; *x=0; *y=0; return true; }
     if (controller_num != 0) {
         return false;
     }
@@ -175,7 +189,7 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     // While a menu has input, the game gets none. Otherwise the button that
     // closes a menu also reaches the game behind it -- Start to leave the
     // settings would pause the race underneath.
-    if (wr64::frontend::capturing_input()) {
+    if (wr64::frontend::capturing_input() && !wr64::input_script_exclusive()) {
         *buttons = 0;
         *x = 0.0f;
         *y = 0.0f;
@@ -247,19 +261,23 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
         if (keys[SDL_SCANCODE_DOWN])   stick_y = -80.0f;
     }
 
-    // Scripted input is merged in rather than replacing the pad, so a run can
-    // still be nudged by hand while it plays. See src/testdrive.cpp.
+    // Tick replays isolate hardware input; wall-time scripts can still be
+    // nudged by hand. Script values use the documented N64 +/-80 range.
     uint16_t scripted_buttons = 0;
     float scripted_x = 0.0f;
     float scripted_y = 0.0f;
     wr64::input_script_state(&scripted_buttons, &scripted_x, &scripted_y);
+    if (wr64::input_script_exclusive()) { pressed=0; stick_x=stick_y=0; }
     pressed |= scripted_buttons;
     if (scripted_x != 0.0f) { stick_x = scripted_x; }
     if (scripted_y != 0.0f) { stick_y = scripted_y; }
 
     *buttons = pressed;
-    *x = stick_x;
-    *y = stick_y;
+    // ultramodern::convert_to_n64_range expects normalized input and performs
+    // the final N64 octagonal-gate conversion itself.
+    *x = stick_x / 80.0f;
+    *y = stick_y / 80.0f;
+    wr64::trace_input(controller_num,*buttons,*x,*y);
     return true;
 }
 
@@ -273,7 +291,8 @@ void set_rumble(int controller_num, bool rumble) {
 }
 
 ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
-    if (controller_num == 0) {
+    static const bool twoPlayerFixture=[]() { const char *v=std::getenv("WR64_TEST_PLAYERS");return v && std::strcmp(v,"2")==0; }();
+    if (controller_num == 0 || (controller_num==1 && twoPlayerFixture)) {
         return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
     }
     return { ultramodern::input::Device::None, ultramodern::input::Pak::None };
@@ -773,6 +792,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     int width = 320 * 4;
     int height = 240 * 4;
     Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#if defined(__APPLE__)
+    flags |= SDL_WINDOW_METAL;
+#endif
 
     SDL_Rect display{};
     if (fullscreen && SDL_GetDisplayBounds(0, &display) == 0) {
@@ -806,6 +828,14 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         return {};
     }
 
+    SDL_AddEventWatch([](void *, SDL_Event *event) -> int {
+        if (event->type == SDL_KEYDOWN && !event->key.repeat) {
+            if (event->key.keysym.sym == SDLK_F9) wr64::water::toggle();
+            if (event->key.keysym.sym == SDLK_F10) wr64::water::cycle_debug();
+        }
+        return 0;
+    }, nullptr);
+
 #if WR64_WITH_FRONTEND
     // recompui reads the window through a global of its own; publish ours so
     // the UI measures and draws into the same one the game does.
@@ -816,14 +846,24 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     // The renderer does not exist yet; this only sets what it will read.
     wr64::display::crop_to_content();
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     SDL_SysWMinfo wm_info;
     SDL_VERSION(&wm_info.version);
     if (SDL_GetWindowWMInfo(g_window, &wm_info) != SDL_TRUE) {
         std::fprintf(stderr, "SDL_GetWindowWMInfo failed: %s\n", SDL_GetError());
         return {};
     }
+#if defined(__APPLE__)
+    SDL_MetalView view = SDL_Metal_CreateView(g_window);
+    if (!view) {
+        std::fprintf(stderr, "SDL_Metal_CreateView failed: %s\n", SDL_GetError());
+        return {};
+    }
+    // Plume's view field expects the CAMetalLayer, not SDL's NSView wrapper.
+    return {wm_info.info.cocoa.window, SDL_Metal_GetLayer(view)};
+#else
     return ultramodern::renderer::WindowHandle{ wm_info.info.win.window, GetCurrentThreadId() };
+#endif
 #else
     return g_window;
 #endif

@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 
 project(WaveRace64Recomp
     VERSION 0.4.0
@@ -48,6 +48,11 @@ endif()
 #  Dependencies
 # ---------------------------------------------------------------------------
 set(WR64_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
+
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+    find_package(SDL2 REQUIRED)
+endif()
 
 if(WR64_WITH_RUNTIME)
     if(NOT EXISTS "${WR64_LIB_DIR}/RT64/CMakeLists.txt")
@@ -101,7 +106,22 @@ if(WR64_WITH_FRONTEND)
     # surfaces one step later as an empty file. Re-declaring them here is what
     # makes the functions usable from outside RT64.
     set(WR64_RT64_DIR "${WR64_LIB_DIR}/RT64")
-    set(DXC "${WR64_RT64_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+    if(APPLE)
+        if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+            set(WR64_DXC_ARCH arm64)
+        else()
+            set(WR64_DXC_ARCH x64)
+        endif()
+        set(DXC "${CMAKE_COMMAND}" -E env
+            "DYLD_LIBRARY_PATH=${WR64_RT64_DIR}/src/contrib/dxc/lib/${WR64_DXC_ARCH}"
+            "${WR64_RT64_DIR}/src/contrib/dxc/bin/${WR64_DXC_ARCH}/dxc-macos")
+    elseif(WIN32)
+        set(DXC "${WR64_RT64_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+    else()
+        set(DXC "${CMAKE_COMMAND}" -E env
+            "LD_LIBRARY_PATH=${WR64_RT64_DIR}/src/contrib/dxc/lib/x64"
+            "${WR64_RT64_DIR}/src/contrib/dxc/bin/x64/dxc-linux")
+    endif()
     set(DXC_COMMON_OPTS "-I${WR64_RT64_DIR}/src")
     set(DXC_DXIL_OPTS "-Wno-ignored-attributes")
     set(DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
@@ -148,7 +168,7 @@ if(WR64_WITH_RECOMPILED)
         if(MSVC)
             set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
                 COMPILE_OPTIONS "/clang:-mssse3;/clang:-msse4.1")
-        else()
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i.86)$")
             set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
                 COMPILE_OPTIONS "-mssse3;-msse4.1")
         endif()
@@ -164,6 +184,7 @@ if(WR64_WITH_RECOMPILED)
         # The recompiled RSP microcode reaches ultramodern's headers through
         # librecomp/rsp.hpp, so this target needs them too.
         "${WR64_LIB_DIR}/N64ModernRuntime/ultramodern/include"
+        "${WR64_LIB_DIR}/N64ModernRuntime/thirdparty/sse2neon"
         "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs")
 
     # Recompiled code is machine-generated: its warnings are noise, and it must
@@ -185,7 +206,7 @@ set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 # overlays.cpp cannot even compile without recomp_overlays.inl.
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp
-                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp)
+                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp src/water.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
@@ -204,6 +225,17 @@ if(WIN32)
 endif()
 
 add_executable(WaveRace64Recomp ${WR64_SOURCES})
+set_property(SOURCE src/water.cpp APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/water/profiles.json")
+
+if(APPLE)
+    set_target_properties(WaveRace64Recomp PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "Wave Race 64 Recompiled"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.waverace64.recomp"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    target_link_libraries(WaveRace64Recomp PRIVATE SDL2::SDL2)
+endif()
 
 target_include_directories(WaveRace64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -239,7 +271,7 @@ if(WR64_WITH_RUNTIME)
         "${WR64_LIB_DIR}/RT64/src/contrib/hlslpp/include"
         "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-core/src/api"
         "${WR64_LIB_DIR}/RT64/src/contrib/nativefiledialog-extended/src/include"
-        "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include"
+        $<$<BOOL:${WIN32}>:${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include>
         "${WR64_LIB_DIR}/N64ModernRuntime/N64Recomp/include"
         "${WR64_LIB_DIR}/N64ModernRuntime/librecomp/include"
         "${WR64_LIB_DIR}/N64ModernRuntime/ultramodern/include"
@@ -299,26 +331,34 @@ if(WR64_WITH_FRONTEND)
         "${WR64_LIB_DIR}/RecompFrontend/recompui/include"
         "${WR64_LIB_DIR}/RecompFrontend/recompinput/include")
 
+    if(APPLE)
+        set(WR64_ASSET_DIR "$<TARGET_BUNDLE_CONTENT_DIR:WaveRace64Recomp>/Resources/assets")
+    else()
+        set(WR64_ASSET_DIR "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets")
+    endif()
     set(WR64_RMLUI_ASSETS
         "${WR64_LIB_DIR}/RecompFrontend/recompui/lib/RmlUi/Samples/assets")
     add_custom_command(TARGET WaveRace64Recomp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${WR64_ASSET_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/recomp.rcss"
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Regular.ttf"
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Bold.ttf"
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Italic.ttf"
                 "${WR64_RMLUI_ASSETS}/NotoEmoji-Regular.ttf"
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+                "${WR64_ASSET_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/icons"
+                "${WR64_ASSET_DIR}/icons"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/water"
+                "${WR64_ASSET_DIR}/water"
         COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/promptfont"
+                "${WR64_ASSET_DIR}/promptfont"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/promptfont/promptfont.ttf"
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/promptfont/LICENSE.txt"
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/promptfont"
+                "${WR64_ASSET_DIR}/promptfont"
         COMMENT "Staging the frontend's stylesheet and fonts")
 endif()
 
@@ -342,5 +382,3 @@ message(STATUS "  runtime + RT64    ${WR64_WITH_RUNTIME}")
 message(STATUS "  recompiled code   ${WR64_WITH_RECOMPILED}")
 message(STATUS "  frontend UI       ${WR64_WITH_FRONTEND}")
 message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILER}")
-
-

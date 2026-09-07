@@ -27,7 +27,7 @@
 # command jump table agrees -- its first entry, the handler for the no-op
 # command, resolves to the dispatch loop's own back-edge.
 
-rom_file_path = "../baserom.us.rev1.z64"
+rom_file_path = "../reference/wr64-decomp/baserom.us.rev1.z64"
 text_offset = 0x8DFB0
 text_size = 0xE20
 text_address = 0x04001080

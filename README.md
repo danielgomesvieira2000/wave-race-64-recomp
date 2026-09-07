@@ -24,7 +24,8 @@ and controller support. It is unofficial and not affiliated with Nintendo.
 
 ## Getting it
 
-**Download.** The release for Windows x64 is on the Releases page: unzip,
+**Download.** The upstream release for Windows x64 is on the
+[original project's Releases page](https://github.com/danielgomesvieira2000/wave-race-64-recomp/releases): unzip,
 run `WaveRace64Recomp.exe`, pick your dump in the launcher. That is all. The
 zip contains the program, the three DLLs it needs, and the menu's fonts and
 icons; it contains none of the game's assets, which are loaded from your dump
@@ -35,6 +36,7 @@ redistributing it.
 **Build it yourself.** [docs/BUILDING.md](docs/BUILDING.md) takes you from
 installing the toolchain on Windows to the first race: clone with submodules,
 check your dump, disassemble and recompile the game from it, build.
+For a native Apple Silicon app using Metal, see [docs/MACOS.md](docs/MACOS.md).
 
 Settings, controller profiles and saves live in
 `%LOCALAPPDATA%\WaveRace64Recomp`. Started by double-click, the program writes
@@ -79,6 +81,31 @@ Beyond running natively, the port adds:
   per-device profiles, from RecompFrontend.
 - Audio through the recompiled RSP microcode.
 
+## Modern water preview
+
+The source build includes an optional water renderer. In **Graphics → Water**,
+choose **Modern** for detailed ripples, sun/sky lighting, depth color,
+refraction, shoreline wash and persistent wakes, or **High** to add screen-space reflections
+and fine spray. **Original** remains the default. Press **F9** for a comparison
+from the current camera; **F10** cycles the rendering diagnostics.
+
+The **Water** tab adds **Modern / Classic** appearance and **Soft / Normal /
+Strong** surface ripples. Classic preserves the original course colors,
+transparency and broad wave highlights while adding reflections, wakes and
+spray. Modern with Normal ripples keeps the earlier appearance. Both styles
+use irregular foam breakup to avoid a square pattern behind the craft. Wave
+heights and reflection highlights interpolate at the selected display rate,
+including when the original water grid recenters around the camera. **Spray
+particles → Off** removes the added airborne spray while retaining surface foam
+and wakes. Spray close to the camera also fades out before it can fill the screen. Fine
+ripples use irregular wind-stretched patterns to avoid repeating crossed bands.
+
+The original wave mesh and game physics remain authoritative. Water assets
+are procedural and course settings are in `assets/water/profiles.json`.
+Metal is the runtime tested backend; SPIR-V and DXIL compilation is checked
+separately. See [the implementation and evidence](docs/MODERN_WATER_PROGRESS.md)
+for the acceptance matrix, scope and reproduction commands.
+
 Known issues:
 
 - In a 4:3 window the picture is letterboxed. The game draws a 303x199 region
@@ -87,7 +114,8 @@ Known issues:
 - The **results screen**'s layout is wrong when HUD Placement is set larger
   than Original.
 - The **MAX POWER** banner loses its last letter while the HUD layout is on.
-- Windows only, for now.
+- Downloadable releases are Windows-only; native Apple Silicon builds are
+  available from source (see the macOS build guide above).
 
 ## Layout
 
@@ -120,14 +148,17 @@ the menus, has published **no license** at the time of this release. See
 
 ## How this was made
 
-The entire project -- every line of code, every script, every document
-including this one -- was written by Claude, Anthropic's AI model, working in
+The original upstream project was written by Claude, Anthropic's AI model, working in
 [Claude Code](https://claude.com/claude-code) under the direction of Daniel
 Gomes Vieira, who set the goals, made the decisions, played the builds and
 reported what he saw. The launcher artwork and the executable's icon were
 generated with Claude as well. The work was done in phases (see
 [docs/PLAN.md](docs/PLAN.md)), and each phase's findings are written up under
 `docs/`, in the same way: by Claude, as the work was done.
+
+This fork adds native macOS support and the optional modern water renderer,
+developed with Codex under Brian Tate's direction and validated through native
+playtesting and deterministic replays.
 
 ## Credits
 

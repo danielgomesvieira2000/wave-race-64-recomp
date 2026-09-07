@@ -89,6 +89,7 @@
 #include "wr64/dlrewrite.h"
 #include "wr64/display.h"
 #include "wr64/testdrive.h"
+#include "wr64/water.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -623,16 +624,13 @@ struct Walker {
     // waves moved at the game's twenty or thirty frames a second under a
     // camera gliding at sixty.
     //
-    // Interpolating them is safe here in a way it would not be for every
-    // rebuilt mesh. RT64 takes the per-vertex difference by index, guarded
-    // only by the block's vertex count being unchanged, so a mesh whose
-    // vertices mean something different from one frame to the next would
-    // smear rather than animate. This one does not: each block's vertex count
-    // is the same every frame (13, 14, 15, then 16 for the rest), and each
-    // block's first vertex is bit-for-bit identical across frames -- the
-    // lattice is fixed and only the heights on it move. Index i is the same
-    // point on the surface in both frames, and the difference between them is
-    // exactly the wave.
+    // The lattice recenters around the camera in roughly 64-unit steps.
+    // Stable vertex counts do not imply stable world positions: the same
+    // array slot can refer to a different wave slope after a recenter. The
+    // material-tagged renderer therefore samples the previous water surface
+    // at each current XZ before interpolating heights and reflection UVs.
+    // This keeps the waves moving smoothly at the presentation rate without
+    // dragging the grid or changing the game's authoritative wave simulation.
     //
     // The whole surface is drawn from one of the game's static lists, so the
     // group can be put around the call rather than threaded through the list:
@@ -649,12 +647,14 @@ struct Walker {
     // list that draws none. The game's drawing lists are static and are
     // called by the same segmented address every frame, so each is scanned
     // once and answered from the table afterwards.
+    std::unordered_map<uint64_t, uint32_t> water_segment_cache;
     uint32_t first_vertex_segment(uint32_t segmented) {
-        static std::unordered_map<uint32_t, uint32_t> cache;
-        const auto it = cache.find(segmented);
+        auto &cache = water_segment_cache;
+        const uint64_t key = (uint64_t(segmented) << 32) | physical(segmented);
+        const auto it = cache.find(key);
         if (it != cache.end()) return it->second;
         const uint32_t found = scan_first_vertex_segment(physical(segmented), 0);
-        cache.emplace(segmented, found);
+        cache.emplace(key, found);
         return found;
     }
 
@@ -686,8 +686,26 @@ struct Walker {
     static constexpr uint32_t kWaterSegment = 3;
 
     bool draws_water(uint32_t segmented_list) {
-        return water_interp && projection_is_perspective &&
+        return projection_is_perspective &&
                first_vertex_segment(segmented_list) == kWaterSegment;
+    }
+
+    bool known_water_material(uint32_t list) const {
+        // USA Rev A Draw_WaterEffects explicitly selects these four lists for
+        // the full grid, the opening/rider scene, and the two player views.
+        // Other segment-3 geometry (including craft effects) keeps its material.
+        return list==0x010082F0 || list==0x0100B590 || list==0x0100D258 || list==0x0100E680;
+    }
+
+    void water_material(bool enabled) {
+        const uint32_t op = (RT64_EXTENDED_OPCODE << 24) | G_EX_WATER_MATERIAL_V1;
+        const auto m = wr64::water::material(0);
+        if (!enabled || m.identity.x == 0) { emit(op, 0); return; }
+        if (GfxCommand *commands = reserve(1 + sizeof(m) / 8)) {
+            auto *data = reinterpret_cast<uint32_t *>(commands);
+            data[0] = op; data[1] = 2; // Water payload v2 appends effect preferences.
+            std::memcpy(data + 2, &m, sizeof(m));
+        }
     }
 
     // ---- rectangles -----------------------------------------------------
@@ -1329,6 +1347,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     const uint32_t state = wr64::current_game_state();
     const auto& config = ultramodern::renderer::get_graphics_config();
 
+    wr64::water::begin_frame(list_vaddr);
     trace_3d(rdram, list_vaddr, state);
 
     Walker w{};
@@ -1425,9 +1444,12 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // the group goes around the call, since the transform inside it is
             // created at its first vertex rather than at its matrix load.
             const bool water = w.draws_water(w1);
-            if (water) w.vertex_interp_group(Walker::kWaterId);
+            const bool modern_water = water && w.known_water_material(w1);
+            if (water && w.water_interp) w.vertex_interp_group(Walker::kWaterId);
+            if (modern_water) w.water_material(true);
             w.emit(w0, w1);
-            if (water) w.vertex_interp_group(G_EX_ID_AUTO);
+            if (modern_water) w.water_material(false);
+            if (water && w.water_interp) w.vertex_interp_group(G_EX_ID_AUTO);
             continue;
         }
 

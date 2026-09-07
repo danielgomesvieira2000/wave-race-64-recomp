@@ -11,8 +11,8 @@
 # restructured around it.
 set -euo pipefail
 
-VENV="$HOME/wr64venv"
-REPO="/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64"
+VENV="${WR64_VENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.venv}"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DECOMP="$REPO/reference/wr64-decomp"
 CONFIG="wr64.us.rev1.asm.yaml"
 

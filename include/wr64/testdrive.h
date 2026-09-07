@@ -23,12 +23,17 @@
 namespace wr64 {
 
 // Loads a script of timed inputs from the path in WR64_INPUT_SCRIPT, if set.
+// A line containing @ticks selects game-update indices instead of wall seconds.
 // Returns false and explains itself on stderr if the file cannot be used, in
 // which case the pad and keyboard still work as usual.
 bool load_input_script();
 
 // True once a script is loaded and still has entries left to apply.
 bool input_script_active();
+// Tick replays isolate hardware input by default. Wall-time scripts keep the
+// historical manual override behavior unless @exclusive is specified.
+bool input_script_exclusive();
+void trace_input(int controller, uint16_t buttons, float x, float y);
 
 // The buttons and stick the script asks for at the current moment. Merged with
 // the pad and keyboard rather than replacing them, so a run can be nudged by

@@ -1,0 +1,3161 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -116,7 +116,7 @@
+ function(build_shader_spirv_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
+     add_custom_command(OUTPUT ${OUTNAME}.spv
+         COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
+-        DEPENDS ${FILENAME})
++        DEPENDS ${FILENAME} ${SHADER_EXTRA_DEPS})
+     add_custom_command(OUTPUT ${OUTNAME}.spirv.c
+         COMMAND file_to_c ${OUTNAME}.spv ${TARGET_NAME}BlobSPIRV ${OUTNAME}.spirv.c ${OUTNAME}.spirv.h
+         DEPENDS ${OUTNAME}.spv file_to_c
+@@ -127,7 +127,7 @@
+ function(build_shader_dxil_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
+     add_custom_command(OUTPUT ${OUTNAME}.dxil
+         COMMAND ${DXC} ${DXC_DXIL_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.dxil
+-        DEPENDS ${FILENAME})
++        DEPENDS ${FILENAME} ${SHADER_EXTRA_DEPS})
+     add_custom_command(OUTPUT ${OUTNAME}.dxil.c
+         COMMAND file_to_c ${OUTNAME}.dxil ${TARGET_NAME}BlobDXIL ${OUTNAME}.dxil.c ${OUTNAME}.dxil.h
+         DEPENDS ${OUTNAME}.dxil file_to_c
+@@ -138,7 +138,7 @@
+ function(build_shader_msl_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
+     add_custom_command(OUTPUT ${OUTNAME}.spv
+             COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
+-            DEPENDS ${FILENAME})
++            DEPENDS ${FILENAME} ${SHADER_EXTRA_DEPS})
+     add_custom_command(OUTPUT ${OUTNAME}.metal
+             COMMAND spirv_cross_msl ${OUTNAME}.spv ${OUTNAME}.metal
+             DEPENDS ${OUTNAME}.spv spirv_cross_msl)
+@@ -157,6 +157,9 @@
+ 
+ function(build_shader TARGETOBJ SHADERNAME OPTIONS)
+     set(FILENAME "${PROJECT_SOURCE_DIR}/${SHADERNAME}")
++    if (SHADERNAME MATCHES "/Water")
++        set(SHADER_EXTRA_DEPS "${PROJECT_SOURCE_DIR}/src/shared/rt64_water_params.h")
++    endif()
+     if (${ARGC} GREATER 3)
+         set(OUTNAME "${CMAKE_BINARY_DIR}/${ARGV3}")
+     else()
+@@ -370,6 +373,7 @@
+ 
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_buffer_uploader.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_framebuffer_renderer.cpp"
++    "${PROJECT_SOURCE_DIR}/src/render/rt64_water_renderer.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_geometry_mode.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_look_at_processor.cpp"
+     "${PROJECT_SOURCE_DIR}/src/render/rt64_native_target.cpp"
+@@ -529,6 +533,22 @@
+ build_pixel_shader(  rt64 "src/shaders/PostBlendDitherNoisePS.hlsl" "src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl" "-D SUB_MODE" "-D NEGATIVE_MODE")
+ build_compute_shader(rt64 "src/shaders/RSPModifyCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPProcessCS.hlsl")
++build_vertex_shader(rt64 "src/shaders/WaterVS.hlsl")
++build_pixel_shader(rt64 "src/shaders/WaterPS.hlsl")
++build_pixel_shader(rt64 "src/shaders/WaterPS.hlsl" "src/shaders/WaterClassicPS.hlsl" "-D" "CLASSIC_STYLE")
++build_pixel_shader(rt64 "src/shaders/WaterPS.hlsl" "src/shaders/WaterClassicMSPS.hlsl" "-D" "CLASSIC_STYLE" "-D" "CLASSIC_MSAA")
++build_compute_shader(rt64 "src/shaders/WaterNormalsCS.hlsl")
++build_compute_shader(rt64 "src/shaders/WaterCaptureCS.hlsl")
++build_compute_shader(rt64 "src/shaders/WaterCaptureCS.hlsl" "src/shaders/WaterCaptureMSCS.hlsl" "-D" "CAPTURE_MSAA")
++build_compute_shader(rt64 "src/shaders/WaterOriginalCS.hlsl")
++build_compute_shader(rt64 "src/shaders/WaterOriginalCS.hlsl" "src/shaders/WaterOriginalMSCS.hlsl" "-D" "CAPTURE_MSAA")
++build_compute_shader(rt64 "src/shaders/WaterDepthReduceCS.hlsl")
++build_compute_shader(rt64 "src/shaders/WaterFieldCS.hlsl")
++build_compute_shader(rt64 "src/shaders/WaterStatsCS.hlsl")
++build_pixel_shader(rt64 "src/shaders/WaterSurfacePS.hlsl")
++build_vertex_shader(rt64 "src/shaders/WaterSprayVS.hlsl")
++build_pixel_shader(rt64 "src/shaders/WaterSprayPS.hlsl")
++build_pixel_shader(rt64 "src/shaders/WaterSprayPS.hlsl" "src/shaders/WaterSprayMSPS.hlsl" "-D" "SPRAY_MSAA")
+ build_compute_shader(rt64 "src/shaders/RSPWorldCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPSmoothNormalCS.hlsl")
+ build_compute_shader(rt64 "src/shaders/RSPVertexTestZCS.hlsl")
+@@ -556,4 +576,3 @@
+ build_pixel_shader(  rt64 "src/shaders/PostProcessPS.hlsl")
+ 
+ target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/src)
+-
+diff --git a/include/rt64_extended_gbi.h b/include/rt64_extended_gbi.h
+--- a/include/rt64_extended_gbi.h
++++ b/include/rt64_extended_gbi.h
+@@ -80,7 +80,8 @@
+ #define G_EX_SETVERTEXSEGMENT_V1        0x000031
+ #define G_EX_SETTEXCOORDWRAPPOINT_V1    0x000032
+ #define G_EX_SETRECTASPECT_V1           0x000033
+-#define G_EX_MAX                        0x000034
++#define G_EX_WATER_MATERIAL_V1          0x000034
++#define G_EX_MAX                        0x000035
+ 
+ #define G_EX_ORIGIN_NONE            0x800
+ #define G_EX_ORIGIN_LEFT            0x0
+diff --git a/src/gbi/rt64_gbi_extended.cpp b/src/gbi/rt64_gbi_extended.cpp
+--- a/src/gbi/rt64_gbi_extended.cpp
++++ b/src/gbi/rt64_gbi_extended.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_gbi_extended.h"
++#include <cstddef>
+ 
+ #include "../include/rt64_extended_gbi.h"
+ 
+@@ -10,6 +11,25 @@
+     namespace GBI_EXTENDED {
+         static GBIFunction Map[G_EX_MAX];
+         static bool MapInitialized = false;
++
++        void waterMaterialV1(State *state, DisplayList **dl) {
++            interop::WaterMaterial material{};
++            const uint32_t version = (*dl)->w1;
++            if (version == 1 || version == 2) {
++                // V2 appends preferences. Preserve V1 input with spray enabled.
++                material.effects.x = 1.0f;
++                const size_t payloadBytes = version == 1 ? offsetof(interop::WaterMaterial, effects) : sizeof(material);
++                // Inline native words: copy now, before the game reuses its display-list memory.
++                auto *dst = reinterpret_cast<uint32_t *>(&material);
++                for (size_t i = 0; i < payloadBytes / 8; ++i) {
++                    ++(*dl);
++                    dst[i * 2] = (*dl)->w0;
++                    dst[i * 2 + 1] = (*dl)->w1;
++                }
++            }
++            state->waterMaterial = material;
++            state->updateDrawStatusAttribute(DrawAttribute::WaterMaterial);
++        }
+ 
+         void noOp(State *state, DisplayList **dl) {
+             // Does nothing.
+@@ -387,6 +407,7 @@
+         }
+ 
+         void initialize() {
++            Map[G_EX_WATER_MATERIAL_V1] = &waterMaterialV1;
+             Map[G_EX_NOOP] = &noOp;
+             Map[G_EX_PRINT] = &print;
+             Map[G_EX_TEXRECT_V1] = &texrectV1;
+diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
+--- a/src/hle/rt64_application.cpp
++++ b/src/hle/rt64_application.cpp
+@@ -669,6 +669,14 @@
+         }
+ #   endif
+ 
++        // The queues wait on one another's IDs and interpolation counters.
++        // Keep both objects (including their mutexes) alive until every worker
++        // has observed shutdown and joined.
++        if (workloadQueue != nullptr) workloadQueue->requestStop();
++        if (presentQueue != nullptr) presentQueue->requestStop();
++        if (workloadQueue != nullptr) workloadQueue->joinThreads();
++        if (presentQueue != nullptr) presentQueue->joinThreads();
++
+         state.reset();
+         workloadQueue.reset();
+         presentQueue.reset();
+diff --git a/src/hle/rt64_draw_call.h b/src/hle/rt64_draw_call.h
+--- a/src/hle/rt64_draw_call.h
++++ b/src/hle/rt64_draw_call.h
+@@ -13,6 +13,7 @@
+ #include "shared/rt64_extra_params.h"
+ #include "shared/rt64_rdp_params.h"
+ #include "shared/rt64_rdp_tile.h"
++#include "shared/rt64_water_params.h"
+ 
+ #include "rt64_framebuffer.h"
+ 
+@@ -42,7 +43,8 @@
+         ObjRenderMode = 25,
+         ExtendedType = 26,
+         ExtendedFlags = 27,
+-        Count = 28
++        WaterMaterial = 28,
++        Count = 29
+     };
+ 
+     enum class DrawExtendedType : uint8_t {
+@@ -109,6 +111,7 @@
+         DrawExtendedType extendedType;
+         DrawExtendedData extendedData;
+         DrawExtendedFlags extendedFlags;
++        interop::WaterMaterial waterMaterial{};
+ 
+         // Raytracing parameters.
+         // TODO: This is likely better pushed elsewhere and using an index
+diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -5,6 +5,7 @@
+ #include "common/rt64_math.h"
+ 
+ #include "rt64_game_frame.h"
++#include "rt64_water_interpolation.h"
+ #include "rt64_workload_queue.h"
+ 
+ #include "xxHash/xxh3.h"
+@@ -31,7 +32,88 @@
+ 
+ namespace RT64 {
+     // GameFrame
+-    
++
++    namespace {
++        struct WaterMeshContext {
++            WaterInterpolation::History history;
++            std::vector<uint32_t> indices;
++            uint32_t projection = 0;
++            bool tagged = false;
++        };
++
++        WaterMeshContext waterMeshContext(const Workload &workload, uint32_t transformIndex) {
++            WaterMeshContext context;
++            const DrawData &data = workload.drawData;
++            const uint32_t vertexStart = data.worldTransformVertexIndices[transformIndex];
++            const uint32_t vertexCount = data.worldTransformVertexCount(transformIndex);
++            bool conflicting = false;
++            for (uint32_t f = 0; f < workload.fbPairCount; f++) {
++                const FramebufferPair &pair = workload.fbPairs[f];
++                for (uint32_t p = 0; p < pair.projectionCount; p++) {
++                    const Projection &projection = pair.projections[p];
++                    if (projection.type != Projection::Type::Perspective) continue;
++                    for (uint32_t c = 0; c < projection.gameCallCount; c++) {
++                        const GameCall &call = projection.gameCalls[c];
++                        const DrawCall &desc = call.callDesc;
++                        if (transformIndex < desc.minWorldMatrix || transformIndex > desc.maxWorldMatrix || desc.waterMaterial.identity.x <= 0) continue;
++                        const auto &material = desc.waterMaterial;
++                        if (!std::isfinite(material.identity.z) || !std::isfinite(material.identity.w) || material.identity.z < 0 || material.identity.z > 9 ||
++                            material.identity.w < 0 || material.identity.w >= float(UINT32_MAX)) {
++                            context.tagged = true;
++                            conflicting = true;
++                            continue;
++                        }
++                        const auto &scissor = desc.scissorRect;
++                        const std::array<int32_t, 4> bounds = {scissor.ulx, scissor.uly, scissor.lrx, scissor.lry};
++                        if (context.tagged && (context.projection != projection.transformsIndex || context.history.viewport != bounds ||
++                            context.history.course != uint32_t(material.identity.z) || context.history.generation != uint32_t(material.identity.w))) {
++                            conflicting = true;
++                        }
++                        context.tagged = true;
++                        context.projection = projection.transformsIndex;
++                        context.history.course = uint32_t(material.identity.z);
++                        context.history.generation = uint32_t(material.identity.w);
++                        context.history.previousTime = material.animation.x;
++                        context.history.currentTime = material.animation.y;
++                        context.history.viewport = bounds;
++                        const size_t start = call.meshDesc.faceIndicesStart;
++                        const size_t end = start + size_t(desc.triangleCount) * 3;
++                        if (end > data.faceIndices.size()) { conflicting = true; continue; }
++                        for (size_t i = start; i < end; i += 3) {
++                            const uint32_t a = data.faceIndices[i], b = data.faceIndices[i + 1], d = data.faceIndices[i + 2];
++                            if (a < vertexStart || a - vertexStart >= vertexCount || b < vertexStart || b - vertexStart >= vertexCount ||
++                                d < vertexStart || d - vertexStart >= vertexCount) continue;
++                            context.indices.insert(context.indices.end(), {a - vertexStart, b - vertexStart, d - vertexStart});
++                        }
++                    }
++                }
++            }
++            if (!context.tagged || conflicting || context.indices.empty() || context.projection >= data.viewTransforms.size() ||
++                context.projection >= data.projTransforms.size() || context.projection >= data.rspViewports.size() ||
++                size_t(vertexStart) + vertexCount > data.viewProjIndices.size() ||
++                !isMatrixIdentity(data.worldTransforms[transformIndex])) return context;
++            for (uint32_t i = vertexStart; i < vertexStart + vertexCount; i++) {
++                if (data.viewProjIndices[i] != context.projection) return context;
++            }
++            const hlslpp::float4x4 inverseView = hlslpp::inverse(data.viewTransforms[context.projection]);
++            const hlslpp::float3 camera = inverseView[3].xyz;
++            const hlslpp::float3 forward = hlslpp::normalize(inverseView[2].xyz);
++            context.history.camera = {camera[0], camera[1], camera[2]};
++            context.history.forward = {forward[0], forward[1], forward[2]};
++            context.history.valid = true;
++            return context;
++        }
++
++        bool waterViewsCompatible(const Workload &cur, const WaterMeshContext &current, const Workload &prev, const WaterMeshContext &previous) {
++            if (!WaterInterpolation::compatible(current.history, previous.history)) return false;
++            const auto &a = cur.drawData.rspViewports[current.projection];
++            const auto &b = prev.drawData.rspViewports[previous.projection];
++            if (a.scale.x != b.scale.x || a.scale.y != b.scale.y || a.scale.z != b.scale.z ||
++                a.translate.x != b.translate.x || a.translate.y != b.translate.y || a.translate.z != b.translate.z) return false;
++            return matrixDifference(cur.drawData.projTransforms[current.projection], prev.drawData.projTransforms[previous.projection]) < 0.01f;
++        }
++    }
++
+     bool GameFrame::areFramebufferPairsCompatible(const WorkloadQueue &workloadQueue, const GameIndices::FramebufferPair &first, const GameIndices::FramebufferPair &second) {
+         if (first == second) {
+             return true;
+@@ -808,6 +890,32 @@
+         uint32_t curVertexCount = curWorkload.drawData.worldTransformVertexCount(curTransformIndex);
+         uint32_t prevVertexIndex = prevWorkload.drawData.worldTransformVertexIndices[prevTransformIndex];
+         uint32_t prevVertexCount = prevWorkload.drawData.worldTransformVertexCount(prevTransformIndex);
++        // wr64: a water index identifies a camera-relative grid slot, not a
++        // persistent world point. Reanchoring it must not translate the waves
++        // or blend an unrelated slope's reflection coordinates into this one.
++        // Only the port's recognized material carries trustworthy reset data.
++        if (curGroup.matrixId == 0x57A00002 && curGroup.vertexInterpolation == G_EX_COMPONENT_INTERPOLATE &&
++            curGroup.texcoordInterpolation == G_EX_COMPONENT_INTERPOLATE && curVertexCount > 0) {
++            const WaterMeshContext current = waterMeshContext(curWorkload, curTransformIndex);
++            if (current.tagged) {
++                float *positionVelocity = curWorkload.drawData.velFloats.data() + curVertexIndex * 3;
++                float *texcoordVelocity = curWorkload.drawData.tcVelFloats.data() + curVertexIndex * 2;
++                std::fill_n(positionVelocity, curVertexCount * 3, 0.0f);
++                std::fill_n(texcoordVelocity, curVertexCount * 2, 0.0f);
++                const WaterMeshContext previous = waterMeshContext(prevWorkload, prevTransformIndex);
++                if (prevVertexCount > 0 && waterViewsCompatible(curWorkload, current, prevWorkload, previous)) {
++                    const WaterInterpolation::PreviousMesh mesh(prevWorkload.drawData.posFloats.data() + prevVertexIndex * 3,
++                        prevWorkload.drawData.tcFloats.data() + prevVertexIndex * 2, prevVertexCount, previous.indices);
++                    mesh.velocities(curWorkload.drawData.posFloats.data() + curVertexIndex * 3,
++                        curWorkload.drawData.tcFloats.data() + curVertexIndex * 2, curVertexCount, positionVelocity, texcoordVelocity);
++                }
++                // New perimeter points and invalid history keep current data;
++                // extrapolating a different patch would invent visible waves.
++                modifiedBuffers.positionVelocity = true;
++                modifiedBuffers.texcoordVelocity = true;
++                return;
++            }
++        }
+         if (((curGroup.vertexInterpolation != G_EX_COMPONENT_SKIP) || (curGroup.texcoordInterpolation == G_EX_COMPONENT_AUTO)) && (curVertexCount == prevVertexCount)) {
+             const std::vector<float> &curPosFloats = curWorkload.drawData.posFloats;
+             const std::vector<float> &prevPosFloats = prevWorkload.drawData.posFloats;
+@@ -1114,4 +1222,4 @@
+         }
+     }
+     */
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -17,15 +17,30 @@
+     }
+ 
+     PresentQueue::~PresentQueue() {
+-        presentThreadRunning = false;
++        requestStop();
++        joinThreads();
++    }
++
++    void PresentQueue::requestStop() {
++        {
++            const std::scoped_lock lock(cursorMutex, presentIdMutex);
++            presentThreadRunning = false;
++        }
+         cursorCondition.notify_all();
+-
++        presentIdCondition.notify_all();
++        if (ext.sharedResources != nullptr) {
++            // Close the predicate-check / wait-registration race.
++            const std::scoped_lock lock(ext.sharedResources->interpolatedMutex);
++            ext.sharedResources->interpolatedCondition.notify_all();
++        }
++    }
++
++    void PresentQueue::joinThreads() {
+         if (presentThread != nullptr) {
+             presentThread->join();
+             delete presentThread;
+-        }
+-
+-        presentIdCondition.notify_all();
++            presentThread = nullptr;
++        }
+     }
+ 
+     void PresentQueue::reset() {
+@@ -266,15 +281,16 @@
+             }
+         }
+         
+-        for (int32_t i = 0; i < framesToPresent; i++) {
++        for (int32_t i = 0; i < framesToPresent && presentThreadRunning; i++) {
+             uint32_t frameCountersNextPresented = 0;
+             if ((framesToPresent > 1) && (usingMSAA || (i > 0))) {
+                 // Stall until the interpolated color target is available.
+                 const uint32_t targetIndex = usingMSAA ? i : (i - 1);
+                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                 ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+-                    return (frameCounters.available > targetIndex) || ((frameCounters.available == targetIndex) && frameCounters.skipped);
++                    return !presentThreadRunning || (frameCounters.available > targetIndex) || ((frameCounters.available == targetIndex) && frameCounters.skipped);
+                 });
++                if (!presentThreadRunning) break;
+ 
+                 // Do not present any more frames after this one after reaching the last available frame if the workload was skipped.
+                 if ((frameCounters.available == targetIndex) && frameCounters.skipped) {
+@@ -404,6 +420,9 @@
+                 presentProfiler.logAndRestart();
+             }
+         }
++
++        // Shutdown may cancel the loop before its first presentation.
++        if (lockedWorkloadMutex) ext.sharedResources->workloadMutex.unlock();
+     }
+ 
+     void PresentQueue::skipInterpolation() {
+@@ -463,6 +482,8 @@
+                 }
+             }
+ 
++            if (!presentThreadRunning) break;
++
+             if (processCursor >= 0) {
+                 std::unique_lock<std::mutex> threadLock(threadMutex);
+                 const bool needsResize = ext.swapChain->needsResize() || !swapChainValid;
+diff --git a/src/hle/rt64_present_queue.h b/src/hle/rt64_present_queue.h
+--- a/src/hle/rt64_present_queue.h
++++ b/src/hle/rt64_present_queue.h
+@@ -60,6 +60,8 @@
+ 
+         PresentQueue();
+         ~PresentQueue();
++        void requestStop();
++        void joinThreads();
+         void reset();
+         void advanceToNextPresent();
+         void repeatLastPresent();
+@@ -73,4 +75,4 @@
+         void threadAdvanceBarrier();
+         void threadLoop();
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -89,6 +89,7 @@
+         lastWorkloadIndex = 0;
+         addLightsOnFlush = false;
+         activeSpriteCommand.replacementHash = 0;
++        waterMaterial = {};
+ 
+         rsp->reset();
+         rdp->reset();
+@@ -134,6 +135,7 @@
+         drawCall.NoN = false;
+         drawCall.extendedType = DrawExtendedType::None;
+         drawCall.extendedFlags = {};
++        drawCall.waterMaterial = {};
+         drawCall.drawStatusChanges = 0;
+ 
+         // Mark everything as changed so everything on the draw call gets updated.
+@@ -455,6 +457,9 @@
+             drawCall.extendedFlags = rdp->extended.drawExtendedFlags;
+         }
+ 
++        if (drawStatus.isChanged(DrawAttribute::WaterMaterial)) {
++            drawCall.waterMaterial = waterMaterial;
++        }
+         drawStatus.clearChanges();
+     }
+ 
+diff --git a/src/hle/rt64_state.h b/src/hle/rt64_state.h
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -84,6 +84,7 @@
+         std::vector<uint64_t> evictedTextureHashes;
+         std::unique_ptr<RenderTarget> dummyDepthTarget;
+         DrawCall drawCall;
++        interop::WaterMaterial waterMaterial{};
+         DrawStatus drawStatus;
+         SpriteCommand activeSpriteCommand;
+         bool addLightsOnFlush;
+diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
+--- a/src/hle/rt64_workload.cpp
++++ b/src/hle/rt64_workload.cpp
+@@ -150,6 +150,7 @@
+ 
+     void Workload::resetRSPOutputBuffers() {
+         outputBuffers.screenPosBuffer.computedSize = 0;
++        outputBuffers.rasterWorldPosBuffer.computedSize = 0;
+         outputBuffers.genTexCoordBuffer.computedSize = 0;
+         outputBuffers.shadedColBuffer.computedSize = 0;
+     }
+@@ -240,6 +241,7 @@
+         const uint32_t vertexCount = drawData.vertexCount();
+         const RenderBufferFlags rtInputFlag = worker->device->getCapabilities().raytracing ? RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT : RenderBufferFlag::NONE;
+         updateOutputBuffer(worker, outputBuffers.screenPosBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
++        updateOutputBuffer(worker, outputBuffers.rasterWorldPosBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
+         updateOutputBuffer(worker, outputBuffers.genTexCoordBuffer, vertexCount * sizeof(float) * 2, RenderBufferFlag::VERTEX);
+         updateOutputBuffer(worker, outputBuffers.shadedColBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
+         updateOutputBuffer(worker, outputBuffers.worldPosBuffer, vertexCount * sizeof(float) * 4, rtInputFlag);
+diff --git a/src/hle/rt64_workload.h b/src/hle/rt64_workload.h
+--- a/src/hle/rt64_workload.h
++++ b/src/hle/rt64_workload.h
+@@ -174,6 +174,7 @@
+ 
+     struct OutputBuffers {
+         ComputedBuffer screenPosBuffer;
++        ComputedBuffer rasterWorldPosBuffer;
+         ComputedBuffer genTexCoordBuffer;
+         ComputedBuffer shadedColBuffer;
+         ComputedBuffer worldPosBuffer;
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -3,6 +3,8 @@
+ //
+ 
+ #include "rt64_workload_queue.h"
++#include <cstdio>
++#include <cstdlib>
+ 
+ #include "common/rt64_thread.h"
+ 
+@@ -18,21 +20,40 @@
+     }
+ 
+     WorkloadQueue::~WorkloadQueue() {
+-        threadsRunning = false;
++        requestStop();
++        joinThreads();
++    }
++
++    void WorkloadQueue::requestStop() {
++        // Update the predicates while holding their wait mutexes so a worker
++        // cannot miss the shutdown notification between checking and sleeping.
++        {
++            const std::scoped_lock lock(cursorMutex, idleMutex, workloadIdMutex);
++            threadsRunning = false;
++        }
+         cursorCondition.notify_all();
+         idleCondition.notify_all();
+-
++        workloadIdCondition.notify_all();
++        if (ext.sharedResources != nullptr) {
++            // Synchronize with an interpolation waiter that may have checked
++            // threadsRunning just before it changed.
++            const std::scoped_lock lock(ext.sharedResources->interpolatedMutex);
++            ext.sharedResources->interpolatedCondition.notify_all();
++        }
++    }
++
++    void WorkloadQueue::joinThreads() {
+         if (renderThread != nullptr) {
+             renderThread->join();
+             delete renderThread;
++            renderThread = nullptr;
+         }
+ 
+         if (idleThread != nullptr) {
+             idleThread->join();
+             delete idleThread;
+-        }
+-
+-        workloadIdCondition.notify_all();
++            idleThread = nullptr;
++        }
+     }
+ 
+     void WorkloadQueue::reset() {
+@@ -206,6 +227,18 @@
+ 
+         uint32_t msaaSampleCount = ext.sharedResources->userConfig.msaaSampleCount();
+ 
++        // Reproducible offscreen benchmark targets; independent of desktop
++        // window size and never written into the user's graphics settings.
++        static const uint32_t waterTestHeight=[]() {
++            const char *v=std::getenv("WR64_TEST_HEIGHT");
++            const int h=v ? std::atoi(v) : 0;
++            return h==1080 || h==1440 || h==2160 ? uint32_t(h) : 0u;
++        }();
++        if (waterTestHeight) {
++            resolutionMultiplier=float(waterTestHeight)/float(referenceHeight);
++            workloadConfig.aspectRatioTarget=16.0f/9.0f;
++        }
++
+         // Build the resolution scale vector from the configuration.
+         workloadConfig.aspectRatioScale = workloadConfig.aspectRatioTarget / workloadConfig.aspectRatioSource;
+         workloadConfig.resolutionScale = { resolutionMultiplier * workloadConfig.aspectRatioScale, resolutionMultiplier };
+@@ -259,8 +292,9 @@
+                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                 InterpolatedFrameCounters &curFrameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
+                 ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+-                    return curFrameCounters.presented >= curFrameCounters.available;
++                    return !threadsRunning || curFrameCounters.presented >= curFrameCounters.available;
+                 });
++                if (!threadsRunning) return;
+             }
+ 
+             std::scoped_lock<std::mutex> managerLock(ext.sharedResources->managerMutex);
+@@ -371,6 +405,7 @@
+ 
+         for (uint32_t w = 0; w < curFrame.workloads.size(); w++) {
+             Workload &workload = workloads[curFrame.workloads[w]];
++            ElapsedTimer waterCpuPrepare;
+ 
+             // There's no guarantee the RSP was processed if framebuffers were not rendered.
+             const bool processRSP = true;
+@@ -411,6 +446,7 @@
+             uint32_t targetMisalignX;
+             uint32_t rtWidth;
+             uint32_t rtHeight;
++            uint32_t profileTargetWidth=0, profileTargetHeight=0;
+             RenderTarget *colorTarget;
+             RenderTarget *depthTarget;
+             RenderFramebufferKey fbKey;
+@@ -625,6 +661,10 @@
+                     drawParams.fbHeight = nativeColorHeight;
+                     drawParams.targetWidth = targetWidth;
+                     drawParams.targetHeight = targetHeight;
++                    if (colorTarget && uint64_t(targetWidth)*targetHeight>uint64_t(profileTargetWidth)*profileTargetHeight) {
++                        profileTargetWidth=targetWidth;
++                        profileTargetHeight=targetHeight;
++                    }
+                     drawParams.rasterShaderCache = ext.rasterShaderCache;
+                     drawParams.resolutionScale = fixedResScale;
+                     drawParams.aspectRatioSource = workloadConfig.aspectRatioSource;
+@@ -635,6 +675,7 @@
+                     drawParams.rtEnabled = workloadConfig.raytracingEnabled;
+                     drawParams.submissionFrame = workload.submissionFrame;
+                     drawParams.deltaTimeMs = deltaTimeMs;
++                    drawParams.interpolationWeight = curFrameWeight;
+                     drawParams.ubershadersOnly = ubershadersOnly;
+                     drawParams.postBlendNoise = workloadConfig.postBlendNoise;
+                     drawParams.postBlendNoiseNegative = workloadConfig.postBlendNoiseNegative;
+@@ -840,6 +881,7 @@
+             ext.workloadGraphicsWorker->commandList->writeTimestamp(queryPool.get(), 1);
+             ext.workloadGraphicsWorker->commandList->end();
+             framebufferRenderer->waitForUploaders();
++            const double waterCpuPrepareMs=waterCpuPrepare.elapsedMilliseconds();
+             ext.workloadGraphicsWorker->execute();
+             ext.workloadGraphicsWorker->wait();
+             workerMutex.unlock();
+@@ -848,6 +890,29 @@
+             queryPool->queryResults();
+             const uint64_t *frameTimestamps = queryPool->getResults();
+             rendererGPUProfiler.log(double(frameTimestamps[1] - frameTimestamps[0]) / 1000000.0);
++            static FILE *waterFrameProfile=[]() {
++                const char *name=std::getenv("WR64_FRAME_PROFILE");
++                FILE *f=name ? std::fopen(name,"w") : nullptr;
++                if (f) std::fprintf(f,"submission,quality,course,width,height,msaa,water_views,cpu_prepare_ms,gpu_ms,water_allocation_bytes\n");
++                return f;
++            }();
++            if (waterFrameProfile) {
++                const auto *water=framebufferRenderer->waterRenderer.get();
++                const bool active=water && !water->draws.empty();
++                // Use the same actual color-target extent for every quality.
++                // A VI-size estimate for Original incorrectly included rows
++                // outside the game's active render target.
++                const uint32_t width=profileTargetWidth;
++                const uint32_t height=profileTargetHeight;
++                std::fprintf(waterFrameProfile,"%llu,%.0f,%.0f,%u,%u,%u,%zu,%.5f,%.5f,%llu\n",(unsigned long long)workload.submissionFrame,
++                    active ? water->draws.front().material.identity.x : 0,active ? water->draws.front().material.identity.z : -1,
++                    width,height,targetManager.multisampling.sampleCount,active ? water->sceneKeys.size() : 0,waterCpuPrepareMs,
++                    double(frameTimestamps[1]-frameTimestamps[0])/1000000.0,(unsigned long long)(water ? water->allocationBytes() : 0));
++                std::fflush(waterFrameProfile);
++            }
++            if (framebufferRenderer->waterRenderer) {
++                framebufferRenderer->waterRenderer->finishProfile(double(frameTimestamps[1]-frameTimestamps[0])/1000000.0);
++            }
+ 
+             // Indicate to the texture cache it's safe to delete the textures if no locks are active.
+             ext.textureCache->decrementLock();
+@@ -901,6 +966,8 @@
+                 }
+             }
+ 
++            if (!threadsRunning) break;
++
+             if (processCursor >= 0) {
+                 std::unique_lock<std::mutex> threadLock(threadMutex);
+                 Workload &workload = workloads[processCursor];
+@@ -913,6 +980,7 @@
+                 ElapsedTimer workloadTimer;
+                 workloadProfiler.start();
+                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
++                if (!threadsRunning) break;
+ 
+                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
+                 if (!workload.paused || (!gameFrames[curFrameIndex].workloads.empty() && (gameFrames[curFrameIndex].workloads[0] != (uint32_t)processCursor))) {
+@@ -1032,8 +1100,9 @@
+                 else if (generateInterpolatedFrames) {
+                     std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                     ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+-                        return (prevFrameCounters.presented == 0) || (prevFrameCounters.presented >= prevFrameCounters.available);
++                        return !threadsRunning || (prevFrameCounters.presented == 0) || (prevFrameCounters.presented >= prevFrameCounters.available);
+                     });
++                    if (!threadsRunning) return;
+                 }
+ 
+                 InterpolatedFrameCounters &curFrameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
+@@ -1064,7 +1133,7 @@
+                 uint32_t targetIndex = 0;
+                 uint32_t framesRendered = 0;
+                 int64_t renderTimeTotalMicro = 0;
+-                for (uint32_t frame = 0; (frame < displayFrames) && !skipWorkloadNow; frame++) {
++                for (uint32_t frame = 0; (frame < displayFrames) && !skipWorkloadNow && threadsRunning; frame++) {
+                     // Evaluate if this frame should be skipped. Measure the current time and compare it to what frame is estimated should be have been rendered by now.
+                     if ((frame > 0) && (originalTimeMicro > 0)) {
+                         const int64_t currentTimeMicro = workloadTimer.elapsedMicroseconds() - setupTimeMicro;
+@@ -1094,8 +1163,9 @@
+                                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                                 ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+                                     frameReduction = frameReduction || (prevFrameCounters.presented <= targetIndex);
+-                                    return prevFrameCounters.presented > targetIndex;
++                                    return !threadsRunning || prevFrameCounters.presented > targetIndex;
+                                 });
++                                if (!threadsRunning) return;
+                             }
+ 
+                             targetIndex++;
+@@ -1221,4 +1291,4 @@
+             }
+         }
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_workload_queue.h b/src/hle/rt64_workload_queue.h
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -103,6 +103,8 @@
+ 
+         WorkloadQueue();
+         ~WorkloadQueue();
++        void requestStop();
++        void joinThreads();
+         void reset();
+         void advanceToNextWorkload();
+         void repeatLastWorkload();
+@@ -123,4 +125,4 @@
+         void renderThreadLoop();
+         void idleThreadLoop();
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -527,6 +527,7 @@
+         uint32_t dstPos;
+         uint32_t dstTc;
+         uint32_t dstCol;
++        uint32_t dstWorld;
+ 
+         RSPProcessDescriptorSet(RenderDevice *device = nullptr) {
+             builder.begin();
+@@ -551,6 +552,7 @@
+             dstPos = builder.addReadWriteStructuredBuffer(19);
+             dstTc = builder.addReadWriteStructuredBuffer(20);
+             dstCol = builder.addReadWriteStructuredBuffer(21);
++            dstWorld = builder.addReadWriteStructuredBuffer(22);
+             builder.end();
+ 
+             if (device != nullptr) {
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -15,6 +15,10 @@
+ 
+ #include "rt64_descriptor_sets.h"
+ #include "rt64_render_worker.h"
++
++#include <chrono>
++#include <cstdio>
++#include <cstdlib>
+ 
+ // TODO: Move to shared.
+ 
+@@ -169,6 +173,7 @@
+     
+     void FramebufferRenderer::resetFramebuffers(RenderWorker *worker, bool ubershadersVisible, float ditherNoiseStrength, const RenderMultisampling &multisampling) {
+         instanceDrawCallVector.clear();
++        if (waterRenderer) waterRenderer->reset();
+         hitGroupVector.clear();
+         renderIndicesVector.clear();
+         rspSmoothNormalVector.clear();
+@@ -466,6 +471,7 @@
+     }
+     
+     void FramebufferRenderer::submitRasterScene(RenderWorker *worker, const Framebuffer &framebuffer, RenderFramebufferStorage *fbStorage, const RasterScene &rasterScene, bool &depthState) {
++        uint32_t waterProfileToken = UINT32_MAX, waterProfileScene = UINT32_MAX, activeWaterDraw = UINT32_MAX;
+         InstanceDrawCall::Type previousCallType = InstanceDrawCall::Type::Unknown;
+         bool previousVertexTestZ = false;
+         const RenderPipeline *previousPipeline = nullptr;
+@@ -508,12 +514,32 @@
+             }
+         };
+ 
++        auto finishWater = [&]() {
++            if (activeWaterDraw==UINT32_MAX) return;
++            const auto &scene=waterRenderer->scenes[waterRenderer->drawScenes[activeWaterDraw]];
++            worker->commandList->setFramebuffer(nullptr);
++            worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(scene.surface.get(),RenderTextureLayout::SHADER_READ));
++            worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++            worker->commandList->setViewports(framebuffer.viewport);
++            const auto &bounds=waterRenderer->draws[activeWaterDraw].viewBounds;
++            worker->commandList->setScissors(RenderRect(int32_t(bounds.x),int32_t(bounds.y),int32_t(bounds.z),int32_t(bounds.w)));
++            waterRenderer->drawSpray(worker,activeWaterDraw);
++            activeWaterDraw=UINT32_MAX;
++            switchToGraphicsPipeline();
++        };
++
+         if (fbStorage->colorTarget != nullptr) {
+             switchToGraphicsPipeline();
+         }
+         
+         for (uint32_t i : rasterScene.instanceIndices) {
+             const InstanceDrawCall &drawCall = instanceDrawCallVector[i];
++            const uint32_t waterScene = drawCall.waterIndex == UINT32_MAX ? UINT32_MAX : waterRenderer->drawScenes[drawCall.waterIndex];
++            if (activeWaterDraw!=UINT32_MAX && waterScene!=waterRenderer->drawScenes[activeWaterDraw]) finishWater();
++            if (waterProfileToken != UINT32_MAX && waterScene != waterProfileScene) {
++                waterRenderer->endProfile(worker,waterProfileToken);
++                waterProfileToken = UINT32_MAX;
++            }
+             switch (drawCall.type) {
+             case InstanceDrawCall::Type::IndexedTriangles: 
+             case InstanceDrawCall::Type::RawTriangles:
+@@ -566,6 +592,72 @@
+                     previousScissor = triangles.scissor;
+                 }
+ 
++                if (drawCall.waterIndex != UINT32_MAX) {
++                    if (waterRenderer->captureScene(worker,drawCall.waterIndex,depthState)) {
++                        worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++                        worker->commandList->setViewports(framebuffer.viewport);
++                        worker->commandList->setScissors(triangles.scissor);
++                        worker->commandList->setIndexBuffer(triangles.vertexTestZ ? &testZIndexBufferView : &indexBufferView);
++                    }
++                    if (waterProfileToken == UINT32_MAX) {
++                        waterProfileToken = waterRenderer->beginProfile(worker,2);
++                        waterProfileScene = waterScene;
++                    }
++                    if (drawCall.originalWaterPipeline) {
++                        // Use the original texture combiner, opacity and fog as the
++                        // Classic base, at the same position in the game's draw order.
++                        switchToGraphicsPipeline();
++                        worker->commandList->setVertexBuffers(0,indexedVertexViews.data(),uint32_t(indexedVertexViews.size()),vertexInputSlots.data());
++                        worker->commandList->setScissors(triangles.scissor);
++                        worker->commandList->setPipeline(drawCall.originalWaterPipeline);
++                        rasterParams.renderIndex=i;
++                        rasterParams.screenScale=triangles.screenScale;
++                        rasterParams.screenOffset=triangles.screenOffset;
++                        worker->commandList->setGraphicsPushConstants(0,&rasterParams);
++                        drawCallTriangles(drawCall);
++                        waterRenderer->captureOriginal(worker,drawCall.waterIndex);
++                        worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++                        worker->commandList->setViewports(framebuffer.viewport);
++                        worker->commandList->setScissors(triangles.scissor);
++                        worker->commandList->setIndexBuffer(triangles.vertexTestZ ? &testZIndexBufferView : &indexBufferView);
++                    }
++                    worker->commandList->setGraphicsPipelineLayout(waterRenderer->layout.get());
++                    worker->commandList->setGraphicsDescriptorSet(waterRenderer->materialSet(drawCall.waterIndex), 0);
++                    const RenderVertexBufferView views[] = {indexedVertexViews[0], indexedVertexViews[1], indexedVertexViews[2], waterRenderer->worldView, waterRenderer->normalView};
++                    const RenderInputSlot slots[] = {{0,16}, {1,8}, {2,16}, {3,16}, {4,16}};
++                    worker->commandList->setVertexBuffers(0, views, 5, slots);
++                    interop::WaterPushConstants pc{drawCall.waterIndex};
++                    worker->commandList->setGraphicsPushConstants(0, &pc);
++                    waterRenderer->beginSurface(worker,drawCall.waterIndex);
++                    worker->commandList->setViewports(framebuffer.viewport);
++                    worker->commandList->setScissors(triangles.scissor);
++                    const bool classic=drawCall.originalWaterPipeline!=nullptr;
++                    const bool selfDepth=waterRenderer->scenes[waterRenderer->drawScenes[drawCall.waterIndex]].selfDepth;
++                    worker->commandList->setPipeline(waterRenderer->pipeline(worker->device,fbStorage->colorTarget->multisampling,
++                        otherMode.zCmp() || selfDepth,selfDepth,false,true,classic,selfDepth));
++                    drawCallTriangles(drawCall);
++                    if (selfDepth) waterRenderer->beginColor(worker,drawCall.waterIndex);
++                    else {
++                        worker->commandList->setFramebuffer(nullptr);
++                        worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(fbStorage->depthTarget->texture.get(),depthState ? RenderTextureLayout::DEPTH_READ : RenderTextureLayout::DEPTH_WRITE));
++                        worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++                    }
++                    worker->commandList->setViewports(framebuffer.viewport);
++                    worker->commandList->setScissors(triangles.scissor);
++                    worker->commandList->setPipeline(triangles.pipeline);
++                    activeWaterDraw=drawCall.waterIndex;
++                    if (waterRenderer->draws[drawCall.waterIndex].material.identity.y==12) {
++                        worker->commandList->setIndexBuffer(&waterRenderer->wireView);
++                        worker->commandList->drawIndexedInstanced(triangles.faceCount*6,1,waterRenderer->wireStarts[drawCall.waterIndex],0,0);
++                    } else drawCallTriangles(drawCall);
++                    if (selfDepth) {
++                        worker->commandList->setFramebuffer(nullptr);
++                        worker->commandList->setFramebuffer(depthState ? fbStorage->colorWriteDepthRead.get() : fbStorage->colorDepthWrite.get());
++                    }
++                    switchToGraphicsPipeline();
++                    break;
++                }
++
+                 if (previousPipeline != triangles.pipeline) {
+                     worker->commandList->setPipeline(triangles.pipeline);
+                     previousPipeline = triangles.pipeline;
+@@ -637,6 +729,9 @@
+                 break;
+             }
+         }
++
++        finishWater();
++        if (waterProfileToken != UINT32_MAX) waterRenderer->endProfile(worker,waterProfileToken);
+ 
+         // Mark targets for resolve.
+         if (fbStorage->colorTarget != nullptr) {
+@@ -1198,9 +1293,14 @@
+             uploader->commandListAfterBarriers(worker);
+         }
+ 
++        shaderUploader->commandListAfterBarriers(worker);
++
+         if (rspProcessor != nullptr) {
+             rspProcessor->recordCommandList(worker, shaderLibrary, outputBuffers);
+         }
++
++        if (waterRenderer && !waterRenderer->draws.empty()) waterRenderer->recordNormals(worker, *outputBuffers);
++        if (waterRenderer && !waterRenderer->draws.empty()) waterRenderer->recordField(worker);
+ 
+         if (vertexProcessor != nullptr) {
+             vertexProcessor->recordCommandList(worker, shaderLibrary, outputBuffers);
+@@ -1220,7 +1320,6 @@
+         }
+ #   endif
+ 
+-        shaderUploader->commandListAfterBarriers(worker);
+         pendingUploaders = bufferUploaders;
+ 
+         if (!dynamicTextureBarrierVector.empty()) {
+@@ -1532,6 +1631,8 @@
+ 
+             for (uint32_t d = 0; (d < proj.gameCallCount) && (globalCallIndex < p.maxGameCall); d++) {
+                 const GameCall &call = proj.gameCalls[d];
++                instanceDrawCall.waterIndex = UINT32_MAX;
++                instanceDrawCall.originalWaterPipeline = nullptr;
+                 renderIndices.instanceIndex = call.callDesc.callIndex;
+                 renderIndices.faceIndicesStart = call.meshDesc.faceIndicesStart;
+                 renderIndices.rdpTileIndex = call.callDesc.tileIndex;
+@@ -1714,6 +1815,136 @@
+                     }
+                 }
+ 
++                const bool wantsWater = call.callDesc.waterMaterial.identity.x > 0.0f &&
++                    instanceDrawCall.type == InstanceDrawCall::Type::IndexedTriangles && p.fbStorage->colorTarget && p.fbStorage->depthTarget;
++                if (wantsWater && !waterRenderer && !waterUnavailable) {
++                    try {
++                        waterRenderer = std::make_unique<WaterRenderer>(p.worker->device, p.rasterShaderCache->shaderFormat, shaderLibrary->usesHDR);
++                    }
++                    catch (const std::exception &error) {
++                        waterUnavailable = true;
++                        std::fprintf(stderr,"[water] retaining Original rendering: %s\n",error.what());
++                    }
++                }
++                const bool waterSamplesSupported = wantsWater &&
++                    (p.worker->device->getSampleCountsSupported(RenderFormat::R32_FLOAT) & p.fbStorage->colorTarget->multisampling.sampleCount);
++                if (wantsWater && waterRenderer && waterSamplesSupported) {
++                    interop::WaterDrawParams wp{};
++                    wp.material = call.callDesc.waterMaterial;
++                    wp.material.surface.w=float(proj.transformsIndex);
++                    wp.screen = {float(p.fbWidth), float(p.fbHeight), float(p.targetWidth), float(p.targetHeight)};
++                    wp.screenTransform = {triangles.screenScale.x, triangles.screenScale.y, triangles.screenOffset.x, triangles.screenOffset.y};
++                    const auto inverseView = hlslpp::inverse(drawData.modViewTransforms[proj.transformsIndex]);
++                    const auto camera = viewPositionFrom(inverseView);
++                    const float t = wp.material.animation.x + (wp.material.animation.y - wp.material.animation.x) * p.interpolationWeight;
++                    wp.camera = {camera.x, camera.y, camera.z, t};
++                    wp.viewProjection = drawData.modViewProjTransforms[proj.transformsIndex];
++                    wp.inverseViewProjection = hlslpp::inverse(wp.viewProjection);
++                    const auto fc = call.callDesc.rdpParams.fogColor;
++                    const bool fog = (call.callDesc.geometryMode & G_FOG) != 0;
++                    wp.fogColor = {std::pow(fc.x,2.2f), std::pow(fc.y,2.2f), std::pow(fc.z,2.2f), fog ? 1.0f : 0.0f};
++                    wp.flags = {call.callDesc.otherMode.zSource() == G_ZS_PRIM ? 1.0f : 0.0f, call.callDesc.rdpParams.primDepth.x, 0.0f, 0.0f};
++                    const auto &waterViewport = drawData.rspViewports[proj.transformsIndex];
++                    wp.viewportScale = {waterViewport.scale.x,waterViewport.scale.y,waterViewport.scale.z,framebuffer.viewport.width};
++                    wp.viewportTranslate = {waterViewport.translate.x,waterViewport.translate.y,waterViewport.translate.z,framebuffer.viewport.height};
++                    wp.viewBounds = {float(triangles.scissor.left),float(triangles.scissor.top),float(triangles.scissor.right),float(triangles.scissor.bottom)};
++                    static const bool waterDiagnostics=std::getenv("WR64_WATER_DIAGNOSTICS")!=nullptr;
++                    static uint64_t waterDiagnosticFrame=0;
++                    if (waterDiagnostics && (++waterDiagnosticFrame%120)==1) {
++                        const uint32_t vertex=drawData.faceIndices[call.meshDesc.faceIndicesStart];
++                        const auto &matrix=drawData.worldTransforms[drawData.worldIndices[vertex]];
++                        const auto &craft=wp.material.craftCurrent[0];
++                        std::fprintf(stderr,"[water-space] course=%.0f camera=(%.1f,%.1f,%.1f) craft=(%.1f,%.1f,%.1f; wet %.2f) vertex=(%.1f,%.1f,%.1f) world_t=(%.1f,%.1f,%.1f) clock=(%.3f,%.3f,%.3f)\n",
++                            wp.material.identity.z,wp.camera.x,wp.camera.y,wp.camera.z,craft.x,craft.y,craft.z,craft.w,
++                            drawData.posFloats[vertex*3],drawData.posFloats[vertex*3+1],drawData.posFloats[vertex*3+2],
++                            matrix[3][0],matrix[3][1],matrix[3][2],wp.material.animation.x,wp.material.animation.y,wp.camera.w);
++                    }
++                    // Optional CPU-only evidence for presentation interpolation. This
++                    // deliberately does no GPU readback and performs no I/O by default.
++                    static FILE *waterMotionTrace=[]() -> FILE * {
++                        const char *path=std::getenv("WR64_WATER_MOTION_TRACE");
++                        if (!path || !*path) return nullptr;
++                        FILE *file=std::fopen(path,"w");
++                        if (file) {
++                            std::setvbuf(file,nullptr,_IOLBF,0);
++                            std::fprintf(file,"submission,cpu_time_us,course,view,quality,style,generation,draw_index,prev_time,current_time,camera_time,interpolation_weight,triangle_index_count,unique_vertex_count,position_moving_vertices,position_velocity_rms,position_velocity_max,xz_velocity_rms,xz_velocity_max,uv_moving_vertices,uv_velocity_rms,uv_velocity_max,sample_vertex,sample_transform,sample_group,sample_transform_vertex_count,sample_pos_x,sample_pos_y,sample_pos_z,sample_vel_x,sample_vel_y,sample_vel_z,sample_uv_s,sample_uv_t,sample_uv_vel_s,sample_uv_vel_t\n");
++                        }
++                        return file;
++                    }();
++                    if (waterMotionTrace) {
++                        const auto timestamp=std::chrono::duration_cast<std::chrono::microseconds>(
++                            std::chrono::steady_clock::now().time_since_epoch()).count();
++                        const uint32_t indexCount=call.callDesc.triangleCount*3;
++                        const uint32_t indexStart=call.meshDesc.faceIndicesStart;
++                        std::vector<uint32_t> vertices(drawData.faceIndices.begin()+indexStart,
++                            drawData.faceIndices.begin()+indexStart+indexCount);
++                        std::sort(vertices.begin(),vertices.end());
++                        vertices.erase(std::unique(vertices.begin(),vertices.end()),vertices.end());
++                        uint32_t movingPositions=0,movingUVs=0,sampleVertex=UINT32_MAX;
++                        double positionSum=0,positionMax=0,xzSum=0,xzMax=0,uvSum=0,uvMax=0;
++                        for (uint32_t vertex:vertices) {
++                            const double vx=drawData.velFloats[vertex*3],vy=drawData.velFloats[vertex*3+1],vz=drawData.velFloats[vertex*3+2];
++                            const double vs=drawData.tcVelFloats[vertex*2],vt=drawData.tcVelFloats[vertex*2+1];
++                            const double xzSquared=vx*vx+vz*vz,positionSquared=xzSquared+vy*vy,uvSquared=vs*vs+vt*vt;
++                            const bool movesPosition=positionSquared>1e-12,movesUV=uvSquared>1e-12;
++                            movingPositions+=movesPosition; movingUVs+=movesUV;
++                            positionSum+=positionSquared; positionMax=std::max(positionMax,positionSquared);
++                            xzSum+=xzSquared; xzMax=std::max(xzMax,xzSquared);
++                            uvSum+=uvSquared; uvMax=std::max(uvMax,uvSquared);
++                            if (sampleVertex==UINT32_MAX && (movesPosition || movesUV)) sampleVertex=vertex;
++                        }
++                        if (sampleVertex==UINT32_MAX && !vertices.empty()) sampleVertex=vertices.front();
++                        uint32_t transform=UINT32_MAX,group=UINT32_MAX,transformVertexCount=0;
++                        double sample[10]{};
++                        if (sampleVertex!=UINT32_MAX) {
++                            transform=drawData.worldIndices[sampleVertex];
++                            group=drawData.transformGroups[drawData.worldTransformGroups[transform]].matrixId;
++                            transformVertexCount=drawData.worldTransformVertexCount(transform);
++                            for (uint32_t axis=0;axis<3;axis++) {
++                                sample[axis]=drawData.posFloats[sampleVertex*3+axis];
++                                sample[axis+3]=drawData.velFloats[sampleVertex*3+axis];
++                            }
++                            for (uint32_t axis=0;axis<2;axis++) {
++                                sample[axis+6]=drawData.tcFloats[sampleVertex*2+axis];
++                                sample[axis+8]=drawData.tcVelFloats[sampleVertex*2+axis];
++                            }
++                        }
++                        const double divisor=double(std::max<size_t>(vertices.size(),1));
++                        std::fprintf(waterMotionTrace,"%llu,%lld,%.0f,%u,%.0f,%.0f,%.0f,%zu,%.9f,%.9f,%.9f,%.9f,%u,%zu,%u,%.9f,%.9f,%.9f,%.9f,%u,%.9f,%.9f,%u,%u,%u,%u,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f\n",
++                            static_cast<unsigned long long>(p.submissionFrame),static_cast<long long>(timestamp),wp.material.identity.z,proj.transformsIndex,
++                            wp.material.identity.x,wp.material.optics.w,wp.material.identity.w,waterRenderer->draws.size(),
++                            wp.material.animation.x,wp.material.animation.y,wp.camera.w,p.interpolationWeight,indexCount,vertices.size(),
++                            movingPositions,std::sqrt(positionSum/divisor),std::sqrt(positionMax),std::sqrt(xzSum/divisor),std::sqrt(xzMax),
++                            movingUVs,std::sqrt(uvSum/divisor),std::sqrt(uvMax),sampleVertex,transform,group,transformVertexCount,
++                            sample[0],sample[1],sample[2],sample[3],sample[4],sample[5],sample[6],sample[7],sample[8],sample[9]);
++                    }
++                    bool waterMatricesValid=std::isfinite(wp.camera.x) && std::isfinite(wp.camera.y) && std::isfinite(wp.camera.z)
++                        && std::abs(wp.viewportScale.z)>0.000001f && std::abs(wp.screenTransform.x)>0.000001f && std::abs(wp.screenTransform.y)>0.000001f;
++                    for (uint32_t row=0;row<4;row++) for (uint32_t col=0;col<4;col++) waterMatricesValid &= std::isfinite(wp.inverseViewProjection[row][col]);
++                    RenderPipeline *waterPipeline = nullptr;
++                    const bool classic=wp.material.optics.w>0.5f;
++                    // Originally opaque two-player water already owns scene
++                    // depth writes. Isolate only the translucent legacy path
++                    // whose Modern replacement now shades opaquely.
++                    const bool selfDepth=!classic && !call.callDesc.otherMode.zUpd();
++                    if (waterMatricesValid) {
++                        waterPipeline = waterRenderer->pipeline(p.worker->device,p.fbStorage->colorTarget->multisampling,
++                            call.callDesc.otherMode.zCmp() || selfDepth,call.callDesc.otherMode.zUpd() && !selfDepth,wp.material.identity.y==12,false,classic,selfDepth);
++                        waterMatricesValid = waterPipeline && waterRenderer->pipeline(p.worker->device,p.fbStorage->colorTarget->multisampling,
++                            call.callDesc.otherMode.zCmp() || selfDepth,selfDepth,false,true,classic,selfDepth);
++                    }
++                    if (waterMatricesValid) {
++                        instanceDrawCall.waterIndex = uint32_t(waterRenderer->draws.size());
++                        waterRenderer->draws.push_back(wp);
++                        waterRenderer->drawScenes.push_back(waterRenderer->prepareScene(p.worker,p.fbStorage->colorTarget,p.fbStorage->depthTarget,
++                            (uint64_t(framebufferCount) << 32) | proj.transformsIndex,classic,selfDepth));
++                        waterRenderer->collectNormals(drawData, call.meshDesc.faceIndicesStart, call.callDesc.triangleCount * 3, (uint64_t(framebufferCount) << 32) | proj.transformsIndex);
++                        if (wp.material.optics.w>0.5f) instanceDrawCall.originalWaterPipeline=triangles.pipeline;
++                        triangles.pipeline = waterPipeline;
++                        waterRenderer->worldView = RenderVertexBufferView(RenderBufferReference(outputBuffers.rasterWorldPosBuffer.buffer.get()), PosStride * vertexCount);
++                    }
++                }
++
+                 // Determine to use the draw call either in the RT scene or the raster scene.
+                 const uint32_t instanceIndex = static_cast<uint32_t>(instanceDrawCallVector.size());
+ #           if RT_ENABLED
+@@ -1840,7 +2071,13 @@
+         }
+ #   endif
+ 
++        if (waterRenderer && !waterRenderer->draws.empty()) {
++            waterRenderer->prepareField(worker);
++            waterRenderer->prepareNormals(worker, *outputBuffers, shaderUploads);
++            shaderUploads.push_back({waterRenderer->draws.data(), {0,waterRenderer->draws.size()}, sizeof(interop::WaterDrawParams), RenderBufferFlag::STORAGE, {}, &waterRenderer->drawBuffer});
++        }
+         shaderUploader->submit(worker, shaderUploads);
++        if (waterRenderer && !waterRenderer->draws.empty()) { waterRenderer->bindBuffer(); waterRenderer->bindNormals(*outputBuffers); }
+         updateShaderViews(worker, drawBuffers, outputBuffers, shaderViewRtEnabled);
+     }
+ 
+@@ -1941,4 +2178,4 @@
+         unsigned int im3dVertexCount;
+     };
+ };
+-*/
+\ No newline at end of file
++*/
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -23,6 +23,7 @@
+ #include "rt64_render_target.h"
+ #include "rt64_rsp_processor.h"
+ #include "rt64_vertex_processor.h"
++#include "rt64_water_renderer.h"
+ 
+ #if RT_ENABLED
+ #   include "rt64_raytracing_resources.h"
+@@ -102,6 +103,8 @@
+         std::unique_ptr<RSPVertexTestZDescriptorSet> vertexTestZSet;
+         interop::FrameParams frameParams;
+         const ShaderLibrary *shaderLibrary = nullptr;
++        std::unique_ptr<WaterRenderer> waterRenderer;
++        bool waterUnavailable = false;
+ 
+ #   if RT_ENABLED
+         const RenderTexture *blueNoiseTexture = nullptr;
+@@ -143,6 +146,7 @@
+             bool rtEnabled;
+             uint64_t submissionFrame;
+             float deltaTimeMs;
++            float interpolationWeight = 1.0f;
+             bool ubershadersOnly;
+             bool postBlendNoise;
+             bool postBlendNoiseNegative;
+diff --git a/src/render/rt64_framebuffer_renderer_call.h b/src/render/rt64_framebuffer_renderer_call.h
+--- a/src/render/rt64_framebuffer_renderer_call.h
++++ b/src/render/rt64_framebuffer_renderer_call.h
+@@ -22,6 +22,8 @@
+         };
+ 
+         Type type;
++        uint32_t waterIndex = UINT32_MAX;
++        const RenderPipeline *originalWaterPipeline = nullptr;
+ 
+         union {
+             struct {
+diff --git a/src/render/rt64_rsp_processor.cpp b/src/render/rt64_rsp_processor.cpp
+--- a/src/render/rt64_rsp_processor.cpp
++++ b/src/render/rt64_rsp_processor.cpp
+@@ -47,6 +47,7 @@
+         processSet->setBuffer(processSet->dstPos, p.outputBuffers->screenPosBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
+         processSet->setBuffer(processSet->dstTc, p.outputBuffers->genTexCoordBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 2));
+         processSet->setBuffer(processSet->dstCol, p.outputBuffers->shadedColBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
++        processSet->setBuffer(processSet->dstWorld, p.outputBuffers->rasterWorldPosBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
+ 
+         const uint32_t modifyCount = drawData.modifyCount();
+         modifyCB.modifyCount = modifyCount;
+@@ -61,13 +62,15 @@
+             RenderBufferBarrier beforeBarriers[] = {
+                 RenderBufferBarrier(outputBuffers->screenPosBuffer.buffer.get(), RenderBufferAccess::WRITE),
+                 RenderBufferBarrier(outputBuffers->genTexCoordBuffer.buffer.get(), RenderBufferAccess::WRITE),
+-                RenderBufferBarrier(outputBuffers->shadedColBuffer.buffer.get(), RenderBufferAccess::WRITE)
++                RenderBufferBarrier(outputBuffers->shadedColBuffer.buffer.get(), RenderBufferAccess::WRITE),
++                RenderBufferBarrier(outputBuffers->rasterWorldPosBuffer.buffer.get(), RenderBufferAccess::WRITE)
+             };
+ 
+             RenderBufferBarrier afterBarriers[] = {
+                 RenderBufferBarrier(outputBuffers->screenPosBuffer.buffer.get(), RenderBufferAccess::READ),
+                 RenderBufferBarrier(outputBuffers->genTexCoordBuffer.buffer.get(), RenderBufferAccess::READ),
+-                RenderBufferBarrier(outputBuffers->shadedColBuffer.buffer.get(), RenderBufferAccess::READ)
++                RenderBufferBarrier(outputBuffers->shadedColBuffer.buffer.get(), RenderBufferAccess::READ),
++                RenderBufferBarrier(outputBuffers->rasterWorldPosBuffer.buffer.get(), RenderBufferAccess::READ)
+             };
+ 
+             const int dispatchCount = (processCB.vertexCount + ThreadGroupSize - 1) / ThreadGroupSize;
+diff --git a/src/shaders/RSPProcessCS.hlsl b/src/shaders/RSPProcessCS.hlsl
+--- a/src/shaders/RSPProcessCS.hlsl
++++ b/src/shaders/RSPProcessCS.hlsl
+@@ -40,6 +40,7 @@
+ RWStructuredBuffer<float4> dstPos : register(u19);
+ RWStructuredBuffer<float2> dstTc : register(u20);
+ RWStructuredBuffer<float4> dstCol : register(u21);
++RWStructuredBuffer<float4> dstWorld : register(u22);
+ 
+ [numthreads(GROUP_SIZE, 1, 1)]
+ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+@@ -131,4 +132,5 @@
+     dstPos[vertexOffsetIndex] = screenPos;
+     dstTc[vertexOffsetIndex] = tc;
+     dstCol[vertexOffsetIndex] = vertexColor;
++    dstWorld[vertexOffsetIndex] = mul(worldMat, float4(pos - vel * (1.0f - gConstants.curFrameWeight), 1.0f));
+ }
+\ No newline at end of file
+diff --git a/src/hle/rt64_water_interpolation.h b/src/hle/rt64_water_interpolation.h
+new file mode 100644
+--- /dev/null
++++ b/src/hle/rt64_water_interpolation.h
+@@ -0,0 +1,178 @@
++#pragma once
++
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstdint>
++#include <limits>
++#include <map>
++#include <numeric>
++#include <utility>
++#include <vector>
++
++namespace RT64::WaterInterpolation {
++    // The game's staggered grid moves in camera-relative 64-unit steps. Its
++    // independently rounded row/origin Z coordinates need not coincide after
++    // a step, so interpolate the actual previous triangles, not an ideal grid.
++    struct Sample {
++        float y = 0, u = 0, v = 0;
++        bool valid = true;
++    };
++
++    struct History {
++        uint32_t course = 0, generation = 0;
++        std::array<int32_t, 4> viewport{};
++        std::array<float, 3> camera{}, forward{};
++        float previousTime = 0, currentTime = 0;
++        bool valid = false;
++    };
++
++    inline bool compatible(const History &cur, const History &prev) {
++        if (!cur.valid || !prev.valid || cur.course != prev.course || cur.generation != prev.generation || cur.viewport != prev.viewport ||
++            !std::isfinite(cur.previousTime) || !std::isfinite(cur.currentTime) || !std::isfinite(prev.currentTime) ||
++            std::abs(cur.previousTime - prev.currentTime) > 0.0001f || cur.currentTime < cur.previousTime || cur.currentTime - cur.previousTime > 0.2f) {
++            return false;
++        }
++
++        float distance2 = 0, facing = 0;
++        for (uint32_t i = 0; i < 3; i++) {
++            const float delta = cur.camera[i] - prev.camera[i];
++            distance2 += delta * delta;
++            facing += cur.forward[i] * prev.forward[i];
++        }
++        // A camera cut must not carry another view's patch into this one.
++        return std::isfinite(distance2) && distance2 <= 256.0f * 256.0f && std::isfinite(facing) && facing >= 0.5f;
++    }
++
++    class PreviousMesh {
++        struct Triangle {
++            std::array<uint32_t, 3> indices;
++            float minX, minZ, maxX, maxZ;
++        };
++        struct Node {
++            float minX, minZ, maxX, maxZ;
++            uint32_t begin, end, left = 0, right = 0;
++        };
++        const float *positions;
++        const float *texcoords;
++        std::map<std::pair<float, float>, Sample> points;
++        std::vector<Triangle> triangles;
++        std::vector<uint32_t> order;
++        std::vector<Node> nodes;
++
++        static bool same(const Sample &a, const Sample &b) {
++            return std::abs(a.y - b.y) < 0.001f && std::abs(a.u - b.u) < 0.0001f && std::abs(a.v - b.v) < 0.0001f;
++        }
++
++        uint32_t build(uint32_t begin, uint32_t end) {
++            Node node{INFINITY, INFINITY, -INFINITY, -INFINITY, begin, end};
++            for (uint32_t i = begin; i < end; i++) {
++                const Triangle &t = triangles[order[i]];
++                node.minX = std::min(node.minX, t.minX); node.minZ = std::min(node.minZ, t.minZ);
++                node.maxX = std::max(node.maxX, t.maxX); node.maxZ = std::max(node.maxZ, t.maxZ);
++            }
++            const uint32_t index = uint32_t(nodes.size());
++            nodes.push_back(node);
++            if (end - begin > 8) {
++                const uint32_t middle = begin + (end - begin) / 2;
++                const bool splitX = node.maxX - node.minX >= node.maxZ - node.minZ;
++                std::nth_element(order.begin() + begin, order.begin() + middle, order.begin() + end, [&](uint32_t a, uint32_t b) {
++                    const Triangle &ta = triangles[a], &tb = triangles[b];
++                    return splitX ? ta.minX + ta.maxX < tb.minX + tb.maxX : ta.minZ + ta.maxZ < tb.minZ + tb.maxZ;
++                });
++                const uint32_t left = build(begin, middle), right = build(middle, end);
++                nodes[index].left = left; nodes[index].right = right;
++            }
++            return index;
++        }
++
++        bool sampleTriangle(const Triangle &triangle, float x, float z, Sample &sample) const {
++            const float *a = positions + triangle.indices[0] * 3;
++            const float *b = positions + triangle.indices[1] * 3;
++            const float *c = positions + triangle.indices[2] * 3;
++            const double denominator = double(b[2] - c[2]) * (a[0] - c[0]) + double(c[0] - b[0]) * (a[2] - c[2]);
++            if (std::abs(denominator) < 0.001) return false;
++            const double wa = (double(b[2] - c[2]) * (x - c[0]) + double(c[0] - b[0]) * (z - c[2])) / denominator;
++            const double wb = (double(c[2] - a[2]) * (x - c[0]) + double(a[0] - c[0]) * (z - c[2])) / denominator;
++            const double wc = 1.0 - wa - wb;
++            if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) return false;
++            sample = {};
++            const double weights[] = {wa, wb, wc};
++            for (uint32_t i = 0; i < 3; i++) {
++                const uint32_t vertex = triangle.indices[i];
++                sample.y += float(weights[i] * positions[vertex * 3 + 1]);
++                sample.u += float(weights[i] * texcoords[vertex * 2]);
++                sample.v += float(weights[i] * texcoords[vertex * 2 + 1]);
++            }
++            return true;
++        }
++
++        bool sampleNode(uint32_t index, float x, float z, Sample &sample) const {
++            const Node &node = nodes[index];
++            if (x < node.minX || x > node.maxX || z < node.minZ || z > node.maxZ) return false;
++            if (node.left != 0) return sampleNode(node.left, x, z, sample) || sampleNode(node.right, x, z, sample);
++            for (uint32_t i = node.begin; i < node.end; i++) {
++                if (sampleTriangle(triangles[order[i]], x, z, sample)) return true;
++            }
++            return false;
++        }
++
++    public:
++        PreviousMesh(const float *positions, const float *texcoords, uint32_t vertexCount, const std::vector<uint32_t> &indices)
++            : positions(positions), texcoords(texcoords) {
++            for (uint32_t i = 0; i < vertexCount; i++) {
++                const float *p = positions + i * 3, *tc = texcoords + i * 2;
++                if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]) || !std::isfinite(tc[0]) || !std::isfinite(tc[1])) continue;
++                const Sample sample{p[1], tc[0], tc[1]};
++                auto result = points.emplace(std::make_pair(p[0], p[2]), sample);
++                // RSP reloads produce duplicate vertices. Equal copies are
++                // harmless; conflicting surfaces at one XZ cannot be matched.
++                if (!result.second && !same(result.first->second, sample)) result.first->second.valid = false;
++            }
++            for (size_t i = 0; i + 2 < indices.size(); i += 3) {
++                Triangle triangle{{indices[i], indices[i + 1], indices[i + 2]}, INFINITY, INFINITY, -INFINITY, -INFINITY};
++                bool valid = true;
++                for (uint32_t vertex : triangle.indices) {
++                    if (vertex >= vertexCount) { valid = false; break; }
++                    const float *p = positions + vertex * 3;
++                    if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) { valid = false; break; }
++                    const auto point = points.find({p[0], p[2]});
++                    if (point == points.end() || !point->second.valid) { valid = false; break; }
++                    triangle.minX = std::min(triangle.minX, p[0]); triangle.minZ = std::min(triangle.minZ, p[2]);
++                    triangle.maxX = std::max(triangle.maxX, p[0]); triangle.maxZ = std::max(triangle.maxZ, p[2]);
++                }
++                if (valid) triangles.push_back(triangle);
++            }
++            order.resize(triangles.size());
++            std::iota(order.begin(), order.end(), 0u);
++            nodes.reserve(triangles.size() * 2);
++            if (!triangles.empty()) build(0, uint32_t(triangles.size()));
++        }
++
++        bool sample(float x, float z, Sample &sample) const {
++            if (!std::isfinite(x) || !std::isfinite(z)) return false;
++            const auto exact = points.find({x, z});
++            if (exact != points.end()) {
++                sample = exact->second;
++                return sample.valid;
++            }
++            return !nodes.empty() && sampleNode(0, x, z, sample);
++        }
++
++        uint32_t velocities(const float *currentPositions, const float *currentTexcoords, uint32_t currentCount, float *positionVelocity, float *texcoordVelocity) const {
++            uint32_t matched = 0;
++            for (uint32_t i = 0; i < currentCount; i++) {
++                positionVelocity[i * 3] = positionVelocity[i * 3 + 1] = positionVelocity[i * 3 + 2] = 0;
++                texcoordVelocity[i * 2] = texcoordVelocity[i * 2 + 1] = 0;
++                Sample previous;
++                if (!std::isfinite(currentPositions[i * 3 + 1]) || !std::isfinite(currentTexcoords[i * 2]) || !std::isfinite(currentTexcoords[i * 2 + 1])) continue;
++                if (!sample(currentPositions[i * 3], currentPositions[i * 3 + 2], previous)) continue;
++                positionVelocity[i * 3 + 1] = currentPositions[i * 3 + 1] - previous.y;
++                texcoordVelocity[i * 2] = currentTexcoords[i * 2] - previous.u;
++                texcoordVelocity[i * 2 + 1] = currentTexcoords[i * 2 + 1] - previous.v;
++                matched++;
++            }
++            return matched;
++        }
++    };
++}
+diff --git a/src/render/rt64_water_renderer.cpp b/src/render/rt64_water_renderer.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/render/rt64_water_renderer.cpp
+@@ -0,0 +1,747 @@
++#include "rt64_water_renderer.h"
++#include "rt64_render_target.h"
++#include "hle/rt64_workload.h"
++#include <cassert>
++#include <cstdio>
++#include <cstdlib>
++#include <stdexcept>
++#include "shaders/WaterVS.hlsl.spirv.h"
++#include "shaders/WaterPS.hlsl.spirv.h"
++#include "shaders/WaterClassicPS.hlsl.spirv.h"
++#include "shaders/WaterClassicMSPS.hlsl.spirv.h"
++#include "shaders/WaterNormalsCS.hlsl.spirv.h"
++#include "shaders/WaterCaptureCS.hlsl.spirv.h"
++#include "shaders/WaterCaptureMSCS.hlsl.spirv.h"
++#include "shaders/WaterOriginalCS.hlsl.spirv.h"
++#include "shaders/WaterOriginalMSCS.hlsl.spirv.h"
++#include "shaders/WaterDepthReduceCS.hlsl.spirv.h"
++#include "shaders/WaterFieldCS.hlsl.spirv.h"
++#include "shaders/WaterStatsCS.hlsl.spirv.h"
++#include "shaders/WaterSurfacePS.hlsl.spirv.h"
++#include "shaders/WaterSprayVS.hlsl.spirv.h"
++#include "shaders/WaterSprayPS.hlsl.spirv.h"
++#include "shaders/WaterSprayMSPS.hlsl.spirv.h"
++#ifdef _WIN32
++#include "shaders/WaterVS.hlsl.dxil.h"
++#include "shaders/WaterPS.hlsl.dxil.h"
++#include "shaders/WaterClassicPS.hlsl.dxil.h"
++#include "shaders/WaterClassicMSPS.hlsl.dxil.h"
++#include "shaders/WaterNormalsCS.hlsl.dxil.h"
++#include "shaders/WaterCaptureCS.hlsl.dxil.h"
++#include "shaders/WaterCaptureMSCS.hlsl.dxil.h"
++#include "shaders/WaterOriginalCS.hlsl.dxil.h"
++#include "shaders/WaterOriginalMSCS.hlsl.dxil.h"
++#include "shaders/WaterDepthReduceCS.hlsl.dxil.h"
++#include "shaders/WaterFieldCS.hlsl.dxil.h"
++#include "shaders/WaterStatsCS.hlsl.dxil.h"
++#include "shaders/WaterSurfacePS.hlsl.dxil.h"
++#include "shaders/WaterSprayVS.hlsl.dxil.h"
++#include "shaders/WaterSprayPS.hlsl.dxil.h"
++#include "shaders/WaterSprayMSPS.hlsl.dxil.h"
++#elif defined(__APPLE__)
++#include "shaders/WaterVS.hlsl.metal.h"
++#include "shaders/WaterPS.hlsl.metal.h"
++#include "shaders/WaterClassicPS.hlsl.metal.h"
++#include "shaders/WaterClassicMSPS.hlsl.metal.h"
++#include "shaders/WaterNormalsCS.hlsl.metal.h"
++#include "shaders/WaterCaptureCS.hlsl.metal.h"
++#include "shaders/WaterCaptureMSCS.hlsl.metal.h"
++#include "shaders/WaterOriginalCS.hlsl.metal.h"
++#include "shaders/WaterOriginalMSCS.hlsl.metal.h"
++#include "shaders/WaterDepthReduceCS.hlsl.metal.h"
++#include "shaders/WaterFieldCS.hlsl.metal.h"
++#include "shaders/WaterStatsCS.hlsl.metal.h"
++#include "shaders/WaterSurfacePS.hlsl.metal.h"
++#include "shaders/WaterSprayVS.hlsl.metal.h"
++#include "shaders/WaterSprayPS.hlsl.metal.h"
++#include "shaders/WaterSprayMSPS.hlsl.metal.h"
++#endif
++
++#ifdef _WIN32
++#   define CREATE_SHADER_INPUTS(DXIL_BLOB, SPIRV_BLOB, MSL_BLOB, ENTRY_NAME, SHADER_FORMAT)\
++        (SHADER_FORMAT == RenderShaderFormat::DXIL) ? DXIL_BLOB : (SHADER_FORMAT == RenderShaderFormat::SPIRV) ? SPIRV_BLOB : nullptr,\
++        (SHADER_FORMAT == RenderShaderFormat::DXIL) ? sizeof(DXIL_BLOB) : (SHADER_FORMAT == RenderShaderFormat::SPIRV) ? sizeof(SPIRV_BLOB) : 0,\
++        ENTRY_NAME,\
++        SHADER_FORMAT
++#elif defined(__APPLE__)
++#   define CREATE_SHADER_INPUTS(DXIL_BLOB, SPIRV_BLOB, MSL_BLOB, ENTRY_NAME, SHADER_FORMAT)\
++        (SHADER_FORMAT == RenderShaderFormat::METAL) ? MSL_BLOB : (SHADER_FORMAT == RenderShaderFormat::SPIRV) ? SPIRV_BLOB : nullptr,\
++        (SHADER_FORMAT == RenderShaderFormat::METAL) ? sizeof(MSL_BLOB) : (SHADER_FORMAT == RenderShaderFormat::SPIRV) ? sizeof(SPIRV_BLOB) : 0,\
++        ENTRY_NAME,\
++        SHADER_FORMAT
++#else
++#   define CREATE_SHADER_INPUTS(DXIL_BLOB, SPIRV_BLOB, MSL_BLOB, ENTRY_NAME, SHADER_FORMAT)\
++        (SHADER_FORMAT == RenderShaderFormat::SPIRV) ? SPIRV_BLOB : nullptr,\
++        (SHADER_FORMAT == RenderShaderFormat::SPIRV) ? sizeof(SPIRV_BLOB) : 0,\
++        ENTRY_NAME,\
++        SHADER_FORMAT
++#endif
++
++namespace RT64 {
++namespace {
++template <typename T> std::unique_ptr<T> checkedWaterResource(std::unique_ptr<T> resource) {
++    if (!resource) throw std::runtime_error("water shader or pipeline creation failed");
++    return resource;
++}
++}
++WaterRenderer::WaterRenderer(RenderDevice *device, RenderShaderFormat format, bool hdr) : usesHDR(hdr) {
++    if (std::getenv("WR64_TEST_WATER_SHADER_FAILURE")) throw std::runtime_error("injected water shader failure");
++    if (std::getenv("WR64_WATER_PROFILE") && device->getCapabilities().queryPools) profilePool = device->createQueryPool(128);
++    descriptorSet = std::make_unique<WaterDescriptorSet>(device);
++    RenderPipelineLayoutBuilder builder;
++    builder.begin();
++    builder.addPushConstant(0, 0, sizeof(interop::WaterPushConstants), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
++    builder.addDescriptorSet(*descriptorSet);
++    builder.end();
++    layout = checkedWaterResource(builder.create(device));
++    vertexShader = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterVSBlobDXIL, WaterVSBlobSPIRV, WaterVSBlobMSL, "VSMain", format)));
++    pixelShader = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterPSBlobDXIL, WaterPSBlobSPIRV, WaterPSBlobMSL, "PSMain", format)));
++    classicShader=checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterClassicPSBlobDXIL,WaterClassicPSBlobSPIRV,WaterClassicPSBlobMSL,"PSMain",format)));
++    classicMSShader=checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterClassicMSPSBlobDXIL,WaterClassicMSPSBlobSPIRV,WaterClassicMSPSBlobMSL,"PSMain",format)));
++    surfaceShader= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterSurfacePSBlobDXIL,WaterSurfacePSBlobSPIRV,WaterSurfacePSBlobMSL,"PSMain",format)));
++    sprayVertexShader= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterSprayVSBlobDXIL,WaterSprayVSBlobSPIRV,WaterSprayVSBlobMSL,"VSMain",format)));
++    sprayPixelShader= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterSprayPSBlobDXIL,WaterSprayPSBlobSPIRV,WaterSprayPSBlobMSL,"PSMain",format)));
++    sprayMSPixelShader= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterSprayMSPSBlobDXIL,WaterSprayMSPSBlobSPIRV,WaterSprayMSPSBlobMSL,"PSMain",format)));
++    WaterSpraySet spraySet;
++    builder.begin();
++    builder.addPushConstant(0,0,sizeof(interop::WaterPushConstants),RenderShaderStageFlag::VERTEX|RenderShaderStageFlag::PIXEL);
++    builder.addDescriptorSet(spraySet);
++    builder.end();
++    sprayLayout= checkedWaterResource(builder.create(device));
++    normalSet = std::make_unique<WaterNormalSet>(device);
++    builder.begin();
++    builder.addPushConstant(0,0,sizeof(uint32_t),RenderShaderStageFlag::COMPUTE);
++    builder.addDescriptorSet(*normalSet);
++    builder.end();
++    normalShader.pipelineLayout = checkedWaterResource(builder.create(device));
++    auto cs = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterNormalsCSBlobDXIL, WaterNormalsCSBlobSPIRV, WaterNormalsCSBlobMSL, "CSMain", format)));
++    normalShader.pipeline = checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(normalShader.pipelineLayout.get(),cs.get(),64,1,1)));
++    WaterCaptureSet captureSet;
++    builder.begin();
++    builder.addPushConstant(0,0,16,RenderShaderStageFlag::COMPUTE);
++    builder.addDescriptorSet(captureSet);
++    builder.end();
++    captureShader.pipelineLayout = checkedWaterResource(builder.create(device));
++    captureMSShader.pipelineLayout = checkedWaterResource(builder.create(device));
++    auto capture = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterCaptureCSBlobDXIL, WaterCaptureCSBlobSPIRV, WaterCaptureCSBlobMSL, "CSMain", format)));
++    auto captureMS = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterCaptureMSCSBlobDXIL, WaterCaptureMSCSBlobSPIRV, WaterCaptureMSCSBlobMSL, "CSMain", format)));
++    captureShader.pipeline = checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(captureShader.pipelineLayout.get(),capture.get(),8,8,1)));
++    captureMSShader.pipeline = checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(captureMSShader.pipelineLayout.get(),captureMS.get(),8,8,1)));
++    WaterOriginalSet originalSet;
++    builder.begin();
++    builder.addPushConstant(0,0,16,RenderShaderStageFlag::COMPUTE);
++    builder.addDescriptorSet(originalSet);
++    builder.end();
++    originalShader.pipelineLayout = checkedWaterResource(builder.create(device));
++    originalMSShader.pipelineLayout = checkedWaterResource(builder.create(device));
++    auto original = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterOriginalCSBlobDXIL, WaterOriginalCSBlobSPIRV, WaterOriginalCSBlobMSL, "CSMain", format)));
++    auto originalMS = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterOriginalMSCSBlobDXIL, WaterOriginalMSCSBlobSPIRV, WaterOriginalMSCSBlobMSL, "CSMain", format)));
++    originalShader.pipeline = checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(originalShader.pipelineLayout.get(),original.get(),8,8,1)));
++    originalMSShader.pipeline = checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(originalMSShader.pipelineLayout.get(),originalMS.get(),8,8,1)));
++    WaterDepthReduceSet reduceSet;
++    builder.begin();
++    builder.addPushConstant(0,0,16,RenderShaderStageFlag::COMPUTE);
++    builder.addDescriptorSet(reduceSet);
++    builder.end();
++    depthReduceShader.pipelineLayout = checkedWaterResource(builder.create(device));
++    auto reduce = checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterDepthReduceCSBlobDXIL, WaterDepthReduceCSBlobSPIRV, WaterDepthReduceCSBlobMSL, "CSMain", format)));
++    depthReduceShader.pipeline = checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(depthReduceShader.pipelineLayout.get(),reduce.get(),8,8,1)));
++    WaterFieldSet fieldSet;
++    builder.begin();
++    builder.addPushConstant(0,0,sizeof(interop::WaterFieldPushConstants),RenderShaderStageFlag::COMPUTE);
++    builder.addDescriptorSet(fieldSet);
++    builder.end();
++    fieldShader.pipelineLayout= checkedWaterResource(builder.create(device));
++    auto field= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterFieldCSBlobDXIL,WaterFieldCSBlobSPIRV,WaterFieldCSBlobMSL,"CSMain",format)));
++    fieldShader.pipeline= checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(fieldShader.pipelineLayout.get(),field.get(),8,8,1)));
++    if (std::getenv("WR64_WATER_STATS")) {
++        statsSet=std::make_unique<WaterStatsSet>(device);
++        builder.begin(); builder.addDescriptorSet(*statsSet); builder.end();
++        statsShader.pipelineLayout= checkedWaterResource(builder.create(device));
++        auto stats= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterStatsCSBlobDXIL,WaterStatsCSBlobSPIRV,WaterStatsCSBlobMSL,"CSMain",format)));
++        statsShader.pipeline= checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(statsShader.pipelineLayout.get(),stats.get(),64,1,1)));
++        statsBuffer=device->createBuffer(RenderBufferDesc::DefaultBuffer(128*16,RenderBufferFlag::STORAGE|RenderBufferFlag::UNORDERED_ACCESS));
++        statsReadback=device->createBuffer(RenderBufferDesc::ReadbackBuffer(128*16));
++        statsSet->setBuffer(statsSet->output,statsBuffer.get(),RenderBufferStructuredView(16));
++    }
++}
++
++void WaterRenderer::bindBuffer() {
++    for (auto &set:fieldSets) {
++        if (set) set->setBuffer(set->draws,drawBuffer.get(),RenderBufferStructuredView(sizeof(interop::WaterDrawParams)));
++    }
++    descriptorSet->setBuffer(descriptorSet->draws, drawBuffer.get(), RenderBufferStructuredView(sizeof(interop::WaterDrawParams)));
++    for (const auto &[key,index] : sceneKeys) {
++        auto &spray=scenes[index].spraySet;
++        spray->setBuffer(spray->draws,drawBuffer.get(),RenderBufferStructuredView(sizeof(interop::WaterDrawParams)));
++        if (particleBuffer.get()) spray->setBuffer(spray->particles,particleBuffer.get(),RenderBufferStructuredView(sizeof(interop::WaterSprayParticle)));
++        auto &set = scenes[index].materialSet;
++        set->setBuffer(set->draws,drawBuffer.get(),RenderBufferStructuredView(sizeof(interop::WaterDrawParams)));
++        set->setTexture(set->currentField,fieldTextures[fieldCurrent].get(),RenderTextureLayout::SHADER_READ,fieldViews[fieldCurrent].get());
++        set->setTexture(set->previousField,fieldTextures[1-fieldCurrent].get(),RenderTextureLayout::SHADER_READ,fieldViews[1-fieldCurrent].get());
++    }
++}
++
++void WaterRenderer::reset() {
++    draws.clear(); normalGroups.clear(); sceneKeys.clear(); drawScenes.clear();
++    wireIndices.clear(); wireStarts.clear();
++    profileKinds.clear();
++    for (auto &scene : scenes) { scene.captured=false; scene.surfaceCleared=false; }
++}
++
++uint32_t WaterRenderer::prepareScene(RenderWorker *worker, RenderTarget *color, RenderTarget *depth, uint64_t key, bool classic, bool selfDepth) {
++    const auto sceneKey=std::make_pair(key,selfDepth);
++    auto found = sceneKeys.find(sceneKey);
++    if (found != sceneKeys.end()) return found->second;
++    const uint32_t index = uint32_t(sceneKeys.size());
++    sceneKeys.emplace(sceneKey,index);
++    if (index == scenes.size()) scenes.emplace_back();
++    auto &scene = scenes[index];
++    scene.selfDepth = selfDepth;
++    if (!scene.color || scene.width != color->width || scene.height != color->height) {
++        scene.width = color->width; scene.height = color->height;
++        scene.originalSet.reset(); scene.originalColorView.reset(); scene.originalColor.reset();
++        scene.color = worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width,scene.height,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
++        scene.mipCount = std::min(6u,1u+uint32_t(std::floor(std::log2(float(std::min(scene.width,scene.height))))));
++        scene.depth = worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width,scene.height,scene.mipCount,RenderFormat::R32_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
++        scene.colorView = scene.color->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT));
++        scene.depthView = scene.depth->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT));
++        scene.depthMipViews.clear(); scene.reduceSets.clear();
++        for (uint32_t mip=0;mip<scene.mipCount;mip++) {
++            auto view = RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT);
++            view.mipSlice = mip; view.mipLevels = 1;
++            scene.depthMipViews.push_back(scene.depth->createTextureView(view));
++            if (mip > 0) {
++                auto set = std::make_unique<WaterDepthReduceSet>(worker->device);
++                set->setTexture(set->input,scene.depth.get(),RenderTextureLayout::GENERAL,scene.depthMipViews[mip-1].get());
++                set->setTexture(set->output,scene.depth.get(),RenderTextureLayout::GENERAL,scene.depthMipViews[mip].get());
++                scene.reduceSets.push_back(std::move(set));
++            }
++        }
++        scene.color->setName("Water immutable scene color");
++        scene.depth->setName("Water immutable scene depth");
++        scene.captureSet = std::make_unique<WaterCaptureSet>(worker->device);
++        scene.materialSet = std::make_unique<WaterDescriptorSet>(worker->device);
++    }
++    if (classic && (!scene.originalColor || scene.originalSamples!=color->multisampling.sampleCount)) {
++        scene.originalSet.reset(); scene.originalColorView.reset(); scene.originalColor.reset();
++        scene.originalSamples=color->multisampling.sampleCount;
++        const uint32_t columns=scene.originalSamples>1 ? 2 : 1;
++        const uint32_t rows=(scene.originalSamples+1)/2;
++        scene.originalColor = worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width*columns,scene.height*rows,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
++        scene.originalColorView = scene.originalColor->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT));
++        scene.originalColor->setName("Water original palette and transparency");
++        scene.originalSet = std::make_unique<WaterOriginalSet>(worker->device);
++    }
++    if (!scene.surface || scene.surfaceWidth!=scene.width || scene.surfaceHeight!=scene.height || scene.surfaceSamples!=color->multisampling.sampleCount) {
++        scene.surfaceFramebuffer.reset();
++        scene.surfaceView.reset();
++        scene.surface=worker->device->createTexture(RenderTextureDesc::ColorTarget(scene.width,scene.height,RenderFormat::R32_FLOAT,color->multisampling));
++        scene.surfaceView=scene.surface->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT));
++        scene.surfaceSamples=color->multisampling.sampleCount;
++        scene.surfaceWidth=scene.width; scene.surfaceHeight=scene.height;
++        scene.surface->setName("Water view surface distance and mask");
++        scene.spraySet=std::make_unique<WaterSpraySet>(worker->device);
++    }
++    if (scene.selfDepth && (!scene.waterDepth || scene.waterDepthWidth!=depth->width || scene.waterDepthHeight!=depth->height ||
++        scene.waterDepthSamples!=depth->multisampling.sampleCount)) {
++        scene.surfaceFramebuffer.reset(); scene.waterColorFramebuffer.reset();
++        scene.waterDepthWidth=depth->width; scene.waterDepthHeight=depth->height;
++        scene.waterDepthSamples=depth->multisampling.sampleCount;
++        scene.waterDepth=worker->device->createTexture(RenderTextureDesc::DepthTarget(depth->width,depth->height,RenderFormat::D32_FLOAT,depth->multisampling));
++        scene.waterDepth->setName("Water isolated self-occlusion depth");
++    }
++    // The source target itself may be recreated without changing dimensions.
++    // Modern water owns its depth writes; later original translucent effects
++    // must still see the game's unchanged depth attachment.
++    const RenderTexture *surfaceAttachment=scene.surface.get();
++    scene.surfaceFramebuffer=worker->device->createFramebuffer(RenderFramebufferDesc(&surfaceAttachment,1,
++        scene.selfDepth ? scene.waterDepth.get() : depth->texture.get(),!scene.selfDepth));
++    if (scene.selfDepth) {
++        const RenderTexture *colorAttachment=color->texture.get();
++        scene.waterColorFramebuffer=worker->device->createFramebuffer(RenderFramebufferDesc(&colorAttachment,1,scene.waterDepth.get(),true));
++    }
++    else scene.waterColorFramebuffer.reset();
++    scene.spraySet->setTexture(scene.spraySet->sceneDepth,scene.depth.get(),RenderTextureLayout::SHADER_READ,scene.depthMipViews[0].get());
++    scene.spraySet->setTexture(scene.spraySet->waterDepth,scene.surface.get(),RenderTextureLayout::SHADER_READ,scene.surfaceView.get());
++    scene.sourceColor = color; scene.sourceDepth = depth;
++    auto &cs = scene.captureSet;
++    cs->setTexture(cs->color,color->texture.get(),RenderTextureLayout::SHADER_READ,color->textureView.get());
++    cs->setTexture(cs->depth,depth->texture.get(),RenderTextureLayout::SHADER_READ,depth->textureView.get());
++    cs->setTexture(cs->outputColor,scene.color.get(),RenderTextureLayout::GENERAL,scene.colorView.get());
++    cs->setTexture(cs->outputDepth,scene.depth.get(),RenderTextureLayout::GENERAL,scene.depthMipViews[0].get());
++    if (classic) {
++        auto &os=scene.originalSet;
++        os->setTexture(os->color,color->texture.get(),RenderTextureLayout::SHADER_READ,color->textureView.get());
++        os->setTexture(os->output,scene.originalColor.get(),RenderTextureLayout::GENERAL,scene.originalColorView.get());
++    }
++    auto &ms = scene.materialSet;
++    ms->setTexture(ms->originalColor,classic ? scene.originalColor.get() : scene.color.get(),RenderTextureLayout::SHADER_READ,
++        classic ? scene.originalColorView.get() : scene.colorView.get());
++    ms->setTexture(ms->sceneColor,scene.color.get(),RenderTextureLayout::SHADER_READ,scene.colorView.get());
++    ms->setTexture(ms->sceneDepth,scene.depth.get(),RenderTextureLayout::SHADER_READ,scene.depthView.get());
++    return index;
++}
++
++bool WaterRenderer::captureScene(RenderWorker *worker, uint32_t drawIndex, bool depthReadOnly) {
++    auto &scene = scenes[drawScenes[drawIndex]];
++    if (scene.captured) return false;
++    scene.captured = true;
++    const uint32_t profileToken = beginProfile(worker,1);
++    worker->commandList->setFramebuffer(nullptr);
++    if (scene.selfDepth) {
++        // Preserve every MSAA sample of the original scene depth, then keep
++        // this copy across all water calls in the view. No copy-back occurs.
++        worker->commandList->barriers(RenderBarrierStage::COPY, {
++            RenderTextureBarrier(scene.sourceDepth->texture.get(),RenderTextureLayout::COPY_SOURCE),
++            RenderTextureBarrier(scene.waterDepth.get(),RenderTextureLayout::COPY_DEST)
++        });
++        worker->commandList->copyTexture(scene.waterDepth.get(),scene.sourceDepth->texture.get());
++        worker->commandList->barriers(RenderBarrierStage::GRAPHICS,
++            RenderTextureBarrier(scene.waterDepth.get(),RenderTextureLayout::DEPTH_WRITE));
++    }
++    worker->commandList->barriers(RenderBarrierStage::COMPUTE, {
++        RenderTextureBarrier(scene.sourceColor->texture.get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(scene.sourceDepth->texture.get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(scene.color.get(),RenderTextureLayout::GENERAL),
++        RenderTextureBarrier(scene.depth.get(),RenderTextureLayout::GENERAL)
++    });
++    const uint32_t samples = scene.sourceColor->multisampling.sampleCount;
++    const auto &shader = samples > 1 ? captureMSShader : captureShader;
++    const uint32_t params[] = {scene.width,scene.height,samples,0};
++    worker->commandList->setComputePipelineLayout(shader.pipelineLayout.get());
++    worker->commandList->setPipeline(shader.pipeline.get());
++    worker->commandList->setComputeDescriptorSet(scene.captureSet->get(),0);
++    worker->commandList->setComputePushConstants(0,params);
++    worker->commandList->dispatch((scene.width+7)/8,(scene.height+7)/8,1);
++    if (draws[drawIndex].material.identity.x >= 2) {
++        uint32_t sourceWidth = scene.width, sourceHeight = scene.height;
++        for (uint32_t mip=1;mip<scene.mipCount;mip++) {
++            worker->commandList->barriers(RenderBarrierStage::COMPUTE,RenderTextureBarrier(scene.depth.get(),RenderTextureLayout::GENERAL));
++            const uint32_t w = std::max(1u,sourceWidth/2), h = std::max(1u,sourceHeight/2);
++            const uint32_t reduceParams[] = {w,h,sourceWidth,sourceHeight};
++            worker->commandList->setComputePipelineLayout(depthReduceShader.pipelineLayout.get());
++            worker->commandList->setPipeline(depthReduceShader.pipeline.get());
++            worker->commandList->setComputeDescriptorSet(scene.reduceSets[mip-1]->get(),0);
++            worker->commandList->setComputePushConstants(0,reduceParams);
++            worker->commandList->dispatch((w+7)/8,(h+7)/8,1);
++            sourceWidth = w; sourceHeight = h;
++        }
++    }
++    worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++        RenderTextureBarrier(scene.color.get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(scene.depth.get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(scene.sourceColor->texture.get(),RenderTextureLayout::COLOR_WRITE),
++        RenderTextureBarrier(scene.sourceDepth->texture.get(),depthReadOnly ? RenderTextureLayout::DEPTH_READ : RenderTextureLayout::DEPTH_WRITE)
++    });
++    endProfile(worker,profileToken);
++    return true;
++}
++
++void WaterRenderer::captureOriginal(RenderWorker *worker, uint32_t drawIndex) {
++    auto &scene=scenes[drawScenes[drawIndex]];
++    worker->commandList->setFramebuffer(nullptr);
++    worker->commandList->barriers(RenderBarrierStage::COMPUTE,{
++        RenderTextureBarrier(scene.sourceColor->texture.get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(scene.originalColor.get(),RenderTextureLayout::GENERAL)
++    });
++    const uint32_t samples=scene.sourceColor->multisampling.sampleCount;
++    const auto &shader=samples>1 ? originalMSShader : originalShader;
++    const uint32_t params[]={scene.width,scene.height,samples,0};
++    worker->commandList->setComputePipelineLayout(shader.pipelineLayout.get());
++    worker->commandList->setPipeline(shader.pipeline.get());
++    worker->commandList->setComputeDescriptorSet(scene.originalSet->get(),0);
++    worker->commandList->setComputePushConstants(0,params);
++    worker->commandList->dispatch((scene.width+7)/8,(scene.height+7)/8,1);
++    worker->commandList->barriers(RenderBarrierStage::GRAPHICS,{
++        RenderTextureBarrier(scene.originalColor.get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(scene.sourceColor->texture.get(),RenderTextureLayout::COLOR_WRITE)
++    });
++}
++
++RenderDescriptorSet *WaterRenderer::materialSet(uint32_t drawIndex) {
++    return scenes[drawScenes[drawIndex]].materialSet->get();
++}
++
++void WaterRenderer::beginSurface(RenderWorker *worker,uint32_t drawIndex) {
++    auto &scene=scenes[drawScenes[drawIndex]];
++    worker->commandList->setFramebuffer(nullptr);
++    worker->commandList->barriers(RenderBarrierStage::GRAPHICS,{
++        RenderTextureBarrier(scene.surface.get(),RenderTextureLayout::COLOR_WRITE),
++        RenderTextureBarrier(scene.selfDepth ? scene.waterDepth.get() : scene.sourceDepth->texture.get(),
++            scene.selfDepth ? RenderTextureLayout::DEPTH_WRITE : RenderTextureLayout::DEPTH_READ)
++    });
++    worker->commandList->setFramebuffer(scene.surfaceFramebuffer.get());
++    if (!scene.surfaceCleared) {
++        worker->commandList->clearColor(0,RenderColor(0,0,0,0));
++        scene.surfaceCleared=true;
++    }
++}
++
++void WaterRenderer::beginColor(RenderWorker *worker,uint32_t drawIndex) {
++    auto &scene=scenes[drawScenes[drawIndex]];
++    assert(scene.selfDepth && scene.waterColorFramebuffer);
++    worker->commandList->setFramebuffer(nullptr);
++    worker->commandList->barriers(RenderBarrierStage::GRAPHICS,
++        RenderTextureBarrier(scene.waterDepth.get(),RenderTextureLayout::DEPTH_READ));
++    worker->commandList->setFramebuffer(scene.waterColorFramebuffer.get());
++}
++
++void WaterRenderer::stepSpray(const interop::WaterMaterial &m,float fromTime,float toTime,bool reset) {
++    if (reset || m.identity.x<2) {
++        particles.clear(); sprayDistance.fill(0); sprayHeading.fill({0,0,0,0});
++        spraySeed=0x57A064u^uint32_t(m.identity.w);
++        return;
++    }
++    particles.erase(std::remove_if(particles.begin(),particles.end(),[&](const auto &p) {
++        return toTime>p.origin.w+p.velocity.w;
++    }),particles.end());
++    const float interval=std::max(m.animation.y-m.animation.x,0.00001f);
++    const float a=std::clamp((fromTime-m.animation.x)/interval,0.0f,1.0f);
++    const float b=std::clamp((toTime-m.animation.x)/interval,0.0f,1.0f);
++    const uint32_t budget=m.identity.x>=3 ? 4096 : 2048;
++    auto random=[&]() { spraySeed=1664525u*spraySeed+1013904223u; return float(spraySeed>>8)*(1.0f/16777216); };
++    for (uint32_t i=0;i<4;i++) {
++        const auto &old=m.craftPrevious[i], &current=m.craftCurrent[i];
++        if (current.w<=0) { sprayDistance[i]=0; continue; }
++        const float dx=current.x-old.x,dz=current.z-old.z;
++        const float distance=std::sqrt(dx*dx+dz*dz), speed=distance/interval;
++        const float hx=dx/std::max(distance,0.001f), hz=dz/std::max(distance,0.001f);
++        const float turn=std::min(1.0f,std::abs(hx*sprayHeading[i].z-hz*sprayHeading[i].x)*4);
++        sprayHeading[i]={hx,0,hz,0};
++        sprayDistance[i]+=distance*(b-a)*std::clamp(speed/250.0f,0.0f,1.0f)*std::min(current.w*3,1.0f);
++        uint32_t count=std::min(64u,uint32_t(sprayDistance[i]/10));
++        sprayDistance[i]-=float(count)*10;
++        const bool landing=old.w==0 && current.w>0 && fromTime<m.animation.y && toTime>=m.animation.y;
++        if (landing) count+=uint32_t(std::clamp((old.y-current.y)/interval,0.0f,250.0f)*0.15f);
++        for (uint32_t j=0;j<count && particles.size()<budget;j++) {
++            const float f=a+(b-a)*(float(j)+0.5f)/float(count);
++            const float side=random()<0.5f ? -1.0f : 1.0f;
++            const float lateral=side*(35+random()*45+turn*90);
++            interop::WaterSprayParticle p{};
++            p.origin={old.x+dx*f-hx*12+hz*side*8,old.y+(current.y-old.y)*f+4,old.z+dz*f-hz*12-hx*side*8,fromTime+(toTime-fromTime)*(float(j)+0.5f)/float(count)};
++            p.velocity={hx*speed*0.10f+hz*lateral,45+random()*65+(landing ? 50 : 0),hz*speed*0.10f-hx*lateral,0.35f+random()*0.65f};
++            p.appearance={1.2f+random()*2.8f,0.20f+random()*0.20f,random(),0};
++            particles.push_back(p);
++        }
++    }
++}
++
++void WaterRenderer::drawSpray(RenderWorker *worker,uint32_t drawIndex) {
++    const auto &draw=draws[drawIndex];
++    if (particles.empty() || draw.material.identity.x<2 || draw.material.identity.y!=0 || draw.material.effects.x<0.5f) return;
++    const auto &scene=scenes[drawScenes[drawIndex]];
++    const uint32_t key=scene.surfaceSamples;
++    auto found=sprayPipelines.find(key);
++    if (found==sprayPipelines.end()) {
++        RenderGraphicsPipelineDesc desc;
++        desc.pipelineLayout=sprayLayout.get();
++        desc.vertexShader=sprayVertexShader.get();
++        desc.pixelShader=key>1 ? sprayMSPixelShader.get() : sprayPixelShader.get();
++        desc.renderTargetCount=1;
++        desc.renderTargetFormat[0]=RenderTarget::colorBufferFormat(usesHDR);
++        desc.renderTargetBlend[0]=RenderBlendDesc::AlphaBlend();
++        desc.depthEnabled=true; desc.depthWriteEnabled=false;
++        desc.depthFunction=RenderComparisonFunction::LESS;
++        desc.depthTargetFormat=RenderFormat::D32_FLOAT;
++        desc.cullMode=RenderCullMode::NONE;
++        desc.multisampling=scene.sourceColor->multisampling;
++        found=sprayPipelines.emplace(key,worker->device->createGraphicsPipeline(desc)).first;
++    }
++    if (!found->second) return;
++    worker->commandList->setGraphicsPipelineLayout(sprayLayout.get());
++    worker->commandList->setGraphicsDescriptorSet(scene.spraySet->get(),0);
++    worker->commandList->setPipeline(found->second.get());
++    interop::WaterPushConstants pc{drawIndex};
++    worker->commandList->setGraphicsPushConstants(0,&pc);
++    worker->commandList->drawInstanced(6,uint32_t(particles.size()),0,0);
++}
++
++void WaterRenderer::prepareField(RenderWorker *worker) {
++    fieldSteps.clear();
++    statsStep=UINT32_MAX;
++    if (draws.empty()) return;
++    const auto sourceDraw=draws.front();
++    const auto m=sourceDraw.material;
++    const uint32_t resolution=m.identity.x>=2 ? 512 : 256;
++    constexpr float extent=4096, dt=1.0f/60;
++    if (fieldResolution!=resolution) {
++        fieldResolution=resolution;
++        fieldGeneration=UINT32_MAX;
++        for (uint32_t i=0;i<2;i++) {
++            fieldTextures[i]=worker->device->createTexture(RenderTextureDesc::Texture2D(resolution*4,resolution,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
++            fieldViews[i]=fieldTextures[i]->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT));
++            fieldSets[i]=std::make_unique<WaterFieldSet>(worker->device);
++            fieldTextures[i]->setName("Water persistent ripple and foam field "+std::to_string(i));
++        }
++        for (uint32_t i=0;i<2;i++) {
++            fieldSets[i]->setTexture(fieldSets[i]->previous,fieldTextures[1-i].get(),RenderTextureLayout::SHADER_READ,fieldViews[1-i].get());
++            fieldSets[i]->setTexture(fieldSets[i]->next,fieldTextures[i].get(),RenderTextureLayout::GENERAL,fieldViews[i].get());
++        }
++    }
++    const float desired=draws.front().camera.w;
++    const bool reset=fieldGeneration!=uint32_t(m.identity.w) || desired<fieldTime-0.1f || desired>fieldTime+0.5f;
++    if (reset) fieldInputs.clear();
++    if (fieldInputs.empty() || m.animation.y>fieldInputs.back().animation.y) fieldInputs.push_back(m);
++    while (fieldInputs.size()>32) fieldInputs.pop_front();
++    const float cell=extent/resolution;
++    auto step=[&](float nextTime,bool clear) {
++        interop::WaterFieldPushConstants pc{};
++        // A presentation frame can cross the preceding game update. Use the
++        // immutable input that owns this fixed step, not whichever update is
++        // newest at 30/60/120 Hz. Otherwise clamping loses part of each trail.
++        const interop::WaterMaterial *input=&m;
++        for (const auto &candidate:fieldInputs) {
++            if (nextTime>candidate.animation.x+0.000001f && nextTime<=candidate.animation.y+0.00001f) { input=&candidate; break; }
++        }
++        auto stepDraw=sourceDraw;
++        stepDraw.material=*input;
++        pc.drawIndex=uint32_t(draws.size());
++        draws.push_back(stepDraw);
++        pc.resolution=resolution; pc.reset=clear;
++        pc.simulation={clear ? 0 : dt,fieldTime,nextTime,extent};
++        const auto &motion=*input;
++        float f=std::clamp((nextTime-motion.animation.x)/std::max(motion.animation.y-motion.animation.x,0.00001f),0.0f,1.0f);
++        for (uint32_t i=0;i<4;i++) {
++            const float x=motion.craftPrevious[i].x+(motion.craftCurrent[i].x-motion.craftPrevious[i].x)*f;
++            const float z=motion.craftPrevious[i].z+(motion.craftCurrent[i].z-motion.craftPrevious[i].z)*f;
++            const float ox=std::floor((x-extent*0.5f)/cell)*cell, oz=std::floor((z-extent*0.5f)/cell)*cell;
++            pc.origins[i]={ox,oz,clear ? ox : fieldOrigins[i].x,clear ? oz : fieldOrigins[i].y};
++            fieldOrigins[i]=pc.origins[i];
++        }
++        stepSpray(motion,fieldTime,nextTime,clear);
++        if (statsSet && !clear && fieldTick%60==0) {
++            statsStep=uint32_t(fieldSteps.size());
++            statsTime=nextTime; statsMaterial=motion; statsParticles=uint32_t(particles.size());
++        }
++        fieldCurrent=1-fieldCurrent;
++        fieldSteps.emplace_back(pc,fieldCurrent);
++        fieldTime=nextTime;
++    };
++    if (reset) {
++        // Reset at the immutable game interval boundary, then integrate to
++        // this presentation time. Starting at floor(desired * 60) skipped a
++        // different number of initial steps at 30/60/120 Hz after race cuts.
++        // The game clock is an integer 60 Hz count exported as float; round
++        // its boundary back to that grid rather than flooring float error.
++        fieldTick=int64_t(std::llround(double(m.animation.x)*60));
++        fieldTime=float(double(fieldTick)/60);
++        step(fieldTime,true); step(fieldTime,true);
++        fieldGeneration=uint32_t(m.identity.w);
++        if (statsSet) std::fprintf(stderr,"[water-field] reset generation=%u interval=(%.6f,%.6f) presentation=%.6f boundary=%lld\n",
++            fieldGeneration,m.animation.x,m.animation.y,desired,static_cast<long long>(fieldTick));
++    }
++    while (fieldTime+0.00001f<desired) {
++        ++fieldTick;
++        step(float(double(fieldTick)/60),false);
++    }
++    for (auto &draw:draws) {
++        for (uint32_t i=0;i<4;i++) draw.fieldOrigins[i]=fieldOrigins[i];
++        draw.flags.z=std::clamp(1-(fieldTime-desired)/dt,0.0f,1.0f);
++        draw.flags.w=float(resolution);
++    }
++}
++
++void WaterRenderer::recordField(RenderWorker *worker) {
++    if (fieldSteps.empty()) return;
++    const uint32_t token=beginProfile(worker,3);
++    uint32_t stepIndex=0;
++    for (const auto &[pc,index]:fieldSteps) {
++        worker->commandList->barriers(RenderBarrierStage::COMPUTE, {
++            RenderTextureBarrier(fieldTextures[1-index].get(),RenderTextureLayout::SHADER_READ),
++            RenderTextureBarrier(fieldTextures[index].get(),RenderTextureLayout::GENERAL)
++        });
++        worker->commandList->setComputePipelineLayout(fieldShader.pipelineLayout.get());
++        worker->commandList->setPipeline(fieldShader.pipeline.get());
++        worker->commandList->setComputeDescriptorSet(fieldSets[index]->get(),0);
++        worker->commandList->setComputePushConstants(0,&pc);
++        worker->commandList->dispatch((fieldResolution*4+7)/8,(fieldResolution+7)/8,1);
++        if (stepIndex==statsStep) {
++            statsSet->setTexture(statsSet->field,fieldTextures[index].get(),RenderTextureLayout::SHADER_READ,fieldViews[index].get());
++            worker->commandList->barriers(RenderBarrierStage::COMPUTE,RenderTextureBarrier(fieldTextures[index].get(),RenderTextureLayout::SHADER_READ));
++            worker->commandList->barriers(RenderBarrierStage::COMPUTE,RenderBufferBarrier(statsBuffer.get(),RenderBufferAccess::WRITE));
++            worker->commandList->setComputePipelineLayout(statsShader.pipelineLayout.get());
++            worker->commandList->setPipeline(statsShader.pipeline.get());
++            worker->commandList->setComputeDescriptorSet(statsSet->get(),0);
++            worker->commandList->dispatch(1,1,1);
++            worker->commandList->barriers(RenderBarrierStage::COPY,RenderBufferBarrier(statsBuffer.get(),RenderBufferAccess::READ));
++            worker->commandList->copyBufferRegion(RenderBufferReference(statsReadback.get()),RenderBufferReference(statsBuffer.get()),128*16);
++            statsPending=true;
++        }
++        ++stepIndex;
++    }
++    worker->commandList->barriers(RenderBarrierStage::GRAPHICS, {
++        RenderTextureBarrier(fieldTextures[0].get(),RenderTextureLayout::SHADER_READ),
++        RenderTextureBarrier(fieldTextures[1].get(),RenderTextureLayout::SHADER_READ)
++    });
++    endProfile(worker,token);
++
++}
++
++uint32_t WaterRenderer::beginProfile(RenderWorker *worker, uint32_t kind) {
++    if (!profilePool || profileKinds.size() >= 64) return UINT32_MAX;
++    const uint32_t token = uint32_t(profileKinds.size())*2;
++    profileKinds.push_back(kind);
++    worker->commandList->resetQueryPool(profilePool.get(),token,2);
++    worker->commandList->writeTimestamp(profilePool.get(),token);
++    return token;
++}
++
++void WaterRenderer::endProfile(RenderWorker *worker, uint32_t token) {
++    if (token != UINT32_MAX) worker->commandList->writeTimestamp(profilePool.get(),token+1);
++}
++
++void WaterRenderer::finishProfile(double frameMilliseconds) {
++    if (statsPending && !draws.empty()) {
++        // WorkloadQueue calls this only after the graphics completion fence.
++        const auto *data=static_cast<const interop::uint4*>(statsReadback->map());
++        uint64_t count=0,sum=0; uint32_t peak=0;
++        for (uint32_t i=0;i<64;i++) { count+=data[i].x;sum+=data[i].y;peak=std::max(peak,data[i].z); }
++        uint64_t shoreCount=0,shoreSum=0; uint32_t shorePeak=0;
++        for (uint32_t i=64;i<128;i++) { shoreCount+=data[i].x;shoreSum+=data[i].y;shorePeak=std::max(shorePeak,data[i].z); }
++        statsReadback->unmap(); statsPending=false;
++        static FILE *f=[]() {
++            FILE *file=std::fopen(std::getenv("WR64_WATER_STATS"),"w");
++            if (file) std::fprintf(file,"time,generation,course,quality,resolution,foam_pixels,foam_sum,foam_peak,particles,craft_speed,wet,shore_pixels,shore_sum,shore_peak\n");
++            return file;
++        }();
++        if (f) {
++            const auto &m=statsMaterial;
++            const float dx=m.craftCurrent[0].x-m.craftPrevious[0].x,dz=m.craftCurrent[0].z-m.craftPrevious[0].z;
++            std::fprintf(f,"%.4f,%.0f,%.0f,%.0f,%u,%llu,%.3f,%.4f,%u,%.3f,%.4f,%llu,%.3f,%.4f\n",statsTime,m.identity.w,m.identity.z,m.identity.x,fieldResolution,
++                (unsigned long long)count,double(sum)/65535,double(peak)/65535,statsParticles,std::sqrt(dx*dx+dz*dz)/std::max(m.animation.y-m.animation.x,0.00001f),m.craftCurrent[0].w,
++                (unsigned long long)shoreCount,double(shoreSum)/65535,double(shorePeak)/65535);
++            std::fflush(f);
++        }
++    }
++    if (!profilePool || profileKinds.empty() || draws.empty()) return;
++    profilePool->queryResults();
++    const auto *times = profilePool->getResults();
++    double milliseconds[4] = {};
++    for (uint32_t i=0;i<profileKinds.size();i++) {
++        if (times[i*2+1] >= times[i*2]) milliseconds[profileKinds[i]] += double(times[i*2+1]-times[i*2])/1000000.0;
++    }
++    static FILE *csv = []() {
++        const char *name = std::getenv("WR64_WATER_PROFILE");
++        FILE *file = name ? std::fopen(name,"w") : nullptr;
++        if (file) std::fprintf(file,"course,quality,debug,views,width,height,water_draws,normal_vertices,normal_ms,capture_ms,surface_ms,field_ms,frame_gpu_ms\n");
++        return file;
++    }();
++    if (csv) {
++        const auto &d = draws.front();
++        std::fprintf(csv,"%.0f,%.0f,%.0f,%zu,%.0f,%.0f,%zu,%zu,%.5f,%.5f,%.5f,%.5f,%.5f\n",d.material.identity.z,d.material.identity.x,d.material.identity.y,sceneKeys.size(),d.screen.z,d.screen.w,
++            drawScenes.size(),normalVertices.size(),milliseconds[0],milliseconds[1],milliseconds[2],milliseconds[3],frameMilliseconds);
++        std::fflush(csv);
++    }
++}
++
++uint64_t WaterRenderer::allocationBytes() const {
++    // Texture payload and upload/default buffers; excludes driver alignment,
++    // pipelines and the original renderer's own attachments.
++    uint64_t bytes=uint64_t(fieldResolution)*fieldResolution*4*8*2+normalBufferSize;
++    bytes+=2*(drawBuffer.allocatedSize+normalVertexBuffer.allocatedSize+normalFaceBuffer.allocatedSize+wireBuffer.allocatedSize+particleBuffer.allocatedSize);
++    for (const auto &scene:scenes) {
++        bytes+=uint64_t(scene.width)*scene.height*8*(1+(scene.originalColor ? scene.originalSamples : 0));
++        bytes+=uint64_t(scene.surfaceWidth)*scene.surfaceHeight*4*std::max(scene.surfaceSamples,1u);
++        if (scene.waterDepth) bytes+=uint64_t(scene.waterDepthWidth)*scene.waterDepthHeight*4*scene.waterDepthSamples;
++        for (uint32_t mip=0;mip<scene.mipCount;mip++) bytes+=uint64_t(std::max(scene.width>>mip,1u))*std::max(scene.height>>mip,1u)*4;
++    }
++    return bytes;
++}
++
++RenderPipeline *WaterRenderer::pipeline(RenderDevice *device, const RenderMultisampling &samples, bool zCompare, bool zWrite, bool wireframe, bool surface, bool classic, bool selfDepth) {
++    uint32_t key = uint32_t(samples.sampleCount) | (uint32_t(zCompare) << 16) | (uint32_t(zWrite) << 17) | (uint32_t(wireframe) << 18) | (uint32_t(surface) << 19) | (uint32_t(classic) << 20) | (uint32_t(selfDepth) << 21);
++    auto it = pipelines.find(key);
++    if (it != pipelines.end()) return it->second.get();
++    const RenderInputSlot slots[] = {{0, 16}, {1, 8}, {2, 16}, {3, 16}, {4,16}};
++    const RenderInputElement elements[] = {
++        {"POSITION", 0, 0, RenderFormat::R32G32B32A32_FLOAT, 0, 0},
++        {"TEXCOORD", 0, 1, RenderFormat::R32G32_FLOAT, 1, 0},
++        {"COLOR", 0, 2, RenderFormat::R32G32B32A32_FLOAT, 2, 0},
++        {"POSITION", 1, 3, RenderFormat::R32G32B32A32_FLOAT, 3, 0},
++        {"NORMAL", 0, 4, RenderFormat::R32G32B32A32_FLOAT, 4, 0}
++    };
++    RenderGraphicsPipelineDesc desc;
++    desc.primitiveTopology=wireframe ? RenderPrimitiveTopology::LINE_LIST : RenderPrimitiveTopology::TRIANGLE_LIST;
++    desc.pipelineLayout = layout.get();
++    desc.vertexShader = vertexShader.get();
++    desc.pixelShader = surface ? surfaceShader.get() : classic ?
++        (samples.sampleCount>1 ? classicMSShader.get() : classicShader.get()) : pixelShader.get();
++    desc.inputSlots = slots;
++    desc.inputSlotsCount = 5;
++    desc.inputElements = elements;
++    desc.inputElementsCount = 5;
++    desc.renderTargetCount = 1;
++    desc.renderTargetFormat[0] = surface ? RenderFormat::R32_FLOAT : RenderTarget::colorBufferFormat(usesHDR);
++    if (!surface) desc.renderTargetBlend[0] = RenderBlendDesc::AlphaBlend();
++    desc.depthEnabled = zCompare || zWrite;
++    desc.depthWriteEnabled = zWrite;
++    const bool equalDepth = classic || (selfDepth && !surface);
++    desc.depthFunction = zCompare ? (equalDepth ? RenderComparisonFunction::LESS_EQUAL : RenderComparisonFunction::LESS) : RenderComparisonFunction::ALWAYS;
++    desc.depthTargetFormat = RenderFormat::D32_FLOAT;
++    desc.cullMode = RenderCullMode::NONE;
++    desc.multisampling = samples;
++    auto result = device->createGraphicsPipeline(desc);
++    auto *ptr = result.get();
++    pipelines.emplace(key, std::move(result));
++    return ptr;
++}
++
++void WaterRenderer::collectNormals(const DrawData &data, uint32_t start, uint32_t count, uint64_t group) {
++    wireStarts.push_back(uint32_t(wireIndices.size()));
++    for (uint32_t i=0; i+2<count; i+=3) {
++        interop::uint4 f{data.faceIndices[start+i],data.faceIndices[start+i+1],data.faceIndices[start+i+2],0};
++        if (draws.back().material.identity.y==12) wireIndices.insert(wireIndices.end(),{f.x,f.y,f.y,f.z,f.z,f.x});
++        for (uint32_t j=0;j<3;j++) {
++            const uint32_t v = f[j];
++            auto key = std::make_tuple(group,int(data.posFloats[v*3]),int(data.posFloats[v*3+1]),int(data.posFloats[v*3+2]));
++            auto &g = normalGroups[key];
++            g.vertices.insert(v);
++            g.faces.push_back(f);
++        }
++    }
++}
++
++void WaterRenderer::prepareNormals(RenderWorker *worker, const OutputBuffers &outputs, std::vector<BufferUploader::Upload> &uploads) {
++    normalVertices.clear(); normalFaces.clear();
++    for (const auto &[key,g] : normalGroups) {
++        uint32_t first = uint32_t(normalFaces.size());
++        normalFaces.insert(normalFaces.end(),g.faces.begin(),g.faces.end());
++        for (uint32_t v : g.vertices) normalVertices.push_back({v,first,uint32_t(g.faces.size()),0});
++    }
++    const uint64_t required = outputs.rasterWorldPosBuffer.allocatedSize;
++    if (!normalBuffer || required > normalBufferSize) {
++        normalBufferSize = required;
++        normalBuffer = worker->device->createBuffer(RenderBufferDesc::DefaultBuffer(required,
++            RenderBufferFlag::VERTEX | RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
++    }
++    normalView = RenderVertexBufferView(RenderBufferReference(normalBuffer.get()),normalBufferSize);
++    uploads.push_back({normalVertices.data(),{0,normalVertices.size()},sizeof(interop::uint4),RenderBufferFlag::STORAGE,{},&normalVertexBuffer});
++    uploads.push_back({normalFaces.data(),{0,normalFaces.size()},sizeof(interop::uint4),RenderBufferFlag::STORAGE,{},&normalFaceBuffer});
++    if (!particles.empty()) uploads.push_back({particles.data(),{0,particles.size()},sizeof(interop::WaterSprayParticle),RenderBufferFlag::STORAGE,{},&particleBuffer});
++    if (!wireIndices.empty()) uploads.push_back({wireIndices.data(),{0,wireIndices.size()},sizeof(uint32_t),RenderBufferFlag::INDEX,{},&wireBuffer});
++}
++
++void WaterRenderer::bindNormals(const OutputBuffers &outputs) {
++    if (!wireIndices.empty()) wireView=RenderIndexBufferView(RenderBufferReference(wireBuffer.get()),wireIndices.size()*sizeof(uint32_t),RenderFormat::R32_UINT);
++    normalSet->setBuffer(normalSet->positions,outputs.rasterWorldPosBuffer.buffer.get(),RenderBufferStructuredView(16));
++    normalSet->setBuffer(normalSet->vertices,normalVertexBuffer.get(),RenderBufferStructuredView(16));
++    normalSet->setBuffer(normalSet->faces,normalFaceBuffer.get(),RenderBufferStructuredView(16));
++    normalSet->setBuffer(normalSet->normals,normalBuffer.get(),RenderBufferStructuredView(16));
++}
++
++void WaterRenderer::recordNormals(RenderWorker *worker, const OutputBuffers &outputs) {
++    if (normalVertices.empty()) return;
++    const uint32_t profileToken = beginProfile(worker,0);
++    const uint32_t count = uint32_t(normalVertices.size());
++    worker->commandList->barriers(RenderBarrierStage::COMPUTE,RenderBufferBarrier(outputs.rasterWorldPosBuffer.buffer.get(),RenderBufferAccess::READ));
++    worker->commandList->barriers(RenderBarrierStage::COMPUTE,RenderBufferBarrier(normalBuffer.get(),RenderBufferAccess::WRITE));
++    worker->commandList->setComputePipelineLayout(normalShader.pipelineLayout.get());
++    worker->commandList->setPipeline(normalShader.pipeline.get());
++    worker->commandList->setComputeDescriptorSet(normalSet->get(),0);
++    worker->commandList->setComputePushConstants(0,&count);
++    worker->commandList->dispatch((count+63)/64,1,1);
++    worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderBufferBarrier(normalBuffer.get(),RenderBufferAccess::READ));
++    endProfile(worker,profileToken);
++}
++}
+diff --git a/src/render/rt64_water_renderer.h b/src/render/rt64_water_renderer.h
+new file mode 100644
+--- /dev/null
++++ b/src/render/rt64_water_renderer.h
+@@ -0,0 +1,207 @@
++#pragma once
++#include "rt64_buffer_uploader.h"
++#include "rt64_shader_library.h"
++#include "shared/rt64_water_params.h"
++#include <array>
++#include <map>
++#include <deque>
++#include <set>
++#include <tuple>
++
++namespace RT64 {
++struct DrawData;
++struct OutputBuffers;
++struct RenderTarget;
++struct WaterStatsSet : RenderDescriptorSetBase {
++    uint32_t field,output;
++    explicit WaterStatsSet(RenderDevice *device=nullptr) {
++        builder.begin(); field=builder.addTexture(1); output=builder.addReadWriteStructuredBuffer(2); builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterSpraySet : RenderDescriptorSetBase {
++    uint32_t draws, particles, sceneDepth, waterDepth;
++    explicit WaterSpraySet(RenderDevice *device = nullptr) {
++        builder.begin();
++        draws=builder.addStructuredBuffer(1);
++        particles=builder.addStructuredBuffer(2);
++        sceneDepth=builder.addTexture(3);
++        waterDepth=builder.addTexture(4);
++        builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterFieldSet : RenderDescriptorSetBase {
++    uint32_t draws, previous, next;
++    explicit WaterFieldSet(RenderDevice *device = nullptr) {
++        builder.begin();
++        draws=builder.addStructuredBuffer(1);
++        previous=builder.addTexture(2);
++        next=builder.addReadWriteTexture(3);
++        builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterDepthReduceSet : RenderDescriptorSetBase {
++    uint32_t input, output;
++    explicit WaterDepthReduceSet(RenderDevice *device = nullptr) {
++        builder.begin();
++        input = builder.addTexture(1);
++        output = builder.addReadWriteTexture(2);
++        builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterCaptureSet : RenderDescriptorSetBase {
++    uint32_t color, depth, outputColor, outputDepth;
++    explicit WaterCaptureSet(RenderDevice *device = nullptr) {
++        builder.begin();
++        color = builder.addTexture(1);
++        depth = builder.addTexture(2);
++        outputColor = builder.addReadWriteTexture(3);
++        outputDepth = builder.addReadWriteTexture(4);
++        builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterOriginalSet : RenderDescriptorSetBase {
++    uint32_t color, output;
++    explicit WaterOriginalSet(RenderDevice *device=nullptr) {
++        builder.begin(); color=builder.addTexture(1); output=builder.addReadWriteTexture(2); builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterNormalSet : RenderDescriptorSetBase {
++    uint32_t positions, vertices, faces, normals;
++    explicit WaterNormalSet(RenderDevice *device = nullptr) {
++        builder.begin();
++        positions = builder.addStructuredBuffer(1);
++        vertices = builder.addStructuredBuffer(2);
++        faces = builder.addStructuredBuffer(3);
++        normals = builder.addReadWriteStructuredBuffer(4);
++        builder.end();
++        if (device) create(device);
++    }
++};
++struct WaterDescriptorSet : RenderDescriptorSetBase {
++    uint32_t draws, sceneColor, sceneDepth, currentField, previousField, originalColor;
++    explicit WaterDescriptorSet(RenderDevice *device = nullptr) {
++        builder.begin();
++        draws = builder.addStructuredBuffer(1);
++        sceneColor = builder.addTexture(2);
++        sceneDepth = builder.addTexture(3);
++        currentField = builder.addTexture(4);
++        previousField = builder.addTexture(5);
++        originalColor = builder.addTexture(6);
++        builder.end();
++        if (device) create(device);
++    }
++};
++
++// Owned by the framebuffer renderer, so descriptor and upload lifetimes follow its workload fences.
++struct WaterRenderer {
++    std::vector<interop::WaterDrawParams> draws;
++    BufferPair drawBuffer;
++    std::unique_ptr<WaterDescriptorSet> descriptorSet;
++    std::unique_ptr<RenderPipelineLayout> layout;
++    std::unique_ptr<RenderShader> vertexShader;
++    std::unique_ptr<RenderShader> pixelShader, classicShader, classicMSShader;
++    std::unique_ptr<RenderShader> surfaceShader, sprayVertexShader, sprayPixelShader, sprayMSPixelShader;
++    std::unique_ptr<RenderPipelineLayout> sprayLayout;
++    std::map<uint32_t,std::unique_ptr<RenderPipeline>> sprayPipelines;
++    std::vector<interop::WaterSprayParticle> particles;
++    BufferPair particleBuffer;
++    std::array<float,4> sprayDistance{};
++    std::array<interop::float4,4> sprayHeading{};
++    uint32_t spraySeed=1;
++    std::map<uint32_t, std::unique_ptr<RenderPipeline>> pipelines;
++    RenderVertexBufferView worldView;
++    RenderVertexBufferView normalView;
++    struct NormalGroup {
++        std::set<uint32_t> vertices;
++        std::vector<interop::uint4> faces;
++    };
++    std::map<std::tuple<uint64_t,int,int,int>, NormalGroup> normalGroups;
++    std::vector<interop::uint4> normalVertices, normalFaces;
++    std::vector<uint32_t> wireIndices, wireStarts;
++    BufferPair wireBuffer;
++    RenderIndexBufferView wireView;
++    BufferPair normalVertexBuffer, normalFaceBuffer;
++    std::unique_ptr<RenderBuffer> normalBuffer;
++    uint64_t normalBufferSize = 0;
++    ShaderRecord normalShader;
++    std::unique_ptr<WaterNormalSet> normalSet;
++    struct SceneInputs {
++        std::unique_ptr<RenderTexture> color, depth, originalColor;
++        std::unique_ptr<RenderTextureView> originalColorView;
++        std::unique_ptr<WaterOriginalSet> originalSet;
++        std::unique_ptr<RenderTexture> surface;
++        std::unique_ptr<RenderTexture> waterDepth;
++        std::unique_ptr<RenderTextureView> surfaceView;
++        std::unique_ptr<RenderFramebuffer> surfaceFramebuffer;
++        std::unique_ptr<RenderFramebuffer> waterColorFramebuffer;
++        std::unique_ptr<WaterSpraySet> spraySet;
++        uint32_t surfaceSamples=0, originalSamples=0;
++        uint32_t surfaceWidth=0,surfaceHeight=0;
++        uint32_t waterDepthWidth=0,waterDepthHeight=0,waterDepthSamples=0;
++        bool selfDepth=false;
++        bool surfaceCleared=false;
++        std::unique_ptr<RenderTextureView> colorView, depthView;
++        std::vector<std::unique_ptr<RenderTextureView>> depthMipViews;
++        std::vector<std::unique_ptr<WaterDepthReduceSet>> reduceSets;
++        std::unique_ptr<WaterCaptureSet> captureSet;
++        std::unique_ptr<WaterDescriptorSet> materialSet;
++        RenderTarget *sourceColor = nullptr, *sourceDepth = nullptr;
++        uint32_t width = 0, height = 0, mipCount = 0;
++        bool captured = false;
++    };
++    std::vector<SceneInputs> scenes;
++    std::map<std::pair<uint64_t,bool>,uint32_t> sceneKeys;
++    std::vector<uint32_t> drawScenes;
++    ShaderRecord captureShader, captureMSShader, originalShader, originalMSShader;
++    ShaderRecord depthReduceShader;
++    ShaderRecord fieldShader;
++    std::unique_ptr<RenderTexture> fieldTextures[2];
++    std::unique_ptr<RenderTextureView> fieldViews[2];
++    std::unique_ptr<WaterFieldSet> fieldSets[2];
++    std::vector<std::pair<interop::WaterFieldPushConstants,uint32_t>> fieldSteps;
++    std::array<interop::float4,4> fieldOrigins{};
++    std::deque<interop::WaterMaterial> fieldInputs;
++    float fieldTime = 0;
++    int64_t fieldTick=0;
++    uint32_t fieldGeneration = UINT32_MAX, fieldResolution = 0, fieldCurrent = 0;
++    std::unique_ptr<RenderQueryPool> profilePool;
++    ShaderRecord statsShader;
++    std::unique_ptr<WaterStatsSet> statsSet;
++    std::unique_ptr<RenderBuffer> statsBuffer,statsReadback;
++    bool statsPending=false;
++    float statsTime=-1;
++    uint32_t statsStep=UINT32_MAX, statsParticles=0;
++    interop::WaterMaterial statsMaterial{};
++    std::vector<uint32_t> profileKinds;
++    bool usesHDR;
++
++    WaterRenderer(RenderDevice *device, RenderShaderFormat format, bool usesHDR);
++    void bindBuffer();
++    void collectNormals(const DrawData &data, uint32_t start, uint32_t count, uint64_t group);
++    void prepareNormals(RenderWorker *worker, const OutputBuffers &outputs, std::vector<BufferUploader::Upload> &uploads);
++    void bindNormals(const OutputBuffers &outputs);
++    void recordNormals(RenderWorker *worker, const OutputBuffers &outputs);
++    void reset();
++    uint32_t prepareScene(RenderWorker *worker, RenderTarget *color, RenderTarget *depth, uint64_t key, bool classic, bool selfDepth);
++    bool captureScene(RenderWorker *worker, uint32_t drawIndex, bool depthReadOnly);
++    void captureOriginal(RenderWorker *worker, uint32_t drawIndex);
++    RenderDescriptorSet *materialSet(uint32_t drawIndex);
++    uint32_t beginProfile(RenderWorker *worker, uint32_t kind);
++    void endProfile(RenderWorker *worker, uint32_t token);
++    void finishProfile(double frameMilliseconds);
++    uint64_t allocationBytes() const;
++    void prepareField(RenderWorker *worker);
++    void recordField(RenderWorker *worker);
++    void stepSpray(const interop::WaterMaterial &material, float previousTime, float nextTime, bool reset);
++    void beginSurface(RenderWorker *worker,uint32_t drawIndex);
++    void beginColor(RenderWorker *worker,uint32_t drawIndex);
++    void drawSpray(RenderWorker *worker,uint32_t drawIndex);
++    RenderPipeline *pipeline(RenderDevice *device, const RenderMultisampling &samples, bool zCompare, bool zWrite, bool wireframe, bool surface=false, bool classic=false, bool selfDepth=false);
++};
++}
+diff --git a/src/shaders/WaterCaptureCS.hlsl b/src/shaders/WaterCaptureCS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterCaptureCS.hlsl
+@@ -0,0 +1,32 @@
++// Separate immutable inputs: no attachment feedback and no water recursion.
++struct CaptureParams { uint width; uint height; uint samples; uint unused; };
++[[vk::push_constant]] ConstantBuffer<CaptureParams> params : register(b0);
++#ifdef CAPTURE_MSAA
++Texture2DMS<float4> sceneColor : register(t1);
++Texture2DMS<float> sceneDepth : register(t2);
++#else
++Texture2D<float4> sceneColor : register(t1);
++Texture2D<float> sceneDepth : register(t2);
++#endif
++RWTexture2D<float4> capturedColor : register(u3);
++RWTexture2D<float> capturedDepth : register(u4);
++
++[numthreads(8,8,1)]
++void CSMain(uint2 pixel : SV_DispatchThreadID) {
++    if (pixel.x >= params.width || pixel.y >= params.height) return;
++#ifdef CAPTURE_MSAA
++    float4 color = 0;
++    float depth = 1;
++    for (uint i=0; i<params.samples; ++i) {
++        color += sceneColor.Load(pixel,i);
++        depth = min(depth,sceneDepth.Load(pixel,i));
++    }
++    color /= params.samples;
++#else
++    float4 color = sceneColor.Load(uint3(pixel,0));
++    float depth = sceneDepth.Load(uint3(pixel,0));
++#endif
++    // Inputs are the existing display-referred N64 scene. Decode once here.
++    capturedColor[pixel] = float4(pow(max(color.rgb,0),2.2),1);
++    capturedDepth[pixel] = depth;
++}
+diff --git a/src/shaders/WaterDepthReduceCS.hlsl b/src/shaders/WaterDepthReduceCS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterDepthReduceCS.hlsl
+@@ -0,0 +1,20 @@
++struct ReduceParams { uint width; uint height; uint sourceWidth; uint sourceHeight; };
++[[vk::push_constant]] ConstantBuffer<ReduceParams> params : register(b0);
++Texture2D<float> inputDepth : register(t1);
++RWTexture2D<float> outputDepth : register(u2);
++[numthreads(8,8,1)]
++void CSMain(uint2 pixel : SV_DispatchThreadID) {
++    if (pixel.x >= params.width || pixel.y >= params.height) return;
++    float depth = 1;
++    // Standard mip sizes round down. Include the extra edge row/column on
++    // odd-sized targets, otherwise thin shore geometry disappears from Hi-Z.
++    uint2 first=pixel*2;
++    uint2 end=min(first+2,uint2(params.sourceWidth,params.sourceHeight));
++    if (pixel.x+1==params.width) end.x=params.sourceWidth;
++    if (pixel.y+1==params.height) end.y=params.sourceHeight;
++    for (uint y=first.y;y<end.y;y++) for (uint x=first.x;x<end.x;x++) {
++        uint2 source = uint2(x,y);
++        depth = min(depth,inputDepth.Load(uint3(source,0)));
++    }
++    outputDepth[pixel] = depth;
++}
+diff --git a/src/shaders/WaterFieldCS.hlsl b/src/shaders/WaterFieldCS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterFieldCS.hlsl
+@@ -0,0 +1,88 @@
++#include "shared/rt64_water_params.h"
++[[vk::push_constant]] ConstantBuffer<WaterFieldPushConstants> params : register(b0);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
++Texture2D<float4> previousField : register(t2);
++RWTexture2D<float4> nextField : register(u3);
++
++float4 source(int2 pixel,uint tile) {
++    if (params.reset || any(pixel<0) || any(pixel>=int(params.resolution))) return 0;
++    return previousField.Load(int3(pixel+int2(tile*params.resolution,0),0));
++}
++float4 filteredSource(float2 pixel,uint tile) {
++    int2 p=int2(floor(pixel)); float2 f=frac(pixel);
++    return lerp(lerp(source(p,tile),source(p+int2(1,0),tile),f.x),
++        lerp(source(p+int2(0,1),tile),source(p+1,tile),f.x),f.y);
++}
++float segmentDistance(float2 p,float2 a,float2 b) {
++    float2 d=b-a;
++    return length(p-(a+d*saturate(dot(p-a,d)/max(dot(d,d),0.001))));
++}
++[numthreads(8,8,1)]
++void CSMain(uint2 pixel : SV_DispatchThreadID) {
++    if (pixel.x>=params.resolution*4 || pixel.y>=params.resolution) return;
++    uint tile=pixel.x/params.resolution;
++    uint2 local=uint2(pixel.x%params.resolution,pixel.y);
++    WaterMaterial m=waterDraws[params.drawIndex].material;
++    float cell=params.simulation.w/params.resolution;
++    float dt=params.simulation.x;
++    float2 world=params.origins[tile].xy+(float2(local)+0.5)*cell;
++    float2 previousPixel=(world-params.origins[tile].zw)/cell-0.5;
++    float4 center=filteredSource(previousPixel,tile);
++    float4 neighbors=filteredSource(previousPixel+float2(1,0),tile)+filteredSource(previousPixel-float2(1,0),tile)
++        +filteredSource(previousPixel+float2(0,1),tile)+filteredSource(previousPixel-float2(0,1),tile);
++    // A damped wave equation (CFL <= 0.25 at the supported resolutions).
++    float velocity=center.y+dt*(pow(120/cell,2)*(neighbors.x-4*center.x)-2.5*center.y);
++    float height=center.x+dt*velocity;
++    float2 wind=m.surface.yz*8;
++    float foam=filteredSource(previousPixel-wind*dt/cell,tile).z;
++    foam=lerp(foam,neighbors.z*0.25,min(dt*0.55,1))*exp(-dt*0.32);
++    float interval=max(m.animation.y-m.animation.x,0.00001);
++    float a=saturate((params.simulation.y-m.animation.x)/interval);
++    float b=saturate((params.simulation.z-m.animation.x)/interval);
++    // A separate persistent shore channel is anchored to original collision
++    // geometry. Do not advect this mask with the free-moving wake foam.
++    float shore=center.w*exp(-dt*0.75);
++    float2 craftPosition=lerp(m.craftPrevious[tile].xz,m.craftCurrent[tile].xz,b);
++    float influence=1-smoothstep(1200,1500,length(world-craftPosition));
++    if (influence>0 && m.craftCurrent[tile].w>=0) {
++        float shoreDistance=10000;
++        [loop] for (uint s=0;s<min(uint(m.shoreCounts[tile]),uint(WATER_SHORE_SEGMENTS_PER_TILE));s++) {
++            float4 segment=m.shoreSegments[tile*WATER_SHORE_SEGMENTS_PER_TILE+s];
++            if (any(world<min(segment.xy,segment.zw)-64) || any(world>max(segment.xy,segment.zw)+64)) continue;
++            shoreDistance=min(shoreDistance,segmentDistance(world,segment.xy,segment.zw));
++        }
++        float width=max(22,cell*1.5);
++        float mask=1-smoothstep(width*0.25,width,shoreDistance);
++        float wash=0.35+0.65*saturate(sin(params.simulation.z*1.7+world.x*0.003+world.y*0.002));
++        shore += mask*influence*wash*(1-shore)*dt*0.9;
++    }
++    [unroll] for (uint i=0;i<4;i++) {
++        float4 old=m.craftPrevious[i], current=m.craftCurrent[i];
++        if (current.w<0) continue;
++        float2 from=lerp(old.xz,current.xz,a), to=lerp(old.xz,current.xz,b);
++        float traveled=length(to-from);
++        float2 delta=current.xz-old.xz;
++        float speed=length(delta)/interval;
++        float2 heading=delta/max(length(delta),0.001);
++        float contact=saturate(current.w*3);
++        float density=min(traveled/cell,2)*contact;
++        float d=segmentDistance(world,from,to);
++        float centerTrail=exp(-pow(d/18,2));
++        float2 relative=world-to;
++        float behind=-dot(relative,heading), side=abs(dot(relative,float2(-heading.y,heading.x)));
++        float wing=exp(-pow((side-behind*0.42)/10,2))*smoothstep(0,24,behind)*(1-smoothstep(65,100,behind));
++        foam += (centerTrail*0.30+wing*0.11)*density*saturate(speed/180);
++        velocity += wing*density*0.13;
++        // A landing is consumed only by the fixed step crossing this update.
++        bool landed=old.w==0 && current.w>0 && params.simulation.y<m.animation.y && params.simulation.z>=m.animation.y;
++        if (landed && !params.reset) {
++            float impact=saturate((old.y-current.y)/interval/180);
++            float radius=length(world-current.xz);
++            float ring=exp(-pow((radius-32)/20,2))*impact;
++            foam += ring*0.65;
++            velocity += ring*0.7;
++        }
++    }
++    if (m.craftCurrent[tile].w<0) { height=0;velocity=0;foam=0;shore=0; }
++    nextField[pixel]=float4(clamp(height,-1,1),clamp(velocity,-4,4),saturate(foam),saturate(shore));
++}
+diff --git a/src/shaders/WaterNormalsCS.hlsl b/src/shaders/WaterNormalsCS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterNormalsCS.hlsl
+@@ -0,0 +1,22 @@
++struct NormalPushConstants { uint vertexCount; };
++[[vk::push_constant]] ConstantBuffer<NormalPushConstants> params : register(b0);
++StructuredBuffer<float4> positions : register(t1);
++StructuredBuffer<uint4> vertices : register(t2);
++StructuredBuffer<uint4> faces : register(t3);
++RWStructuredBuffer<float4> normals : register(u4);
++
++[numthreads(64,1,1)]
++void CSMain(uint i : SV_DispatchThreadID) {
++    if (i >= params.vertexCount) return;
++    uint4 vertex = vertices[i];
++    float3 sum = 0;
++    for (uint j = 0; j < vertex.z; ++j) {
++        uint3 f = faces[vertex.y+j].xyz;
++        float3 a = positions[f.x].xyz;
++        float3 b = positions[f.y].xyz;
++        float3 c = positions[f.z].xyz;
++        float3 n = cross(b-a,c-a);
++        sum += n.y < 0 ? -n : n;
++    }
++    normals[vertex.x] = float4(dot(sum,sum)>0.00001 ? normalize(sum) : float3(0,1,0), 0);
++}
+diff --git a/src/shaders/WaterOriginalCS.hlsl b/src/shaders/WaterOriginalCS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterOriginalCS.hlsl
+@@ -0,0 +1,27 @@
++// Copy the game's actual water texture, alpha blend and course fog before
++// adding modern surface effects. This is a separate image, never feedback.
++struct CaptureParams { uint width; uint height; uint samples; uint unused; };
++[[vk::push_constant]] ConstantBuffer<CaptureParams> params : register(b0);
++#ifdef CAPTURE_MSAA
++Texture2DMS<float4> sourceColor : register(t1);
++#else
++Texture2D<float4> sourceColor : register(t1);
++#endif
++RWTexture2D<float4> originalColor : register(u2);
++[numthreads(8,8,1)]
++void CSMain(uint2 pixel : SV_DispatchThreadID) {
++    if (pixel.x >= params.width || pixel.y >= params.height) return;
++#ifdef CAPTURE_MSAA
++    // Preserve individual coverage samples. Resolving here and writing the
++    // result back through the water mesh would apply edge coverage twice.
++    // A two-column atlas fits every supported sample count within 2D limits.
++    for (uint i=0; i<params.samples; ++i) {
++        float4 color=sourceColor.Load(pixel,i);
++        uint2 at=pixel+uint2((i&1)*params.width,(i>>1)*params.height);
++        originalColor[at]=float4(pow(max(color.rgb,0),2.2),1);
++    }
++#else
++    float4 color = sourceColor.Load(uint3(pixel,0));
++    originalColor[pixel] = float4(pow(max(color.rgb,0),2.2),1);
++#endif
++}
+diff --git a/src/shaders/WaterPS.hlsl b/src/shaders/WaterPS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterPS.hlsl
+@@ -0,0 +1,407 @@
++#include "shared/rt64_water_params.h"
++[[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
++Texture2D<float4> sceneColor : register(t2);
++Texture2D<float> sceneDepth : register(t3);
++Texture2D<float4> currentField : register(t4);
++Texture2D<float4> previousField : register(t5);
++Texture2D<float4> originalColor : register(t6);
++
++static const float PI = 3.14159265359;
++
++float foamHash(float2 cell) {
++    float3 p=frac(float3(cell.x,cell.y,cell.x)*0.1031);
++    p+=dot(p,p.yzx+33.33);
++    return frac((p.x+p.y)*p.z);
++}
++float foamNoise(float2 at) {
++    float2 cell=floor(at), f=frac(at);
++    f=f*f*f*(f*(f*6-15)+10);
++    return lerp(lerp(foamHash(cell),foamHash(cell+float2(1,0)),f.x),
++        lerp(foamHash(cell+float2(0,1)),foamHash(cell+1),f.x),f.y);
++}
++float foamBreakup(float2 world,float time,float2 wind) {
++    // Advect with the wake field. The old product of two axis-aligned sine
++    // waves cut a repeating checkerboard of square holes through the foam.
++    // Rotated, warped octaves give the wake irregular connected patches.
++    float2 at=(world-wind*(8*time))*0.043;
++    at=float2(at.x*0.9239-at.y*0.3827,at.x*0.3827+at.y*0.9239);
++    at+=float2(sin(dot(at,float2(0.71,0.53))+time*0.12),
++        sin(dot(at,float2(-0.47,0.83))-time*0.09))*0.65;
++    float2 fineAt=float2(at.x*0.8-at.y*0.6,at.x*0.6+at.y*0.8)*2.17+float2(7.13,19.91);
++    float broadFilter=1-smoothstep(0.35,1.2,max(fwidth(at.x),fwidth(at.y)));
++    float fineFilter=1-smoothstep(0.35,1.2,max(fwidth(fineAt.x),fwidth(fineAt.y)));
++    float detail=lerp(0.5,foamNoise(fineAt),fineFilter);
++    float breakup=smoothstep(0.29,0.65,foamNoise(at)*0.65+detail*0.35);
++    // Preserve average coverage when the pattern becomes subpixel, avoiding
++    // sparkling along the distant part of a wake and at grazing angles.
++    return lerp(0.60,breakup,broadFilter);
++}
++
++float3 fieldLoad(int2 pixel,uint tile,uint resolution,bool previous) {
++    if (any(pixel<0) || any(pixel>=int(resolution))) return 0;
++    int3 at=int3(pixel+int2(tile*resolution,0),0);
++    return previous ? previousField.Load(at).xzw : currentField.Load(at).xzw;
++}
++float3 fieldSample(float2 at,uint tile,uint resolution,bool previous) {
++    int2 pixel=int2(floor(at)); float2 f=frac(at);
++    return lerp(lerp(fieldLoad(pixel,tile,resolution,previous),fieldLoad(pixel+int2(1,0),tile,resolution,previous),f.x),
++        lerp(fieldLoad(pixel+int2(0,1),tile,resolution,previous),fieldLoad(pixel+1,tile,resolution,previous),f.x),f.y);
++}
++float3 interaction(float2 world,WaterDrawParams p) {
++    uint tile=4; float closest=1e20;
++    [unroll] for (uint i=0;i<4;i++) {
++        float2 local=world-p.fieldOrigins[i].xy;
++        float distance=dot(local-2048,local-2048);
++        if (p.material.craftCurrent[i].w>=0 && all(local>=0) && all(local<4096) && distance<closest) { tile=i;closest=distance; }
++    }
++    if (tile==4) return 0;
++    float resolution=p.flags.w;
++    float2 now=(world-p.fieldOrigins[tile].xy)*(resolution/4096)-0.5;
++    float2 old=(world-p.fieldOrigins[tile].zw)*(resolution/4096)-0.5;
++    return lerp(fieldSample(old,tile,uint(resolution),true),fieldSample(now,tile,uint(resolution),false),p.flags.z);
++}
++
++float2 boundPixel(float2 pixel, WaterDrawParams p) {
++    return clamp(pixel,p.viewBounds.xy+1,p.viewBounds.zw-2);
++}
++
++float3 backgroundColor(float2 pixel, WaterDrawParams p) {
++    float2 at = boundPixel(pixel,p)-0.5;
++    int2 i = int2(floor(at));
++    float2 f = frac(at);
++    return lerp(lerp(sceneColor.Load(int3(i,0)).rgb,sceneColor.Load(int3(i+int2(1,0),0)).rgb,f.x),
++        lerp(sceneColor.Load(int3(i+int2(0,1),0)).rgb,sceneColor.Load(int3(i+1,0)).rgb,f.x),f.y);
++}
++
++float4 submergedColor(float2 pixel, float surfaceDepth, WaterDrawParams p) {
++    float2 at=boundPixel(pixel,p)-0.5;
++    int2 base=int2(floor(at));
++    float2 f=frac(at);
++    float3 color=0;
++    float coverage=0;
++    // A valid center depth does not make its bilinear neighbors submerged.
++    // Reject foreground and clear-sky taps individually so moving refraction
++    // cannot pull their bright colors through a shoreline or a wave edge.
++    [unroll] for (uint y=0;y<2;y++) {
++        [unroll] for (uint x=0;x<2;x++) {
++            int2 tap=base+int2(x,y);
++            float depth=sceneDepth.Load(int3(tap,0));
++            float weight=(x ? f.x : 1-f.x)*(y ? f.y : 1-f.y);
++            weight*=depth>surfaceDepth+0.000001 && depth<0.9999 ? 1 : 0;
++            color+=sceneColor.Load(int3(tap,0)).rgb*weight;
++            coverage+=weight;
++        }
++    }
++    return float4(color/max(coverage,0.000001),coverage);
++}
++
++float3 worldFromPixel(float2 pixel, float depth, WaterDrawParams p) {
++    // Undo the actual raster screen transform, then the original N64 viewport.
++    // Its Z scale/translate differ from a conventional 0..1 camera projection.
++    float2 ndc = pixel / float2(p.viewportScale.w,p.viewportTranslate.w) * float2(2,-2) + float2(-1,1);
++    ndc = (ndc-p.screenTransform.zw)/p.screenTransform.xy;
++    float2 screen = (ndc * float2(0.5,-0.5)+0.5)*p.screen.xy;
++    float3 projected = float3((screen-p.viewportTranslate.xy)/p.viewportScale.xy*float2(1,-1),
++        (depth-p.viewportTranslate.z)/p.viewportScale.z);
++    float4 world = mul(p.inverseViewProjection,float4(projected,1));
++    return world.xyz / world.w;
++}
++
++float opticalDepth(float2 pixel, float surfaceDepth, float3 world, WaterDrawParams p) {
++    float depth = sceneDepth.Load(int3(int2(boundPixel(pixel,p)),0));
++    if (depth >= 0.9999 || depth <= surfaceDepth+0.000001) return -1;
++    float3 background = worldFromPixel(pixel,depth,p);
++    float distance = length(background-p.camera.xyz)-length(world-p.camera.xyz);
++    return distance > 0 && distance < 100000 ? min(distance,1600) : -1;
++}
++
++float4 pixelFromWorld(float3 world, WaterDrawParams p) {
++    float4 clip = mul(p.viewProjection,float4(world,1));
++    float3 ndc = clip.xyz / clip.w;
++    float3 screen = ndc*float3(1,-1,1)*p.viewportScale.xyz+p.viewportTranslate.xyz;
++    float2 xy = (screen.xy/p.screen.xy*float2(2,-2)+float2(-1,1))*p.screenTransform.xy+p.screenTransform.zw;
++    return float4((xy*float2(0.5,-0.5)+0.5)*float2(p.viewportScale.w,p.viewportTranslate.w),screen.z,clip.w);
++}
++
++float4 screenReflection(float3 world, float3 N, float3 V, float roughness, WaterDrawParams p) {
++    if (p.material.identity.x < 2) return 0;
++    uint depthWidth,depthHeight,depthLevels; sceneDepth.GetDimensions(0,depthWidth,depthHeight,depthLevels);
++    float3 ray = reflect(-V,N);
++    float start = 5, distance = 16;
++    float3 origin = world + N*3;
++    float2 previousPixel = pixelFromWorld(origin,p).xy;
++    [loop] for (uint step=0;step<36;step++) {
++        float3 rayPoint = origin+ray*distance;
++        float4 pixel = pixelFromWorld(rayPoint,p);
++        if (pixel.w <= 0 || any(pixel.xy < p.viewBounds.xy+2) || any(pixel.xy >= p.viewBounds.zw-2)) break;
++        float footprint = max(length(pixel.xy-previousPixel),1);
++        uint mip = min(uint(clamp(floor(log2(footprint)),0,5)),depthLevels-1);
++        uint mipWidth,mipHeight,levels; sceneDepth.GetDimensions(mip,mipWidth,mipHeight,levels);
++        uint2 mipPixel=min(uint2(pixel.xy)/(1u<<mip),uint2(mipWidth-1,mipHeight-1));
++        float minimum = sceneDepth.Load(int3(mipPixel,mip));
++        if (pixel.z >= minimum && minimum < 0.9999) {
++            float depth = sceneDepth.Load(int3(int2(pixel.xy),0));
++            float3 background = worldFromPixel(pixel.xy,depth,p);
++            float gap = length(rayPoint-p.camera.xyz)-length(background-p.camera.xyz);
++            if (depth < 0.9999 && gap >= 0) {
++                float lo=start, hi=distance;
++                [unroll] for (uint refine=0;refine<5;refine++) {
++                    float mid=(lo+hi)*0.5;
++                    float4 at=pixelFromWorld(origin+ray*mid,p);
++                    float z=sceneDepth.Load(int3(int2(boundPixel(at.xy,p)),0));
++                    if (at.z >= z) hi=mid; else lo=mid;
++                }
++                float3 hit=origin+ray*hi;
++                float4 at=pixelFromWorld(hit,p);
++                float z=sceneDepth.Load(int3(int2(boundPixel(at.xy,p)),0));
++                float3 sampled=worldFromPixel(at.xy,z,p);
++                float separation=length(hit-sampled);
++                float edge=min(min(at.x-p.viewBounds.x,p.viewBounds.z-at.x),min(at.y-p.viewBounds.y,p.viewBounds.w-at.y));
++                float confidence=saturate(1-separation/45)*saturate(edge/40)*saturate(1-hi/3000);
++                confidence *= z < 0.9999 && sampled.y > p.material.surface.x-20 ? 1 : 0;
++                float radius=roughness*5;
++                float3 color=(backgroundColor(at.xy+float2(radius,0),p)+backgroundColor(at.xy-float2(radius,0),p)
++                    +backgroundColor(at.xy+float2(0,radius),p)+backgroundColor(at.xy-float2(0,radius),p))*0.25;
++                return float4(color,confidence);
++            }
++        }
++        previousPixel=pixel.xy;
++        start=distance;
++        distance=distance*1.16+12;
++    }
++    return 0;
++}
++
++float2 rippleCornerGradient(float2 cell) {
++    float2 gradient=float2(foamHash(cell),foamHash(cell+float2(73.19,19.73)))*2-1;
++    return gradient*rsqrt(max(dot(gradient,gradient),0.0001));
++}
++
++// Analytic slope of compact, randomly oriented simplex kernels. Unlike a
++// handful of global cosine waves, this has no continuous crossed stripe grid.
++float2 rippleNoiseGradient(float2 at) {
++    const float skew=0.3660254038, unskew=0.2113248654;
++    float2 cell=floor(at+(at.x+at.y)*skew);
++    float2 first=at-cell+(cell.x+cell.y)*unskew;
++    float2 corner=first.x>first.y ? float2(1,0) : float2(0,1);
++    float2 offsets[3]={first,first-corner+unskew,first-1+2*unskew};
++    float2 cells[3]={cell,cell+corner,cell+1};
++    float2 slope=0;
++    [unroll] for (uint i=0;i<3;i++) {
++        float2 offset=offsets[i], direction=rippleCornerGradient(cells[i]);
++        float support=max(0.5-dot(offset,offset),0);
++        slope+=support*support*support*(support*direction-8*dot(direction,offset)*offset);
++    }
++    return slope*70;
++}
++
++float2 rippleGradient(float2 x, float t, float strength, float2 wind) {
++    float windSpeed=length(wind);
++    float2 axis=windSpeed>0.001 ? wind/windSpeed : float2(1,0);
++    float2 crosswind=float2(-axis.y,axis.x);
++    x=float2(dot(x,axis),dot(x,crosswind));
++    t*=0.45+0.55*min(windSpeed,2.0);
++    const float frequencies[3]={0.012,0.030,0.075};
++    const float speeds[3]={24,17,11};
++    const float weights[3]={1,0.62,0.35};
++    const float2 rotations[3]={float2(0.95534,0.29552),float2(0.87758,-0.47943),float2(0.76484,0.64422)};
++    const float2 offsets[3]={float2(13.17,7.93),float2(-31.41,47.23),float2(83.71,-19.37)};
++    float2 gradient=0;
++    [unroll] for (uint i=0;i<3;i++) {
++        // Stretch crests across the wind and advect each scale continuously.
++        float2 local=(x-float2(t*speeds[i],0))*float2(1,0.60);
++        float2 rotation=rotations[i];
++        float2 at=float2(local.x*rotation.x-local.y*rotation.y,local.x*rotation.y+local.y*rotation.x)*frequencies[i]+offsets[i];
++        float2 footprintX=ddx(at),footprintY=ddy(at);
++        float footprint=sqrt(dot(footprintX,footprintX)+dot(footprintY,footprintY));
++        float filter=1-smoothstep(0.18,0.65,footprint);
++        float2 slope=rippleNoiseGradient(at);
++        // Inverse rotation and stretch form the domain's gradient Jacobian.
++        // Height amplitude is inverse-frequency so fine bands do not dominate.
++        slope=float2(slope.x*rotation.x+slope.y*rotation.y,-slope.x*rotation.y+slope.y*rotation.x)*float2(1,0.60);
++        gradient+=slope*weights[i]*filter;
++    }
++    // Match the prior unfiltered RMS slope (~0.1205 at Normal/detail 1).
++    return (axis*gradient.x+crosswind*gradient.y)*(0.04623*strength);
++}
++
++float3 sky(float3 r, WaterMaterial m) {
++    float h = saturate(r.y);
++    // Haze inherits the course's illumination. A fixed blue-white horizon
++    // erases Sunset Bay's warm light even when its sky preset is orange.
++    float3 haze = lerp(m.skyColor.rgb, m.sunColor.rgb * 0.72, 0.65);
++    float3 horizon = lerp(m.skyColor.rgb, haze, m.skyColor.a);
++    float3 result = lerp(horizon, m.skyColor.rgb, sqrt(h));
++    // Very broad cloud variations rather than a second animated texture layer.
++    float cloud = smoothstep(0.55, 0.85, sin(r.x * 8 + r.z * 3) * 0.28 + sin(r.z * 13 - r.x * 5) * 0.16 + 0.5);
++    return lerp(result, haze, cloud * (1-h) * 0.24);
++}
++
++float4 PSMain(float4 position : SV_POSITION, float3 worldPosition : TEXCOORD0,
++              float4 sourceColor : COLOR0, float3 surfaceNormal : TEXCOORD1
++#ifdef CLASSIC_MSAA
++              , uint sampleIndex : SV_SampleIndex
++#endif
++              ) : SV_TARGET0 {
++    WaterDrawParams p = waterDraws[gConstants.drawIndex];
++    WaterMaterial m = p.material;
++    if (position.z < 0 || position.z > 1022.0/1024.0) discard;
++    float3 geometric = normalize(surfaceNormal);
++    if (geometric.y < 0) geometric = -geometric;
++    float2 ripples = rippleGradient(worldPosition.xz, p.camera.w, m.animation.z,m.surface.yz);
++    float3 wake=interaction(worldPosition.xz,p);
++    float2 dx=ddx(worldPosition.xz),dy=ddy(worldPosition.xz);
++    float determinant=dx.x*dy.y-dx.y*dy.x;
++    float2 wakeGradient=float2(ddx(wake.x)*dy.y-ddy(wake.x)*dx.y,ddy(wake.x)*dx.x-ddx(wake.x)*dy.x)/max(abs(determinant),0.001)*sign(determinant);
++    ripples += clamp(wakeGradient*8,-0.10,0.10);
++    float3 N = normalize(geometric + float3(-ripples.x, 0, -ripples.y));
++    float3 V = normalize(p.camera.xyz - worldPosition);
++    float3 L = normalize(m.sunDirection.xyz);
++    float3 H = normalize(V + L);
++    float nv = max(dot(N, V), 0.015);
++    float nl = saturate(dot(N,L));
++    float nh = saturate(dot(N,H));
++    float vh = saturate(dot(V,H));
++    float fresnel = 0.0204 + 0.9796 * pow(1-nv, 5);
++    float roughness = clamp(m.shallowColor.a + length(float2(ddx(N.x), ddy(N.z))) * 0.2, 0.065, 0.65);
++    float a2 = pow(roughness, 4);
++    float d = a2 / max(PI * pow(nh*nh*(a2-1)+1, 2), 0.00001);
++    float k = pow(roughness + 1, 2) * 0.125;
++    float g = nv / (nv*(1-k)+k) * nl / max(nl*(1-k)+k, 0.0001);
++    float f = 0.0204 + 0.9796 * pow(1-vh, 5);
++    float specular = min(d*g*f / max(4*nv, 0.001), 12);
++    float waveLight = saturate((worldPosition.y - m.surface.x) * 0.005 + 0.35 + nl * 0.25);
++    float3 body = lerp(m.deepColor.rgb, m.shallowColor.rgb, waveLight * 0.65);
++    float thickness = opticalDepth(position.xy,position.z,worldPosition,p);
++    float2 refractedPixel = boundPixel(position.xy + ripples * 13 * saturate(thickness/80),p);
++    float refractedThickness = opticalDepth(refractedPixel,position.z,worldPosition,p);
++    // Reject foreground silhouettes at the proposed sample before distorting.
++    if (refractedThickness < 0) { refractedPixel = position.xy; refractedThickness = thickness; }
++    // Derivatives must be evaluated for the whole pixel quad, before the
++    // depth-validity branch. A branch crossing a shoreline otherwise leaves
++    // caustic receiver normals/filter widths undefined on some backends.
++    float bottomDepth=sceneDepth.Load(int3(int2(boundPixel(refractedPixel,p)),0));
++    float3 bottom=worldFromPixel(refractedPixel,bottomDepth,p);
++    float3 bottomNormal=cross(ddx(bottom),ddy(bottom));
++    bottomNormal*=rsqrt(max(dot(bottomNormal,bottomNormal),0.000001));
++    if (bottomNormal.y<0) bottomNormal=-bottomNormal;
++    float2 causticUV=bottom.xz*0.035;
++    float causticFilter=1-smoothstep(0.25,1.5,length(fwidth(causticUV)));
++    if (thickness >= 0 && refractedThickness >= 0) {
++        float3 transmission = exp(-m.deepColor.a * float3(1.8,0.55,0.30) * refractedThickness);
++        // Course geometry often ends a short distance below the shoreline.
++        // Limit optical visibility smoothly before those uncapped triangle
++        // edges become visible. Higher-absorption courses reach deep color
++        // sooner; no seabed is invented where the game submitted none.
++        float visibilityRange=max(m.optics.x,1);
++        transmission*=1-smoothstep(visibilityRange*0.30,visibilityRange,refractedThickness);
++        float4 receiverColor=submergedColor(refractedPixel,position.z,p);
++        float3 bottomColor=receiverColor.rgb;
++        // Uncovered taps transition to the water body, not an unrelated
++        // background color. Keep fractional coverage for a soft boundary.
++        transmission*=receiverColor.a;
++        // Stable world-space light focusing, confined to an actual shallow
++        // submerged receiver. Dark source lighting and steep walls reject it.
++        float phaseA=causticUV.x+sin(causticUV.y*1.3+p.camera.w*0.65);
++        float phaseB=causticUV.y-sin(causticUV.x*1.1-p.camera.w*0.5);
++        float focusing=pow(saturate(1-abs(sin(phaseA)+sin(phaseB)*0.55)),12);
++        float receiver=smoothstep(0.2,0.65,bottomNormal.y)*saturate(dot(bottomNormal,L));
++        receiver*=smoothstep(0.015,0.08,dot(bottomColor,float3(0.2126,0.7152,0.0722)));
++        receiver*=bottom.y<worldPosition.y-2 && refractedThickness<visibilityRange ? 1 : 0;
++        bottomColor+=m.sunColor.rgb*focusing*causticFilter*receiver*m.optics.z;
++        body = bottomColor * transmission + body * (1-transmission);
++    }
++    float3 color = body * (0.55 + nl * 0.45) * m.sunColor.a * (1-fresnel)
++        + m.sunColor.rgb * m.sunDirection.a * specular;
++    float4 reflection=screenReflection(worldPosition,N,V,roughness,p);
++    float3 reflected=lerp(sky(reflect(-V,N),m),reflection.rgb,reflection.a);
++    float3 authoredReflection=0;
++    float authoredConfidence=0;
++    if (m.optics.y>0) {
++        // Some original course scenes contain authored mirrored scenery.
++        // It is already in the immutable pre-water color. Preserve that
++        // course-specific input with rough filtering and foreground rejection.
++        float2 at=boundPixel(position.xy+ripples*10,p);
++        if (sceneDepth.Load(int3(int2(at),0))<=position.z+0.000001) at=position.xy;
++        float radius=roughness*8;
++        authoredReflection=(backgroundColor(at+float2(radius,0),p)+backgroundColor(at-float2(radius,0),p)
++            +backgroundColor(at+float2(0,radius),p)+backgroundColor(at-float2(0,radius),p))*0.25;
++        authoredConfidence=m.optics.y*(1-smoothstep(15,70,abs(worldPosition.y-m.surface.x)));
++    }
++    color += reflected*fresnel;
++    float crest=smoothstep(0.12,0.32,1-geometric.y)*smoothstep(25,85,worldPosition.y-m.surface.x)*0.15;
++    float contact=thickness>=0 ? smoothstep(0,8,thickness)*(1-smoothstep(10,45,thickness))*0.10 : 0;
++    float breakup=foamBreakup(worldPosition.xz,p.camera.w,m.surface.yz);
++    float shore=wake.z*(1-smoothstep(30,100,abs(worldPosition.y-m.surface.x)));
++    float foam=saturate((wake.y*1.8+shore*1.3+crest+contact)*m.animation.w*breakup);
++    color=lerp(color,float3(0.73,0.79,0.80)*(0.65+0.35*nl)*m.sunColor.a,foam);
++    if (p.fogColor.a > 0.5) color = lerp(color, p.fogColor.rgb, saturate(sourceColor.a));
++    // The original mirrored scene has already passed through course fog.
++    // Compose it here to avoid applying that fog a second time and erasing
++    // Drake Lake's distant shoreline reflection.
++    // The original reflection is LDR artwork rather than scene radiance.
++    // Retain a restrained base contribution in this explicitly authored
++    // course mode, then strengthen it toward grazing angles.
++    color=lerp(color,authoredReflection,authoredConfidence*(0.60+0.40*fresnel)*(1-foam));
++    float alpha = 1;
++    // Compress only the new lighting before conversion into the legacy display-referred target.
++#ifdef CLASSIC_STYLE
++    {
++        // The original raster pass already contains the course palette,
++        // broad wave highlights, transparency and fog. Preserve that artwork
++        // without reapplying absorption, sky tint or tone compression.
++        uint2 originalPixel=uint2(position.xy);
++#ifdef CLASSIC_MSAA
++        uint originalWidth,originalHeight;
++        sceneColor.GetDimensions(originalWidth,originalHeight);
++        originalPixel+=uint2((sampleIndex&1)*originalWidth,(sampleIndex>>1)*originalHeight);
++#endif
++        float3 base=originalColor.Load(int3(originalPixel,0)).rgb;
++        float3 classic=base;
++        float reflectionWeight=reflection.a*fresnel*0.32*(1-foam);
++        classic=lerp(classic,reflection.rgb,reflectionWeight);
++        classic+=m.sunColor.rgb*m.sunDirection.a*specular*0.16;
++        classic=lerp(classic,float3(0.73,0.79,0.80)*(0.65+0.35*nl)*m.sunColor.a,foam);
++        // The captured base is already fogged; only attenuate additions.
++        float visibility=p.fogColor.a>0.5 ? 1-saturate(sourceColor.a) : 1;
++        color=pow(saturate(lerp(base,classic,visibility)),1.0/2.2);
++    }
++#else
++    {
++        color = pow(saturate(color / (1 + color * 0.35)), 1.0/2.2);
++    }
++#endif
++    uint debug = (uint)m.identity.y;
++    if (debug == 1) return float4(1,0,0.8,1);
++    if (debug == 2) return float4(N*0.5+0.5,1);
++    if (debug == 3) return float4(frac(worldPosition * 0.005),1);
++    if (debug == 4) return float4(sourceColor.rgb,1);
++    if (debug == 5) return float4(thickness < 0 ? float3(0,0,0) : float3(saturate(thickness/500),saturate(thickness/100),0),1);
++    if (debug == 6) return float4(pow(saturate(backgroundColor(position.xy,p)),1.0/2.2),1);
++    if (debug == 7) return float4(thickness < 0 ? float3(0.8,0.1,0.1) : float3(0.1,0.8,0.2),1);
++    if (debug == 8) return float4(reflection.aaa,1);
++    if (debug == 9) return float4(saturate(abs(worldFromPixel(position.xy,position.z,p)-worldPosition)*0.1),1);
++    if (debug == 10) {
++        float3 marker=float3(0,0,0);
++        [unroll] for (uint i=0;i<4;i++) {
++            float f=saturate((p.camera.w-m.animation.x)/max(m.animation.y-m.animation.x,0.00001));
++            float2 craft=lerp(m.craftPrevious[i].xz,m.craftCurrent[i].xz,f);
++            if (m.craftCurrent[i].w>=0 && length(worldPosition.xz-craft)<45) marker=m.craftCurrent[i].w>0 ? float3(0,1,0) : float3(1,0,0);
++        }
++        return float4(marker,1);
++    }
++    if (debug == 11) return float4(wake.y,shore,crest+contact,1);
++    if (debug == 12) return float4(0.25,1,0.65,1);
++    if (debug == 13) {
++        uint w,h; currentField.GetDimensions(w,h);
++        int2 samplePixel=int2(saturate((position.xy-p.viewBounds.xy)/(p.viewBounds.zw-p.viewBounds.xy))*float2(w-1,h-1));
++        float4 value=currentField.Load(int3(samplePixel,0));
++        return float4(value.zzz,1);
++    }
++    if (debug == 14) {
++        float2 local=(worldPosition.xz-p.fieldOrigins[0].xy)/4096;
++        return float4(saturate(local),all(local>=0) && all(local<=1) ? 0 : 1,1);
++    }
++    return float4(color, alpha);
++}
+diff --git a/src/shaders/WaterSprayPS.hlsl b/src/shaders/WaterSprayPS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterSprayPS.hlsl
+@@ -0,0 +1,42 @@
++#include "shared/rt64_water_params.h"
++[[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
++Texture2D<float> sceneDepth : register(t3);
++#ifdef SPRAY_MSAA
++Texture2DMS<float> waterDepth : register(t4);
++#else
++Texture2D<float> waterDepth : register(t4);
++#endif
++float4 PSMain(float4 position : SV_POSITION, float2 uv : TEXCOORD0,
++    float3 world : TEXCOORD1, float2 fade : TEXCOORD2) : SV_TARGET0 {
++    WaterDrawParams p=waterDraws[gConstants.drawIndex];
++    float radius=dot(uv,uv);
++    float alpha=(1-smoothstep(0.10,1,radius))*fade.x;
++    int2 pixel=int2(clamp(position.xy,p.viewBounds.xy,p.viewBounds.zw-1));
++    float water=0;
++#ifdef SPRAY_MSAA
++    uint width,height,samples; waterDepth.GetDimensions(width,height,samples);
++    for (uint i=0;i<samples;i++) {
++        float d=waterDepth.Load(pixel,i);
++        if (d>0) water=water>0 ? min(water,d) : d;
++    }
++#else
++    water=waterDepth.Load(int3(pixel,0));
++#endif
++    if (water>0) alpha*=saturate((water-fade.y)/12);
++    float depth=sceneDepth.Load(int3(pixel,0));
++    if (depth<0.9999) {
++        float2 ndc=position.xy/float2(p.viewportScale.w,p.viewportTranslate.w)*float2(2,-2)+float2(-1,1);
++        ndc=(ndc-p.screenTransform.zw)/p.screenTransform.xy;
++        float2 screen=(ndc*float2(0.5,-0.5)+0.5)*p.screen.xy;
++        float3 projected=float3((screen-p.viewportTranslate.xy)/p.viewportScale.xy*float2(1,-1),(depth-p.viewportTranslate.z)/p.viewportScale.z);
++        float4 background=mul(p.inverseViewProjection,float4(projected,1));
++        alpha*=saturate((length(background.xyz/background.w-p.camera.xyz)-fade.y)/12);
++    }
++    float3 light=(p.material.skyColor.rgb*0.3+p.material.sunColor.rgb*0.7)*p.material.sunColor.a;
++    // Match the course haze without introducing a second exposure system.
++    float fog=p.fogColor.a*saturate((fade.y-1200)/5000);
++    light=lerp(light,p.fogColor.rgb,fog);
++    light=pow(saturate(light/(1+light*0.35)),1.0/2.2);
++    return float4(light,alpha);
++}
+diff --git a/src/shaders/WaterSprayVS.hlsl b/src/shaders/WaterSprayVS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterSprayVS.hlsl
+@@ -0,0 +1,39 @@
++#include "shared/rt64_water_params.h"
++[[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
++StructuredBuffer<WaterSprayParticle> particles : register(t2);
++
++void VSMain(uint vertex : SV_VertexID, uint instance : SV_InstanceID,
++    out float4 position : SV_POSITION, out float2 uv : TEXCOORD0,
++    out float3 world : TEXCOORD1, out float2 fade : TEXCOORD2) {
++    // Return a finite, degenerate offscreen primitive for invisible particles.
++    // Alpha zero alone cannot make invalid projected positions safe.
++    position=float4(2,2,2,1); uv=0; world=0; fade=0;
++    WaterDrawParams p=waterDraws[gConstants.drawIndex];
++    WaterSprayParticle particle=particles[instance];
++    float age=p.camera.w-particle.origin.w;
++    if (age<0 || age>=particle.velocity.w || particle.velocity.w<=0) return;
++    float drag=1.5, response=(1-exp(-drag*age))/drag;
++    world=particle.origin.xyz+particle.velocity.xyz*response;
++    world.y-=140*(age-response)/drag;
++    float4 clip=mul(p.viewProjection,float4(world,1));
++    float4 top=mul(p.viewProjection,float4(world+float3(0,particle.appearance.x,0),1));
++    // Both points must be in front of the eye before either perspective divide.
++    // A top edge crossing the eye plane used to create an enormous white quad.
++    if (!all(isfinite(clip)) || !all(isfinite(top)) || clip.w<=0.01 || top.w<=0.01) return;
++    float3 ndc=clip.xyz/clip.w;
++    float3 screen=ndc*float3(1,-1,1)*p.viewportScale.xyz+p.viewportTranslate.xyz;
++    float2 xy=(screen.xy/p.screen.xy*float2(2,-2)+float2(-1,1))*p.screenTransform.xy+p.screenTransform.zw;
++    float projectedRadius=abs(top.y/top.w-ndc.y)*abs(p.viewportScale.y/p.screen.y)*2;
++    if (!all(isfinite(ndc)) || !all(isfinite(screen)) || !all(isfinite(xy)) || !isfinite(projectedRadius)) return;
++    const float2 corners[6]={float2(-1,-1),float2(1,-1),float2(-1,1),float2(-1,1),float2(1,-1),float2(1,1)};
++    uv=corners[vertex];
++    position=float4(xy*clip.w,screen.z*clip.w,clip.w);
++    float radius=clamp(projectedRadius,0.0005,0.035);
++    position.xy+=uv*radius*float2(p.screen.y/p.screen.x,1)*clip.w;
++    float life=saturate(age/particle.velocity.w);
++    float distance=length(world-p.camera.xyz);
++    float nearFade=smoothstep(particle.appearance.x*4,particle.appearance.x*12,distance);
++    float sizeFade=1-smoothstep(0.012,0.035,projectedRadius);
++    fade=float2(particle.appearance.y*smoothstep(0,0.07,age)*(1-smoothstep(0.55,1,life))*nearFade*sizeFade,distance);
++}
+diff --git a/src/shaders/WaterStatsCS.hlsl b/src/shaders/WaterStatsCS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterStatsCS.hlsl
+@@ -0,0 +1,22 @@
++// Optional test instrumentation; never enabled for normal play.
++Texture2D<float4> field : register(t1);
++RWStructuredBuffer<uint4> statistics : register(u2);
++[numthreads(64,1,1)]
++void CSMain(uint lane : SV_DispatchThreadID) {
++    uint width,height; field.GetDimensions(width,height);
++    uint count=0,sum=0,peak=0,shoreCount=0,shoreSum=0,shorePeak=0;
++    for (uint i=lane;i<width*height;i+=64) {
++        float4 sample=field.Load(int3(i%width,i/width,0));
++        float foam=sample.z;
++        uint value=uint(saturate(foam)*65535);
++        count+=foam>0.01;
++        sum+=value;
++        peak=max(peak,value);
++        uint shoreValue=uint(saturate(sample.w)*65535);
++        shoreCount+=sample.w>0.01;
++        shoreSum+=shoreValue;
++        shorePeak=max(shorePeak,shoreValue);
++    }
++    statistics[lane]=uint4(count,sum,peak,0);
++    statistics[lane+64]=uint4(shoreCount,shoreSum,shorePeak,0);
++}
+diff --git a/src/shaders/WaterSurfacePS.hlsl b/src/shaders/WaterSurfacePS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterSurfacePS.hlsl
+@@ -0,0 +1,9 @@
++#include "shared/rt64_water_params.h"
++[[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
++// Zero is no water; positive values are eye distance. Keep the original opaque
++// depth attachment read-only, including when the N64 water doesn't write Z.
++float PSMain(float4 position : SV_POSITION, float3 world : TEXCOORD0) : SV_TARGET0 {
++    if (position.z < 0 || position.z > 1022.0/1024.0) discard;
++    return max(length(world-waterDraws[gConstants.drawIndex].camera.xyz),0.001);
++}
+diff --git a/src/shaders/WaterVS.hlsl b/src/shaders/WaterVS.hlsl
+new file mode 100644
+--- /dev/null
++++ b/src/shaders/WaterVS.hlsl
+@@ -0,0 +1,18 @@
++#include "shared/rt64_water_params.h"
++[[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
++
++void VSMain(float4 position : POSITION0, float2 uv : TEXCOORD0, float4 color : COLOR0,
++            float4 world : POSITION1, float4 normal : NORMAL0, out float4 clip : SV_POSITION,
++            out float3 worldPosition : TEXCOORD0, out float4 sourceColor : COLOR0,
++            out float3 surfaceNormal : TEXCOORD1) {
++    WaterDrawParams p = waterDraws[gConstants.drawIndex];
++    clip = position;
++    clip.xy = (clip.xy - p.screen.xy * 0.5) / (p.screen.xy * float2(0.5, -0.5));
++    clip.xyz *= clip.w;
++    clip.xy = clip.xy * p.screenTransform.xy + p.screenTransform.zw * clip.w;
++    if (p.flags.x > 0.5) clip.z = p.flags.y * clip.w;
++    worldPosition = world.xyz;
++    sourceColor = color;
++    surfaceNormal = normal.xyz;
++}
+diff --git a/src/shared/rt64_water_params.h b/src/shared/rt64_water_params.h
+new file mode 100644
+--- /dev/null
++++ b/src/shared/rt64_water_params.h
+@@ -0,0 +1,63 @@
++#pragma once
++#include "rt64_hlsl.h"
++#define WATER_SHORE_SEGMENTS_PER_TILE 20
++
++#ifdef HLSL_CPU
++namespace interop {
++#endif
++// All fields are full vectors to keep the display-list, C++, SPIR-V and MSL ABI identical.
++struct WaterMaterial {
++    float4 deepColor;       // linear RGB, absorption scale per game unit
++    float4 shallowColor;    // linear RGB, roughness
++    float4 sunDirection;    // direction toward sun, intensity
++    float4 sunColor;        // linear RGB, ambient intensity
++    float4 skyColor;        // linear RGB, horizon haze
++    float4 animation;       // previous/current simulation seconds, detail strength, foam strength
++    float4 identity;        // quality (0 disables), debug view, course, generation
++    float4 surface;         // mean height, wind X/Z, view index
++    float4 optics;          // visibility range, authored reflection weight, shallow caustics, classic style
++    float4 craftPrevious[4]; // world XYZ, wet contact fraction (-1 means inactive)
++    float4 craftCurrent[4];
++    float4 shoreCounts;     // bounded static shoreline segments in each craft's world tile
++    float4 shoreSegments[4 * WATER_SHORE_SEGMENTS_PER_TILE]; // immutable mean-water intersections, XZ endpoints
++    float4 effects;         // payload v2: added spray enabled, reserved YZW
++};
++
++struct WaterDrawParams {
++    WaterMaterial material;
++    float4 screen;          // original framebuffer width/height, target width/height
++    float4 screenTransform;// scale XY, offset XY
++    float4 camera;          // world camera XYZ, interpolated animation time
++    float4 fogColor;        // linear RGB, enabled
++    float4 flags;           // z source, prim depth, field interpolation, field resolution
++    float4 viewportScale;   // original RSP viewport XYZ, render viewport width
++    float4 viewportTranslate; // original RSP viewport XYZ, render viewport height
++    float4 viewBounds;      // pixel scissor, including the player viewport
++    float4 fieldOrigins[4]; // current X/Z, previous X/Z, in world units
++    float4x4 viewProjection;
++    float4x4 inverseViewProjection;
++};
++
++struct WaterPushConstants {
++    uint drawIndex;
++};
++struct WaterSprayParticle {
++    float4 origin;          // world XYZ, birth time
++    float4 velocity;        // initial XYZ velocity, lifetime
++    float4 appearance;      // radius, opacity, seed, reserved
++};
++struct WaterFieldPushConstants {
++    float4 origins[4];      // destination X/Z, source X/Z
++    uint drawIndex;
++    uint resolution;
++    uint reset;
++    uint unused;
++    float4 simulation;      // step seconds, previous time, current time, tile extent
++};
++#ifdef HLSL_CPU
++static_assert(sizeof(WaterMaterial) == 1584, "Water display-list ABI");
++static_assert(sizeof(WaterDrawParams) == 1904, "Water shader ABI");
++static_assert(sizeof(WaterDrawParams) <= 2048, "D3D structured-buffer stride limit");
++static_assert(sizeof(WaterFieldPushConstants) == 96, "Water field shader ABI");
++}
++#endif

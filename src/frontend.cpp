@@ -27,6 +27,7 @@
 
 #include "wr64/display.h"
 #include "wr64/dlrewrite.h"
+#include "wr64/water.h"
 #include "wr64/rom.h"
 
 // The two globals recompui expects the port to define. It declares them extern
@@ -180,7 +181,7 @@ void build_launcher(recompui::LauncherMenu* menu) {
 
 namespace wr64::frontend {
 
-void init() {
+void init(bool auto_start) {
     // The program's own identity, as distinct from the game's. recompui shows
     // the name in the launcher and uses the id to decide where settings and
     // controller profiles are stored, so both must be set before anything is
@@ -199,6 +200,17 @@ void init() {
     recompui::register_primary_font("LatoLatin-Regular.ttf", "LatoLatin");
 
     recompui::register_launcher_init_callback(build_launcher);
+    if (auto_start) {
+        // Start after the launcher exists, on its UI update boundary. Starting
+        // before context creation leaves an invisible menu capturing the pad.
+        recompui::register_launcher_update_callback([pending = true](auto *) mutable {
+            if (!pending) return;
+            pending = false;
+            recompui::update_game_mod_id(wr64::kModGameId);
+            recomp::start_game(std::u8string{wr64::kGameId}, {});
+            recompui::hide_all_contexts();
+        });
+    }
 
     // The prefab tabs. Wave Race predates the Rumble Pak and has no gyro or
     // mouse control, so the general tab keeps only what applies.
@@ -208,7 +220,36 @@ void init() {
     general.has_mouse_sensitivity = false;
 
     recompui::config::create_general_tab(general);
-    recompui::config::create_graphics_tab();
+    auto &graphics = recompui::config::create_graphics_tab();
+    graphics.add_enum_option("water_quality", "Water", "Detailed lighting, refraction and persistent wakes. High adds reflections of visible scenery and fine spray. F9 compares with original water; F10 cycles diagnostic views.",
+        {{0, "original", "Original"}, {1, "modern", "Modern"}, {2, "high", "High"}}, 0u);
+    graphics.add_option_change_callback("water_quality", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::water::set_quality(static_cast<wr64::water::Quality>(std::get<uint32_t>(value)));
+        }
+    });
+    auto &water = recompui::config::create_config_tab("Water", "water", true);
+    water.add_enum_option("water_style", "Water style", "Modern keeps the richer, darker water. Classic preserves the original game's water colors, transparency and wave highlights while retaining modern effects. Applies to Modern and High water.",
+        {{0, "modern", "Modern"}, {1, "classic", "Classic"}}, 0u);
+    water.add_option_change_callback("water_style", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::water::set_style(static_cast<wr64::water::Style>(std::get<uint32_t>(value)));
+        }
+    });
+    water.add_enum_option("water_ripples", "Surface ripples", "Adjusts the fine surface ripples in Modern and High water. Normal preserves the current detail. The original game's waves and handling stay the same.",
+        {{0, "soft", "Soft"}, {1, "normal", "Normal"}, {2, "strong", "Strong"}}, 1u);
+    water.add_option_change_callback("water_ripples", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::water::set_ripple_detail(static_cast<wr64::water::RippleDetail>(std::get<uint32_t>(value)));
+        }
+    });
+    water.add_enum_option("water_spray", "Spray particles", "Show fine airborne spray around watercraft. Turn off to remove the added spray while keeping surface foam and wakes.",
+        {{0, "off", "Off"}, {1, "on", "On"}}, 1u);
+    water.add_option_change_callback("water_spray", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::water::set_spray_enabled(std::get<uint32_t>(value) != 0);
+        }
+    });
     recompui::config::create_sound_tab();
     recompui::config::create_controls_tab();
 
@@ -253,6 +294,26 @@ void init() {
         std::fprintf(stderr, "[wr64] no saved graphics settings; defaulting to fullscreen at the display\'s size\n");
     }
 
+    if (const char *fps=std::getenv("WR64_TEST_FPS")) {
+        const int value=std::atoi(fps);
+        if (value==30 || value==60 || value==120) {
+            auto gfx=ultramodern::renderer::get_graphics_config();
+            gfx.rr_option=ultramodern::renderer::RefreshRate::Manual;
+            gfx.rr_manual_value=value;
+            ultramodern::renderer::set_graphics_config(gfx);
+            std::fprintf(stderr,"[water-test] presentation override: %d Hz (not saved)\n",value);
+        }
+    }
+    if (const char *samples=std::getenv("WR64_TEST_MSAA")) {
+        const int value=std::atoi(samples);
+        if (value==1 || value==2 || value==4 || value==8) {
+            auto gfx=ultramodern::renderer::get_graphics_config();
+            using AA=ultramodern::renderer::Antialiasing;
+            gfx.msaa_option=value==8 ? AA::MSAA8X : value==4 ? AA::MSAA4X : value==2 ? AA::MSAA2X : AA::None;
+            ultramodern::renderer::set_graphics_config(gfx);
+            std::fprintf(stderr,"[water-test] MSAA override: %d samples (not saved)\n",value);
+        }
+    }
     std::fprintf(stderr, "[wr64] frontend ready: launcher, ROM picker and config menu\n");
     std::fflush(stderr);
 }

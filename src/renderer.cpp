@@ -76,7 +76,14 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
                          bool developer_mode) {
     RT64::Application::Core core{};
 
+#if defined(__APPLE__)
+    core.window.window = window_handle.window;
+    core.window.view = window_handle.view;
+#elif defined(_WIN32)
     core.window = window_handle.window;
+#else
+    core.window = window_handle;
+#endif
     core.RDRAM = rdram;
     core.DMEM = dmem_.data();
     core.IMEM = imem_.data();
@@ -119,7 +126,11 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
 
     app_ = std::make_unique<RT64::Application>(core, app_config);
 
-    const RT64::Application::SetupResult result = app_->setup(window_handle.thread_id);
+    uint32_t thread_id = 0;
+#if defined(_WIN32)
+    thread_id = window_handle.thread_id;
+#endif
+    const RT64::Application::SetupResult result = app_->setup(thread_id);
     setup_result = translate(result);
 
     if (result != RT64::Application::SetupResult::Success) {

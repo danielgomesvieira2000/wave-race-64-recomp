@@ -22,6 +22,7 @@ Run from the repository root, after the recompiler:
 """
 
 import re
+from toolchain import readelf_command
 import subprocess
 import sys
 from pathlib import Path
@@ -83,7 +84,7 @@ def patched_functions():
 
 def symbol_addresses():
     out = subprocess.run(
-        ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf", "-sW", ELF],
+        readelf_command() + ["-sW", ELF],
         capture_output=True, text=True, cwd=REPO).stdout
     addresses = {}
     for line in out.splitlines():

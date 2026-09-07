@@ -32,6 +32,9 @@ namespace wr64 {
 
 void pi_start_dma_hook(uint8_t* rdram, recomp_context* ctx);
 void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx);
+void water_task_submit_hook(uint8_t* rdram, recomp_context* ctx);
+void water_test_seed_hook(uint8_t* rdram, recomp_context* ctx);
+void water_test_course_hook(uint8_t* rdram, recomp_context* ctx);
 
 void register_overlays() {
     recomp::overlays::overlay_section_table_data_t sections{};
@@ -136,6 +139,11 @@ void register_runtime_functions() {
                                               vi_swap_buffer_hook);
     }
 
+    // USA Rev A: run after geometry construction and before task publication.
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x80046CF8), water_task_submit_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x80047E44), water_test_seed_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x8009345C), water_test_course_hook);
+
     std::fprintf(stderr,
                  "[wr64] registered %zu runtime-provided and %zu resident functions"
                  " (PI DMA hook at 0x%08X)\n",
@@ -153,6 +161,3 @@ size_t code_section_count() {
 }
 
 }  // namespace wr64
-
-
-

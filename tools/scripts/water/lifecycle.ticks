@@ -1,0 +1,21 @@
+# Original game input: pause/resume, camera changes, and same-course restart.
+@ticks
+90 100 START
+200 210 A
+320 330 A
+440 450 A
+560 570 A
+680 690 A
+800 810 A
+950 1390 A
+1200 1240 - 18 0
+1280 1320 - -25 0
+1400 1410 START # pause
+1470 1480 A # continue
+1490 1890 A # accelerate after resume
+1540 1550 CUP # original camera control
+1670 1680 CUP # another camera transition
+1900 1910 START # pause again
+1950 1960 DDOWN # select Restart
+2000 2010 A # run the original race initializer again
+2050 2600 A

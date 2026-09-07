@@ -26,6 +26,7 @@ Run from the repository root:
 """
 
 import re
+from toolchain import readelf_command
 import struct
 import subprocess
 import sys
@@ -34,7 +35,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "recomp" / "jal_targets.txt"
-READELF = ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf"]
+READELF = readelf_command()
 
 # Sections that load here overlap one another, so calls inside this window are
 # only meaningful within the calling section.

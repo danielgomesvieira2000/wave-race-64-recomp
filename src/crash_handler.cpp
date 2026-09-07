@@ -13,6 +13,7 @@
 // which is the first question worth answering about any crash in this project.
 
 #include "wr64/crash_handler.h"
+#include <cstdio>
 
 #if defined(_WIN32)
 
@@ -349,6 +350,16 @@ void install_crash_handler() {
 
 namespace wr64 {
 void install_crash_handler() {}
+void describe_code_address(const char* label, void* address) {
+    std::fprintf(stderr, "[wr64] %s: %p\n", label, address);
+}
+void watch_for_hang(const char*, int) {}
+void watch_done() {}
 }  // namespace wr64
+
+extern "C" void wr64_report_lookup_miss(unsigned int addr, void* return_address) {
+    std::fprintf(stderr, "[wr64] function lookup failed at 0x%08X (caller %p)\n",
+                 addr, return_address);
+}
 
 #endif
