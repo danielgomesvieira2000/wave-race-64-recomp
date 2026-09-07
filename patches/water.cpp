@@ -9,6 +9,8 @@ extern "C" void SysUtils_Srand(uint8_t *, recomp_context *);
 extern "C" void func_8009345C(uint8_t *, recomp_context *);
 
 namespace wr64 {
+void texture_capture_before_race(uint8_t *rdram);
+void texture_capture_after_race(uint8_t *rdram);
 void water_test_course_hook(uint8_t *rdram,recomp_context *ctx) {
     // Use the original complete race initializer before its asset loads and
     // player/camera setup; never change a loaded course from the renderer.
@@ -26,7 +28,9 @@ void water_test_course_hook(uint8_t *rdram,recomp_context *ctx) {
         MEM_H(0,int32_t(0x801CE60C))=1;
         MEM_H(0,int32_t(0x801CE60E))=1;
     }
+    texture_capture_before_race(rdram);
     func_8009345C(rdram,ctx);
+    texture_capture_after_race(rdram);
     // Also runs for a same-course restart, where course ID and the global
     // game counter may stay unchanged. Clear visual histories explicitly.
     water::reset_for_race();

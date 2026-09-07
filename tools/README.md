@@ -16,6 +16,9 @@ rest run wherever Python or PowerShell does.
 | `patch_librecomp.py` | Makes librecomp's function-lookup failures report the address they failed on. Idempotent. |
 | `patch_rsprecomp.py` | Makes RSPRecomp's indirect jumps ignore the low two bits of the target, as the hardware does. Idempotent. |
 | `patch_rt64.py` | Patches RT64 so this game's inset frame is kept at 4:3 for the HUD and presented without its black borders. Idempotent. |
+| `patch_texture_packs.py` | Connects the texture menu to RT64 and fixes replacement-texture mip selection. Idempotent. |
+| `bundled_assets.py` | Verifies and stages the manifest-pinned music and HD textures for local builds and releases. |
+| `build_macos.sh`, `package_macos.py` | Builds the native Apple Silicon app and bundles its libraries, music, and textures. |
 | `wsl_setup_splat.sh` | Prepares a Python environment for the vendored splat. |
 | `wsl_run_splat.sh` | Disassembles the dump with the config written for it. |
 | `wsl_run_splat_asmonly.sh` | Produces an assembly-only disassembly of the dump. |
@@ -34,6 +37,7 @@ rest run wherever Python or PowerShell does.
 | `gen_runtime_func_table.py` | Registers runtime-provided libultra functions in the address lookup. |
 | `fix_overlay_relocs.py` | Drops the relocation entries N64Recomp emits with no type. |
 | `package_release.ps1` | Stages a built tree into a release folder and zips it. See the script for what it deliberately leaves out. |
+| `package_release_macos.py` | Verifies a signed Mac app and its bundled assets before making a release archive. |
 
 ## Testing and diagnosis
 
@@ -46,3 +50,5 @@ rest run wherever Python or PowerShell does.
 | `wsl_reloc_types.sh` | Lists which relocation types the assembled ELF contains. |
 | `probe_delta.py`, `probe_layout.py`, `probe_piecewise.py` | Phase 01 measurements of how the Rev A segment map relates to the v1.0 dump, kept for the record. |
 | `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race. |
+| `textures/` | Texture capture inventory, decoding, atlas assembly, replacement refinement, and mip generation. See [HD texture workflow](../docs/HD_TEXTURES.md). |
+| `tests/test_bundled_assets.py`, `tests/test_default_options.py` | Check bundle integrity, fresh defaults, saved preferences, and texture-pack discovery. |

@@ -1,0 +1,3 @@
+# Versions used to prepare, reconstruct, and validate the local texture pack.
+Pillow==12.3.0
+numpy==2.5.3

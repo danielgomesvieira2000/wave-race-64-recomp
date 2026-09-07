@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 
+from bundled_assets import ROOT, stage as stage_bundled_assets
+
 
 def run(*args):
     subprocess.run(list(map(str, args)), check=True)
@@ -21,6 +23,11 @@ def dependencies(path):
 def main():
     app = Path(sys.argv[1]).resolve()
     executable = app / "Contents/MacOS/WaveRace64Recomp"
+    if not executable.is_file():
+        raise SystemExit(f"No built application at {app}")
+    # Refresh the reviewed replacement packs before signing. This also covers
+    # local bundles built before the assets were added to CMake staging.
+    stage_bundled_assets(ROOT / "assets", app / "Contents/Resources/assets")
     frameworks = app / "Contents/Frameworks"
     frameworks.mkdir(parents=True, exist_ok=True)
     pending = [executable]

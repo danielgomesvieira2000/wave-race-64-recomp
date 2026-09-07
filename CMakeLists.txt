@@ -86,6 +86,16 @@ if(WR64_WITH_FRONTEND)
             "git submodule update --init --recursive")
     endif()
 
+    # The host texture controls borrow the frontend's RT64 application. Apply
+    # this small bridge on every platform, including direct CMake/Windows builds.
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/patch_texture_packs.py"
+        RESULT_VARIABLE WR64_TEXTURE_PATCH_RESULT)
+    if(NOT WR64_TEXTURE_PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "Failed to apply the RecompFrontend texture accessor patch")
+    endif()
+
     # On Windows the frontend expects SDL2 at ${sdl2_SOURCE_DIR}, which is what
     # FetchContent would have set had it fetched SDL2 itself. This project takes
     # SDL2 from the copy RT64 already vendors -- two SDL2s in one process is not
@@ -210,7 +220,7 @@ set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 # overlays.cpp cannot even compile without recomp_overlays.inl.
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp
-                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp src/water.cpp src/music.cpp)
+                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp src/water.cpp src/music.cpp src/textures.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
@@ -245,18 +255,34 @@ target_include_directories(WaveRace64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    # These tracked replacements are enabled in a fresh install. Refuse a
+    # partial checkout instead of silently producing a bundle without them.
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bundled_assets.py"
+                --assets "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        RESULT_VARIABLE WR64_BUNDLED_ASSETS_RESULT
+        OUTPUT_QUIET)
+    if(NOT WR64_BUNDLED_ASSETS_RESULT EQUAL 0)
+        message(FATAL_ERROR "Bundled music/texture assets failed validation. Restore the tracked assets and retry.")
+    endif()
     if(APPLE)
-        set(WR64_MUSIC_ASSET_DIR "$<TARGET_BUNDLE_CONTENT_DIR:WaveRace64Recomp>/Resources/assets/music")
+        set(WR64_BUNDLED_ASSET_DIR "$<TARGET_BUNDLE_CONTENT_DIR:WaveRace64Recomp>/Resources/assets")
     else()
-        set(WR64_MUSIC_ASSET_DIR "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/music")
+        set(WR64_BUNDLED_ASSET_DIR "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets")
     endif()
     file(GLOB WR64_MUSIC_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/music/*")
-    # Re-stage the bundle when recordings, loop metadata, or credits change.
+    file(GLOB_RECURSE WR64_TEXTURE_FILES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/nano-banana-2/*")
+    # Re-stage when recordings, texture images, manifests, or credits change.
     set_property(SOURCE src/music.cpp APPEND PROPERTY OBJECT_DEPENDS "${WR64_MUSIC_FILES}")
+    set_property(SOURCE src/textures.cpp APPEND PROPERTY OBJECT_DEPENDS
+        "${WR64_TEXTURE_FILES};${CMAKE_CURRENT_SOURCE_DIR}/tools/bundled_assets.py")
     add_custom_command(TARGET WaveRace64Recomp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/assets/music" "${WR64_MUSIC_ASSET_DIR}"
-        COMMENT "Staging replacement music and credits")
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bundled_assets.py"
+                --assets "${CMAKE_CURRENT_SOURCE_DIR}/assets" --stage "${WR64_BUNDLED_ASSET_DIR}"
+        COMMENT "Validating and staging replacement music, HD textures, and credits"
+        VERBATIM)
 endif()
 
 if(WR64_WITH_RUNTIME)

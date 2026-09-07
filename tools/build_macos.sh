@@ -25,7 +25,7 @@ if [[ -n "${WR64_DEPENDENCY_PREFIX:-}" ]]; then
         "-DFREETYPE_LIBRARY_RELEASE=$WR64_DEPENDENCY_PREFIX/lib/libfreetype.dylib"
     )
 fi
-for patch in patch_rt64.py patch_n64recomp.py patch_rsprecomp.py patch_librecomp.py patch_macos.py patch_water.py patch_runtime_shutdown.py; do
+for patch in patch_rt64.py patch_n64recomp.py patch_rsprecomp.py patch_librecomp.py patch_macos.py patch_water.py patch_runtime_shutdown.py patch_texture_packs.py; do
     python3 "tools/$patch"
 done
 cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -G Ninja \

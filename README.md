@@ -94,7 +94,8 @@ Main Theme and Dolphin Park, plus seven tracks from Retro Game Remix's
 *Dolphin Park* album. The build bundles the recordings, loop settings, and
 [artist credits](assets/music/CREDITS.md). They are available under
 **Settings → Sound → Music → Custom**, with a separate custom-music volume
-control. **Original** restores the cartridge soundtrack.
+control. **Custom is enabled by default.** **Original** restores the cartridge
+soundtrack.
 
 All courses have replacements; Options and first-place results also have
 assigned recordings. Effects and announcer commands keep using the original
@@ -102,16 +103,35 @@ audio. Local recordings can override individual bundled tracks. See
 [the track mapping and setup guide](docs/MUSIC.md). These additions follow the
 `v0.4.0-macos.1` binary release and require a build of the current source.
 
+## Bundled HD textures
+
+This fork includes the reviewed [HD texture pack](assets/textures/nano-banana-2),
+with **1,828 replacement mappings**. **HD is enabled by default** under
+**Settings → Graphics → Textures**; choose Original to use the cartridge artwork.
+The build bundles the textures alongside the music, so no separate pack install
+is needed.
+
+The pack includes refined HUD fonts and signs, both Wave Race logos, eight
+helmet portraits with dark visors, sharper rank and buoy icons, ramp wood,
+island materials, and improved jet-ski side panels for the primary and opponent
+models. Most textures are 4×; the focused portraits, icons, terrain, wood and
+secondary craft panels use reviewed 8× replacements. World materials have
+complete mip chains. Rejected generated candidates retain source-preserving
+replacements, so coverage does not imply that every material gained new detail.
+See [credits](assets/textures/nano-banana-2/CREDITS.md) and
+[coverage and reconstruction details](docs/HD_TEXTURES.md).
+
 ## Modern water preview
 
 [![Watch the modern water showcase on YouTube](https://i.ytimg.com/vi/ikUGbLmPbvA/hqdefault.jpg)](https://www.youtube.com/watch?v=ikUGbLmPbvA)
 
 [Watch the water shader in motion on YouTube](https://www.youtube.com/watch?v=ikUGbLmPbvA).
 
-The source build includes an optional water renderer. In **Graphics → Water**,
+The source build enables **High water with Modern appearance by default**.
+In **Graphics → Water**,
 choose **Modern** for detailed ripples, sun/sky lighting, depth color,
 refraction, shoreline wash and persistent wakes, or **High** to add screen-space reflections
-and fine spray. **Original** remains the default. Press **F9** for a comparison
+and fine spray. Choose **Original** to restore original rendering. Press **F9** for a comparison
 from the current camera; **F10** cycles the rendering diagnostics.
 
 The **Water** tab adds **Modern / Classic** appearance and **Soft / Normal /
@@ -149,21 +169,24 @@ include/    its headers
 patches/    replacements and wrappers for individual game functions
 recomp/     N64Recomp configuration
 tools/      the build pipeline's scripts, and diagnostics (see tools/README.md)
-assets/     the launcher's stylesheet, icons and fonts
+assets/     launcher assets, replacement music, HD textures and water profiles
 docs/       the build guide, the phase plan, and what each phase found
 lib/        upstream submodules
 ```
 
-Everything derived from a dump -- the disassembly, `RecompiledFuncs/`, the
-ELF -- is generated locally and refused by `.gitignore`. So is the splat
-config, which is derived from the reference decompilation's.
+ROM dumps, disassembly, `RecompiledFuncs/`, and the ELF are generated locally and
+refused by `.gitignore`. So is the splat config derived from the reference
+decompilation. The reviewed replacement artwork is included separately under
+`assets/textures`; raw texture captures and generation work files remain local.
 
 ## Licensing
 
 The project's own code and artwork are under the MIT License (`LICENSE`).
-The separately credited recordings in `assets/music` are excluded from that
-license; their recordings and compositions remain the work of their respective
-owners. See [music credits](assets/music/CREDITS.md).
+The separately credited recordings in `assets/music` and replacement artwork
+in `assets/textures` are excluded from that license; the underlying recordings,
+compositions and game artwork remain the work of their respective owners. See
+[music credits](assets/music/CREDITS.md) and
+[texture credits](assets/textures/nano-banana-2/CREDITS.md).
 
 A built executable is another matter. It links N64ModernRuntime statically,
 and N64ModernRuntime is **GPL-3.0**, so the executable as a whole is a
@@ -183,7 +206,7 @@ generated with Claude as well. The work was done in phases (see
 [docs/PLAN.md](docs/PLAN.md)), and each phase's findings are written up under
 `docs/`, in the same way: by Claude, as the work was done.
 
-This fork adds native macOS support and the optional modern water renderer,
+This fork adds native macOS support, modern water, replacement music and HD textures,
 developed with Codex under Brian Tate's direction and validated through native
 playtesting and deterministic replays.
 

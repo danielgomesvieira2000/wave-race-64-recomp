@@ -29,6 +29,7 @@
 #include "wr64/dlrewrite.h"
 #include "wr64/water.h"
 #include "wr64/music.h"
+#include "wr64/textures.h"
 #include "wr64/rom.h"
 
 // The two globals recompui expects the port to define. It declares them extern
@@ -73,6 +74,10 @@ public:
         : rdram_(rdram), inner_(std::move(inner)) {
         setup_result = inner_->get_setup_result();
         chosen_api = inner_->get_chosen_api();
+        if (setup_result == ultramodern::renderer::SetupResult::Success && inner_->valid()) {
+            application_ = static_cast<recompui::renderer::RT64Context*>(inner_.get())->application();
+        }
+        if (application_) wr64::textures::setup(*application_, config_directory());
     }
 
     bool valid() override { return inner_->valid(); }
@@ -87,13 +92,20 @@ public:
         return inner_->update_config(old_config, new_config);
     }
     void enable_instant_present() override { inner_->enable_instant_present(); }
-    void send_dummy_workload(uint32_t fb_address) override { inner_->send_dummy_workload(fb_address); }
-    void update_screen() override { inner_->update_screen(); }
-    void shutdown() override { inner_->shutdown(); }
+    void send_dummy_workload(uint32_t fb_address) override {
+        if (application_) wr64::textures::apply(*application_);
+        inner_->send_dummy_workload(fb_address);
+    }
+    void update_screen() override {
+        if (application_) wr64::textures::apply(*application_);
+        inner_->update_screen();
+    }
+    void shutdown() override { inner_->shutdown(); application_ = nullptr; }
     uint32_t get_display_framerate() const override { return inner_->get_display_framerate(); }
     float get_resolution_scale() const override { return inner_->get_resolution_scale(); }
 
     void send_dl(const OSTask* task) override {
+        if (application_) wr64::textures::apply(*application_);
         const uint32_t rewritten =
             wr64::dlrewrite::rewrite(rdram_, static_cast<uint32_t>(task->t.data_ptr));
         if (rewritten == 0) {
@@ -108,6 +120,7 @@ public:
 private:
     uint8_t* rdram_;
     std::unique_ptr<ultramodern::renderer::RendererContext> inner_;
+    RT64::Application* application_ = nullptr;
 };
 
 std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
@@ -222,8 +235,15 @@ void init(bool auto_start) {
 
     recompui::config::create_general_tab(general);
     auto &graphics = recompui::config::create_graphics_tab();
+    graphics.add_enum_option("texture_quality", "Textures", "Use the bundled HD texture pack or your installed replacement pack. Textures without a replacement keep their original appearance.",
+        {{0, "original", "Original"}, {1, "hd", "HD"}}, 1u);
+    graphics.add_option_change_callback("texture_quality", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::textures::set_enabled(std::get<uint32_t>(value) != 0);
+        }
+    });
     graphics.add_enum_option("water_quality", "Water", "Detailed lighting, refraction and persistent wakes. High adds reflections of visible scenery and fine spray. F9 compares with original water; F10 cycles diagnostic views.",
-        {{0, "original", "Original"}, {1, "modern", "Modern"}, {2, "high", "High"}}, 0u);
+        {{0, "original", "Original"}, {1, "modern", "Modern"}, {2, "high", "High"}}, 2u);
     graphics.add_option_change_callback("water_quality", [](auto value, auto, auto context) {
         if (context != recomp::config::OptionChangeContext::Temporary) {
             wr64::water::set_quality(static_cast<wr64::water::Quality>(std::get<uint32_t>(value)));
@@ -257,7 +277,7 @@ void init(bool auto_start) {
             wr64::music::set_volume(std::get<double>(value));
         }
     });
-    sound.add_enum_option("music_replacements", "Music", "Use recordings installed in your music folder. Tracks without a replacement keep the original music. Sound effects and the announcer are preserved.",
+    sound.add_enum_option("music_replacements", "Music", "Use the bundled recordings or replacements installed in your music folder. Tracks without a replacement keep the original music. Sound effects and the announcer are preserved.",
         {{0, "original", "Original"}, {1, "custom", "Custom"}}, 1u);
     sound.add_option_change_callback("music_replacements", [](auto value, auto, auto context) {
         if (context != recomp::config::OptionChangeContext::Temporary) {

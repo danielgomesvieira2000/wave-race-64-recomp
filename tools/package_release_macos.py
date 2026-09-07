@@ -10,6 +10,8 @@ import re
 import shutil
 import subprocess
 
+from bundled_assets import validate as validate_bundled_assets
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -29,6 +31,9 @@ def main():
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.version):
         parser.error("Version must contain only letters, numbers, dots, underscores, or hyphens")
     app = args.app.resolve()
+    # A valid signature alone can describe an older, incomplete asset bundle.
+    # Compare to the tracked release assets without modifying the signed app.
+    asset_manifest = validate_bundled_assets(app / "Contents/Resources/assets", ROOT / "assets")
     run("codesign", "--verify", "--deep", "--strict", app)
     run("git", "diff", "HEAD", "--quiet", "--ignore-submodules=dirty", cwd=ROOT)
     name = f"WaveRace64Recomp-{args.version}-apple-silicon"
@@ -39,6 +44,7 @@ def main():
         parser.error(f"Release output already exists: {stage}")
     stage.mkdir(parents=True)
     run("ditto", "--norsrc", "--noextattr", "--noqtn", app, stage / app.name)
+    validate_bundled_assets(stage / app.name / "Contents/Resources/assets", ROOT / "assets")
     for filename in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
         shutil.copyfile(ROOT / filename, stage / filename)
     shutil.copyfile(ROOT / "docs/MACOS_RELEASE.md", stage / "START_HERE.md")
@@ -88,6 +94,7 @@ def main():
         "architecture": architecture,
         "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
         "signing": "ad-hoc; not notarized",
+        "bundled_assets": asset_manifest,
         "submodules": submodules.splitlines(),
         "patch_instructions": "Apply tools/build_macos.sh patches before building; see docs/MACOS.md.",
     }

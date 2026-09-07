@@ -2,7 +2,9 @@
 
 The Apple Silicon build uses SDL2, RT64's Metal renderer, the RecompFrontend
 launcher/settings UI, and the recompiled RSP audio. It builds a double-clickable
-application and bundles its non-system dynamic libraries.
+application and bundles its non-system dynamic libraries, replacement soundtrack,
+and reviewed HD texture pack. New profiles start with Custom music, HD textures,
+and High water with Modern appearance enabled. Existing saved choices persist.
 
 For a ready-to-run download, see [the macOS release guide](MACOS_RELEASE.md).
 

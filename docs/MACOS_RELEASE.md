@@ -15,8 +15,11 @@ based on upstream 0.4.0 with native Metal support and configurable modern water.
   other regions, and Shindou are incompatible. The required big-endian `.z64`
   SHA-1 is `508dfc2d4caa42b6f6de5263d0aed5e44ac7966a`.
 
-The download includes the required libraries; Homebrew and Xcode are not needed
-to play. No ROM, game assets, saves, or personal settings are included.
+Packages built from the current source include the required libraries,
+replacement music and the reviewed HD texture pack; Homebrew and Xcode are not
+needed to play. No ROM, original asset dumps, saves or personal settings are
+included. The older `v0.4.0-macos.1` download predates the bundled music/texture
+updates; use a package built from the current source for these additions.
 
 ## Install and play
 
@@ -34,8 +37,10 @@ in the settings menu.
 
 ## Water settings
 
-In **Graphics → Water**, choose **Modern** or **High**, then Apply. High adds
-screen-space reflections and fine spray; Original remains the default.
+Current source builds default to **High** water with **Modern** appearance.
+High adds screen-space reflections and fine spray. **Graphics → Water** also
+offers Modern and Original rendering. HD textures and Custom music are enabled
+by default in the Graphics and Sound tabs. Saved explicit choices are respected.
 
 The **Water** tab provides Modern/Classic appearance, Soft/Normal/Strong surface
 ripples, and Spray particles Off/On. Classic retains the original palette and

@@ -14,8 +14,10 @@
 // no-op for the same reason.
 
 #include "wr64/renderer.h"
+#include "wr64/textures.h"
 
 #include <cstdio>
+#include <librecomp/game.hpp>
 
 #if defined(_WIN32)
 // RT64 reaches dxcapi.h from here, and that header needs the COM interfaces
@@ -141,6 +143,7 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
     }
 
     chosen_api = ultramodern::renderer::GraphicsApi::Auto;
+    textures::setup(*app_, recomp::get_config_path());
     valid_ = true;
     (void)developer_mode;
 }
@@ -174,6 +177,7 @@ void RT64Context::send_dl(const OSTask* task) {
     if (!valid_) {
         return;
     }
+    textures::apply(*app_);
 
     // Boot bring-up tracing: the first display list is the moment the game
     // stops initialising and starts drawing, which is the single most useful
@@ -220,6 +224,7 @@ void RT64Context::send_dummy_workload(uint32_t fb_address) {
 
 void RT64Context::update_screen() {
     if (valid_) {
+        textures::apply(*app_);
         static uint64_t frames = 0;
         // A steady frame count is how we tell "presenting an empty screen" from
         // "stalled before the first present" -- the two look identical to a user

@@ -18,7 +18,7 @@
 
 namespace wr64::water {
 namespace {
-std::atomic<uint32_t> selected{0};
+std::atomic<uint32_t> selected{uint32_t(Quality::High)};
 std::atomic<uint32_t> selectedStyle{uint32_t(Style::Modern)};
 std::atomic<uint32_t> selectedRipples{uint32_t(RippleDetail::Normal)};
 std::atomic<bool> selectedSpray{true};
