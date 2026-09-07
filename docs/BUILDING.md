@@ -1,5 +1,10 @@
 # Building
 
+This is the procedure. When a step's *reason* matters -- why the ELF is padded,
+why the recompiler runs under Linux, why the audio microcode loads at `0x1080` --
+[PORTING.md](PORTING.md) explains it, and [GAME-INTERNALS.md](GAME-INTERNALS.md)
+records what the game itself turned out to be.
+
 ## Requirements
 
 | Tool | Version | Why |

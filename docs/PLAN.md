@@ -226,3 +226,9 @@ every screen, and a full championship shows no interpolation artefact.
 - Generated code is never hand-edited. If the output is wrong, fix the config
   or write a script in `tools/`.
 - Every phase is entered only through the previous phase's gate.
+- The technical reference is kept current. Any change that discovers a fact
+  about the game, or fixes something in the toolchain, runtime or renderer,
+  updates `docs/GAME-INTERNALS.md` or `docs/PORTING.md` in the same commit --
+  game facts in the first, port facts in the second. The phase findings stay as
+  they are: they are the working record, including the wrong turns, and the
+  reference is what someone else can use without reading it.

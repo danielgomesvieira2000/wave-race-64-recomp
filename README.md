@@ -98,13 +98,37 @@ patches/    replacements and wrappers for individual game functions
 recomp/     N64Recomp configuration
 tools/      the build pipeline's scripts, and diagnostics (see tools/README.md)
 assets/     the launcher's stylesheet, icons and fonts
-docs/       the build guide, the phase plan, and what each phase found
+docs/       the build guide, the technical reference, the phase plan and findings
 lib/        upstream submodules
 ```
 
 Everything derived from a dump -- the disassembly, `RecompiledFuncs/`, the
 ELF -- is generated locally and refused by `.gitignore`. So is the splat
 config, which is derived from the reference decompilation's.
+
+## Technical documentation
+
+Two reference documents write down what this port reverse engineered or ran
+into, for anyone working on the Wave Race 64 decompilation or on another N64
+port. They are kept current as the port changes.
+
+- **[docs/GAME-INTERNALS.md](docs/GAME-INTERNALS.md)** -- the game. Cartridge
+  identity and how Rev A relates to v1.0, the code and overlay layout, the main
+  loop's ordering, the game-state machine and its jump tables, the overlay table
+  format and the two loading paths, how a frame's display list is built, the
+  303x199 drawn region, how the sky and water geometry is rebuilt each frame,
+  the video frame divider, and the audio microcode: its IMEM load address, its
+  command jump table, its DMEM map and its command-list buffering.
+- **[docs/PORTING.md](docs/PORTING.md)** -- the toolchain and runtime. Getting a
+  byte-exact ELF out of splat, N64Recomp's input modes and its failure messages,
+  overlay dispatch by runtime lookup and everything that breaks when you turn it
+  on, the librecomp/ultramodern harness, recompiling RSP audio microcode, the
+  RT64 patches and the display-list rewriter behind widescreen and interpolation,
+  the diagnostics that were worth building, and the measurement traps that cost
+  the most time.
+
+The phase findings under `docs/` are the working record those two were distilled
+from; they keep the wrong turns, which are often the useful part.
 
 ## Licensing
 
