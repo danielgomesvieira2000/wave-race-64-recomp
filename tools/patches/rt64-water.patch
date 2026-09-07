@@ -1459,7 +1459,7 @@ new file mode 100644
 +    if (std::getenv("WR64_WATER_PROFILE") && device->getCapabilities().queryPools) profilePool = device->createQueryPool(128);
 +    descriptorSet = std::make_unique<WaterDescriptorSet>(device);
 +    RenderPipelineLayoutBuilder builder;
-+    builder.begin();
++    builder.begin(false, true); // Water vertices use the input assembler on D3D12.
 +    builder.addPushConstant(0, 0, sizeof(interop::WaterPushConstants), RenderShaderStageFlag::VERTEX | RenderShaderStageFlag::PIXEL);
 +    builder.addDescriptorSet(*descriptorSet);
 +    builder.end();

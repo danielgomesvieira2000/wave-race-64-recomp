@@ -12,6 +12,7 @@ rest run wherever Python or PowerShell does.
 | Script | Purpose |
 |---|---|
 | `check_toolchain.ps1` | Reports which build tools are present on Windows. |
+| `build_windows.ps1` | Configures the Visual Studio/Clang environment and builds the full Windows game from generated game/audio sources. `-Package` also creates a release ZIP. |
 | `patch_n64recomp.py` | Exposes N64Recomp's `use_lookup_for_all_function_calls` as a config option, which overlay dispatch needs. Idempotent. |
 | `patch_librecomp.py` | Makes librecomp's function-lookup failures report the address they failed on. Idempotent. |
 | `patch_rsprecomp.py` | Makes RSPRecomp's indirect jumps ignore the low two bits of the target, as the hardware does. Idempotent. |

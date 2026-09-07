@@ -77,6 +77,78 @@ pipeline scripts generate it when it is missing.
 
 ## Configure and build
 
+### Full Windows build with HD textures, modern water and replacement music
+
+After generating `RecompiledFuncs/` **including `aspMain_rsp.cpp`**, run this
+from PowerShell in the repository:
+
+```powershell
+pwsh -File tools/build_windows.ps1 -Package
+```
+
+The script locates Visual Studio (preferring 2022), loads its x64 SDK/toolchain,
+uses `clang-cl`, applies the required patches and builds with all three runtime
+options enabled. It validates and bundles all 1,828 HD texture mappings and nine
+replacement recordings. High water, Modern appearance, HD textures and Custom
+music are the first-run defaults. The executable is
+`build-windows/WaveRace64Recomp.exe`; the ZIP is under `dist/`.
+WSL is only a build-time dependency; the finished game runs natively on Windows.
+
+For the first source generation, install these dependencies inside Ubuntu WSL:
+
+```sh
+sudo apt-get update
+sudo apt-get install cmake ninja-build clang binutils-mips-linux-gnu python3-venv python3-dev build-essential
+```
+
+In WSL, change to this repository's directory (for example,
+`/mnt/e/Github/wave-race-64-recomp`). Initialize its submodules and clone the
+reference decompilation as described above. The validated reference revision is
+`a51b38a2aaef68da10ea1e47247e70be3b1d4c70`. Then run:
+
+```sh
+python3 -m venv "$HOME/wr64venv"
+"$HOME/wr64venv/bin/pip" install PyYAML==6.0.3 pylibyaml==0.1.0 tqdm==4.67.1 \
+    intervaltree==3.1.0 colorama==0.4.6 spimdisasm==1.42.4 rabbitizer==1.16.2 \
+    pygfxd==1.0.5 n64img==0.3.3 crunch64==0.6.2
+python3 tools/patch_n64recomp.py
+python3 tools/patch_rsprecomp.py
+cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+cmake --build build-tools --target N64RecompCLI RSPRecomp -j 12
+"$HOME/wr64venv/bin/python" tools/generate_game.py "/mnt/e/path/to/Wave Race 64 (USA) (Rev A).z64"
+```
+
+The generator verifies the ROM hash and the assembled code against the ROM
+before recompiling both CPU and audio microcode. Return to PowerShell for
+`build_windows.ps1`. Do not reuse a Windows CMake tool build directory for the
+Linux recompiler or vice versa.
+
+The replay runner also accepts a Windows executable or build directory:
+
+```powershell
+python tools/run_water_replay.py --app build-windows --quality high --course 1 --mode trials --through 1500 --output build-windows-qa/high
+```
+
+Windows replay reports leave the unsupported RSS measurement as `null`; the
+stop tick, exit status, game state and renderer frame traces are still checked.
+
+The Windows build was smoke-tested on an NVIDIA RTX 5090 using Direct3D 12,
+60 Hz presentation and 4x MSAA. The Original and High replays exited cleanly;
+all 49 gameplay checkpoints through tick 1410 matched. The High run used the
+shipped HD/Custom/Modern defaults, loaded all 1,828 texture mappings and nine
+recordings, and reached Sunny Beach. This is a startup/race smoke test, not a
+complete playthrough of every mode or course. Vulkan shader compilation passes,
+but this Windows run did not test Vulkan playback.
+
+Two source-build fixes are included: the CPU recompiler skips graphics/audio
+microcode labels emitted by splat's `textbin` segments (audio is compiled by
+RSPRecomp), and the water graphics pipeline enables the input assembler in its
+Direct3D 12 root signature. Without the latter, High water could compile but
+crash when binding its first water pipeline.
+
+### Individual build stages
+
 The project is phase-gated so a partially finished tree always builds. Phase 00
 needs no options:
 

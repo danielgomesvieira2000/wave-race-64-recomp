@@ -106,6 +106,13 @@ stubs = [
 # dropped by hand. Nothing is lost -- the runtime provides the whole routine.
 ignored = [
     "func_800CB0A8",
+    # Splat's textbin labels are typed as functions, but these are RSP
+    # microcode blobs, not R4300 CPU functions. RT64 handles graphics and
+    # RSPRecomp separately translates aspMain for audio. Preserve their bytes
+    # in the ROM/ELF without feeding them to the CPU recompiler. rspboot is
+    # already in N64Recomp's built-in ignored list.
+    "gspFast3DTextStart",
+    "aspMainTextStart",
     # Replaced by patches/dma.cpp with a synchronous transfer, so loaded code is
     # in place before the call returns rather than after a queue wait.
     "game_dma_copy"

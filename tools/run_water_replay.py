@@ -35,7 +35,7 @@ def main():
     p.add_argument("--through", type=int, default=1500)
     p.add_argument("--timeout", type=float, default=240)
     p.add_argument("--script", type=Path, default=ROOT / "tools/scripts/water/bringup.ticks")
-    p.add_argument("--app", type=Path, default=ROOT / "build-macos/WaveRace64Recomp.app", help="test a separately staged native bundle")
+    p.add_argument("--app", type=Path, default=ROOT / "build-macos/WaveRace64Recomp.app", help="native app bundle, Windows build directory, or executable")
     p.add_argument("--rom", type=Path, default=ROOT / "reference/wr64-decomp/baserom.us.rev1.z64")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--stats", action="store_true", help="enable GPU field readback; use separate runs for final timing")
@@ -84,7 +84,15 @@ def main():
         env["WR64_WATER_PROFILE"] = str(out / "passes.csv")
     if args.motion_trace:
         env["WR64_WATER_MOTION_TRACE"] = str(out / "motion.csv")
-    executable = args.app.resolve() / "Contents/MacOS/WaveRace64Recomp"
+    app = args.app.resolve()
+    if app.is_file():
+        executable = app
+    elif app.suffix == ".app":
+        executable = app / "Contents/MacOS/WaveRace64Recomp"
+    else:
+        executable = app / ("WaveRace64Recomp.exe" if os.name == "nt" else "WaveRace64Recomp")
+    assets = (executable.parent.parent / "Resources/assets" if executable.parent.name == "MacOS" and executable.parent.parent.name == "Contents"
+              else executable.parent / "assets")
     settings = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     settings["water_overrides"] = {"quality": env.get("WR64_WATER"),
                                    "style": env.get("WR64_WATER_STYLE"),
@@ -94,11 +102,11 @@ def main():
         return hashlib.sha256(file.read_bytes()).hexdigest()
     settings["executable_sha256"] = digest(executable)
     settings["script_sha256"] = digest(args.script.resolve())
-    settings["profiles_sha256"] = digest(args.profiles.resolve() if args.profiles else executable.parent.parent / "Resources/assets/water/profiles.json")
+    settings["profiles_sha256"] = digest(args.profiles.resolve() if args.profiles else assets / "water/profiles.json")
     (out / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
     started = time.monotonic()
     reached = False
-    peak_rss_kib = 0
+    peak_rss_kib = None if os.name == "nt" else 0
     with (out / "runtime.log").open("w") as log:
         child = subprocess.Popen([str(executable), str(args.rom.resolve())], cwd=ROOT, env=env,
                                  stdout=log, stderr=subprocess.STDOUT)
@@ -114,9 +122,10 @@ def main():
                     except subprocess.TimeoutExpired:
                         pass
                     break
-                sample = subprocess.run(["ps", "-o", "rss=", "-p", str(child.pid)], capture_output=True, text=True)
-                if sample.stdout.strip().isdigit():
-                    peak_rss_kib = max(peak_rss_kib, int(sample.stdout))
+                if os.name != "nt":
+                    sample = subprocess.run(["ps", "-o", "rss=", "-p", str(child.pid)], capture_output=True, text=True)
+                    if sample.stdout.strip().isdigit():
+                        peak_rss_kib = max(peak_rss_kib, int(sample.stdout))
                 time.sleep(0.5)
         finally:
             status = child.poll()

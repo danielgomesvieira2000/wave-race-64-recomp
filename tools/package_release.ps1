@@ -5,8 +5,8 @@
 # What goes in: the executable, the three DLLs it cannot start without (SDL2,
 # dxcompiler, dxil), assets/ (menus, replacement music, HD textures), this project's
 # LICENSE, the third-party notices and the README. The debug symbols go into a
-# second zip: at 80 MB they are five times the rest of the package, and only a
-# crash report needs them. Nothing here is a ROM, and the script refuses to
+# second zip, which is only needed to investigate crash reports. Nothing here
+# is a ROM, and the script refuses to
 # continue if it finds one where it is staging.
 #
 # What the executable is. It contains the game's code, statically recompiled
@@ -17,6 +17,7 @@
 
 param(
     [string]$BuildDir = "build-fe",
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$Version = "0.1.0",
     [string]$OutDir = "dist"
 )
@@ -36,8 +37,13 @@ if (-not (Test-Path $exe)) {
 if ($LASTEXITCODE -ne 0) { throw "built music/texture assets are missing, corrupt, or stale; rebuild first" }
 
 $name = "WaveRace64Recomp-$Version-windows-x64"
-$stage = Join-Path $OutDir $name
-if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+$outFull = [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $root $OutDir }))
+$stage = [System.IO.Path]::GetFullPath((Join-Path $outFull $name))
+if (-not $stage.StartsWith($outFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar,
+                         [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "release staging path is outside the output directory: $stage"
+}
+if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 New-Item -ItemType Directory -Force $stage | Out-Null
 
 $files = @(
@@ -53,6 +59,7 @@ foreach ($f in $files) {
     if (-not (Test-Path $f)) { throw "missing $f" }
     Copy-Item $f $stage
 }
+Copy-Item -LiteralPath 'docs/WINDOWS_RELEASE.md' -Destination (Join-Path $stage 'INSTALLATION.md')
 Copy-Item -Recurse "$BuildDir\assets" (Join-Path $stage "assets")
 & python "tools/bundled_assets.py" --assets (Join-Path $stage "assets") --reference "assets"
 if ($LASTEXITCODE -ne 0) { throw "staged music/texture assets failed validation" }

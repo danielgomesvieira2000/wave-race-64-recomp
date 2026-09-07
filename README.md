@@ -24,20 +24,22 @@ and controller support. It is unofficial and not affiliated with Nintendo.
 
 ## Getting it
 
+**Windows (x64).** Download `WaveRace64Recomp-0.4.0-windows-x64.zip` from
+[this fork's latest release](https://github.com/elliotttate/wave-race-64-recomp/releases/latest),
+extract the entire ZIP, and run `WaveRace64Recomp.exe`. Pick your USA Rev A dump
+in the launcher. HD textures, the replacement soundtrack, High/Modern water,
+and the required DLLs are bundled. See [installation and controls](docs/WINDOWS_RELEASE.md).
+
 **macOS (Apple Silicon).** Download the ZIP from
 [this fork's latest release](https://github.com/elliotttate/wave-race-64-recomp/releases/latest),
 extract it, and drag `WaveRace64Recomp.app` to Applications. Requires macOS 15
 or later and your USA Rev A dump. Libraries are bundled; no build tools are
 needed. See [installation and first-launch instructions](docs/MACOS_RELEASE.md).
 
-**Download.** The upstream release for Windows x64 is on the
-[original project's Releases page](https://github.com/danielgomesvieira2000/wave-race-64-recomp/releases): unzip,
-run `WaveRace64Recomp.exe`, pick your dump in the launcher. That is all. The
-zip contains the program, the three DLLs it needs, and the menu's fonts and
-icons; it contains none of the game's assets, which are loaded from your dump
-each time it runs. What it does contain is the game's *code*, recompiled --
-that is what a recompiled port is. See *Licensing* below before
-redistributing it.
+The [original project's releases](https://github.com/danielgomesvieira2000/wave-race-64-recomp/releases)
+are also available. This fork's packages include replacement artwork and music;
+original cartridge data is loaded from your dump each time the game runs.
+See *Licensing* below before redistributing it.
 
 **Build it yourself.** [docs/BUILDING.md](docs/BUILDING.md) takes you from
 installing the toolchain on Windows to the first race: clone with submodules,
@@ -148,8 +150,9 @@ ripples use irregular wind-stretched patterns to avoid repeating crossed bands.
 
 The original wave mesh and game physics remain authoritative. Water assets
 are procedural and course settings are in `assets/water/profiles.json`.
-Metal is the runtime tested backend; SPIR-V and DXIL compilation is checked
-separately. See [the implementation and evidence](docs/MODERN_WATER_PROGRESS.md)
+Metal and Windows Direct3D 12 have been runtime tested; SPIR-V and DXIL shader
+compilation also pass. See [Windows validation](docs/WINDOWS_RELEASE.md) and
+[the implementation and evidence](docs/MODERN_WATER_PROGRESS.md)
 for the acceptance matrix, scope and reproduction commands.
 
 Known issues:
