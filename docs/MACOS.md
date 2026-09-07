@@ -48,7 +48,7 @@ bash tools/build_macos_dependencies.sh
 WR64_BUILD_DIR=build-macos-release \
 WR64_DEPENDENCY_PREFIX="$PWD/build-macos-deps/install" \
 bash tools/build_macos.sh
-python3 tools/package_release_macos.py --version 0.4.0-macos.1 \
+python3 tools/package_release_macos.py --version 0.4.0-macos.2 \
   --dependency-prefix build-macos-deps/install \
   --dependency-manifest build-macos-deps/dependencies.json
 ```

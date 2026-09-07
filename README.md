@@ -101,7 +101,8 @@ All courses have replacements; Options and first-place results also have
 assigned recordings. Effects and announcer commands keep using the original
 audio. Local recordings can override individual bundled tracks. See
 [the track mapping and setup guide](docs/MUSIC.md). These additions follow the
-`v0.4.0-macos.1` binary release and require a build of the current source.
+`v0.4.0-macos.1` binary release. Download `v0.4.0-macos.2` or newer for the
+bundled soundtrack and HD textures with modern water enabled by default.
 
 ## Bundled HD textures
 
