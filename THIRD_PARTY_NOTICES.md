@@ -56,6 +56,16 @@ rights in them exist. Whether purely AI-generated images attract copyright at
 all is unsettled and varies by jurisdiction; no claim is made beyond what the
 law allows, and nothing in them is taken from the game.
 
+## Replacement recordings
+
+`assets/music` contains two recordings supplied as Bryan EL remakes and seven
+tracks from Retro Game Remix's *Dolphin Park* album. They are separate from the
+project's MIT-licensed code and artwork. The recordings and compositions remain
+the work of their respective owners; the project's license does not grant
+rights to them. [CREDITS.md](assets/music/CREDITS.md) preserves attribution and
+album credits, and [manifest.json](assets/music/manifest.json) records the
+supplied filenames, conversion gains, checksums, and loop settings.
+
 ## What is not here
 
 No Nintendo code or data. The recompiled game code in `RecompiledFuncs/` is

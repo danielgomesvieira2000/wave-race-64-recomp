@@ -87,6 +87,21 @@ Beyond running natively, the port adds:
   per-device profiles, from RecompFrontend.
 - Audio through the recompiled RSP microcode.
 
+## Replacement soundtrack
+
+Source builds of this fork include nine replacement recordings: Bryan EL's
+Main Theme and Dolphin Park, plus seven tracks from Retro Game Remix's
+*Dolphin Park* album. The build bundles the recordings, loop settings, and
+[artist credits](assets/music/CREDITS.md). They are available under
+**Settings → Sound → Music → Custom**, with a separate custom-music volume
+control. **Original** restores the cartridge soundtrack.
+
+All courses have replacements; Options and first-place results also have
+assigned recordings. Effects and announcer commands keep using the original
+audio. Local recordings can override individual bundled tracks. See
+[the track mapping and setup guide](docs/MUSIC.md). These additions follow the
+`v0.4.0-macos.1` binary release and require a build of the current source.
+
 ## Modern water preview
 
 [![Watch the modern water showcase on YouTube](https://i.ytimg.com/vi/ikUGbLmPbvA/hqdefault.jpg)](https://www.youtube.com/watch?v=ikUGbLmPbvA)
@@ -146,6 +161,9 @@ config, which is derived from the reference decompilation's.
 ## Licensing
 
 The project's own code and artwork are under the MIT License (`LICENSE`).
+The separately credited recordings in `assets/music` are excluded from that
+license; their recordings and compositions remain the work of their respective
+owners. See [music credits](assets/music/CREDITS.md).
 
 A built executable is another matter. It links N64ModernRuntime statically,
 and N64ModernRuntime is **GPL-3.0**, so the executable as a whole is a

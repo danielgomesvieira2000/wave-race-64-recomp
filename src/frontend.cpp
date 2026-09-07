@@ -28,6 +28,7 @@
 #include "wr64/display.h"
 #include "wr64/dlrewrite.h"
 #include "wr64/water.h"
+#include "wr64/music.h"
 #include "wr64/rom.h"
 
 // The two globals recompui expects the port to define. It declares them extern
@@ -250,7 +251,25 @@ void init(bool auto_start) {
             wr64::water::set_spray_enabled(std::get<uint32_t>(value) != 0);
         }
     });
-    recompui::config::create_sound_tab();
+    auto &sound = recompui::config::create_sound_tab();
+    sound.add_option_change_callback(recompui::config::sound::options::main_volume, [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::music::set_volume(std::get<double>(value));
+        }
+    });
+    sound.add_enum_option("music_replacements", "Music", "Use recordings installed in your music folder. Tracks without a replacement keep the original music. Sound effects and the announcer are preserved.",
+        {{0, "original", "Original"}, {1, "custom", "Custom"}}, 1u);
+    sound.add_option_change_callback("music_replacements", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::music::set_enabled(std::get<uint32_t>(value) != 0);
+        }
+    });
+    sound.add_percent_number_option("replacement_music_volume", "Custom music volume", "Adjust the replacement recordings relative to engine sounds, splashes and the announcer.", 65.0);
+    sound.add_option_change_callback("replacement_music_volume", [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) {
+            wr64::music::set_replacement_volume(std::get<double>(value));
+        }
+    });
     recompui::config::create_controls_tab();
 
     // No add_game_input calls: recompinput already knows the N64 controller,

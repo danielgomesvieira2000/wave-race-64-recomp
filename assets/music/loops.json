@@ -1,0 +1,56 @@
+{
+  "main_theme": {
+    "start_seconds": 75.0,
+    "end_seconds": 171.634,
+    "crossfade_seconds": 0.25,
+    "gain_db": -3.5
+  },
+  "dolphin_park": {
+    "start_seconds": 75.0,
+    "end_seconds": 175.25,
+    "crossfade_seconds": 0.25,
+    "gain_db": 0
+  },
+  "options": {
+    "start_seconds": 0,
+    "end_seconds": 172.56,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  },
+  "sunny_beach": {
+    "start_seconds": 3.2,
+    "end_seconds": 170.66,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  },
+  "twilight_city": {
+    "start_seconds": 0.12,
+    "end_seconds": 172.06,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  },
+  "victory": {
+    "start_seconds": 0.18,
+    "end_seconds": 199.98,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  },
+  "sunset_bay": {
+    "start_seconds": 0.5,
+    "end_seconds": 176.22,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  },
+  "glacier_coast": {
+    "start_seconds": 0,
+    "end_seconds": 166.14,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  },
+  "seafoam_shoreline": {
+    "start_seconds": 0.7,
+    "end_seconds": 242.56,
+    "crossfade_seconds": 1,
+    "gain_db": 0
+  }
+}

@@ -35,6 +35,10 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx);
 void water_task_submit_hook(uint8_t* rdram, recomp_context* ctx);
 void water_test_seed_hook(uint8_t* rdram, recomp_context* ctx);
 void water_test_course_hook(uint8_t* rdram, recomp_context* ctx);
+void music_load_sequence_hook(uint8_t* rdram, recomp_context* ctx);
+void music_disable_sequence_hook(uint8_t* rdram, recomp_context* ctx);
+void music_player_sound_hook(uint8_t* rdram, recomp_context* ctx);
+void music_audio_task_hook(uint8_t* rdram, recomp_context* ctx);
 
 void register_overlays() {
     recomp::overlays::overlay_section_table_data_t sections{};
@@ -143,6 +147,10 @@ void register_runtime_functions() {
     recomp::overlays::add_loaded_function(static_cast<int32_t>(0x80046CF8), water_task_submit_hook);
     recomp::overlays::add_loaded_function(static_cast<int32_t>(0x80047E44), water_test_seed_hook);
     recomp::overlays::add_loaded_function(static_cast<int32_t>(0x8009345C), water_test_course_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x800B9F3C), music_load_sequence_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x800BCEE0), music_disable_sequence_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x800BBFD4), music_player_sound_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x800C4C40), music_audio_task_hook);
 
     std::fprintf(stderr,
                  "[wr64] registered %zu runtime-provided and %zu resident functions"

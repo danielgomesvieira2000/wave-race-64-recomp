@@ -12,6 +12,7 @@
 #include "wr64/renderer.h"
 #include "wr64/rom.h"
 #include "wr64/testdrive.h"
+#include "wr64/music.h"
 #if WR64_WITH_FRONTEND
 #   include "wr64/frontend.h"
 #endif
@@ -270,6 +271,18 @@ int run(int argc, char** argv, const char* rom_arg) {
         std::filesystem::create_directories(settings, ec);
         recomp::register_config_path(settings);
         std::fprintf(stderr, "[wr64] settings directory: %s\n", settings.string().c_str());
+        const char* music_directory = std::getenv("WR64_MUSIC_DIRECTORY");
+        if (music_directory) {
+            // An explicit pack override is also used to test original fallback.
+            wr64::music::initialize(std::filesystem::path(music_directory));
+        } else {
+#if defined(__APPLE__)
+            const auto bundled_music = std::filesystem::path("../Resources/assets/music");
+#else
+            const auto bundled_music = std::filesystem::path("assets/music");
+#endif
+            wr64::music::initialize(settings / "music", bundled_music);
+        }
     }
 
     // The generated section tables have to reach librecomp before anything can

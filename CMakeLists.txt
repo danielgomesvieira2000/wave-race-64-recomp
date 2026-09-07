@@ -210,7 +210,7 @@ set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
 # overlays.cpp cannot even compile without recomp_overlays.inl.
 if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp
-                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp src/water.cpp)
+                             src/testdrive.cpp src/display.cpp src/dlrewrite.cpp src/water.cpp src/music.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
@@ -243,6 +243,21 @@ endif()
 
 target_include_directories(WaveRace64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
+    if(APPLE)
+        set(WR64_MUSIC_ASSET_DIR "$<TARGET_BUNDLE_CONTENT_DIR:WaveRace64Recomp>/Resources/assets/music")
+    else()
+        set(WR64_MUSIC_ASSET_DIR "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/music")
+    endif()
+    file(GLOB WR64_MUSIC_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/music/*")
+    # Re-stage the bundle when recordings, loop metadata, or credits change.
+    set_property(SOURCE src/music.cpp APPEND PROPERTY OBJECT_DEPENDS "${WR64_MUSIC_FILES}")
+    add_custom_command(TARGET WaveRace64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/music" "${WR64_MUSIC_ASSET_DIR}"
+        COMMENT "Staging replacement music and credits")
+endif()
 
 if(WR64_WITH_RUNTIME)
     target_link_libraries(WaveRace64Recomp PRIVATE rt64 ultramodern librecomp)

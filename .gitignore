@@ -1,7 +1,7 @@
 # ============================================================
 #  NO GAME DATA IN THIS REPOSITORY. EVER.
-#  Wave Race 64 is Nintendo's. This project ships tooling and
-#  original code only; the user supplies their own ROM.
+#  Wave Race 64 is Nintendo's; the user supplies their own ROM.
+#  Separately credited replacement recordings live in assets/music.
 # ============================================================
 *.z64
 *.n64

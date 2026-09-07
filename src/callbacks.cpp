@@ -45,6 +45,7 @@
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
 #include "wr64/water.h"
+#include "wr64/music.h"
 
 // The recompiled audio microcode, produced by RSPRecomp from the cartridge.
 //
@@ -404,6 +405,7 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
         unswapped[sample_count - 1] = audio_data[sample_count - 1];
     }
 
+    wr64::music::mix(unswapped.data(), sample_count, g_audio_frequency);
     SDL_QueueAudio(g_audio_device, unswapped.data(),
                    static_cast<Uint32>(sample_count * sizeof(int16_t)));
 

@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "format": {
+    "container": "WAV",
+    "encoding": "PCM signed 16-bit little-endian",
+    "sample_rate_hz": 48000,
+    "channels": 2
+  },
+  "credits_file": "CREDITS.md",
+  "rights_notice": "The recordings and underlying compositions remain the work of their respective owners and are excluded from the repository MIT license. This manifest does not grant or assert redistribution permission.",
+  "loops_file": "loops.json",
+  "loops_sha256": "9222b7c8d3a42859e219392b92e0ad17c772d64e78e1264b59a8f1c42201bc1a",
+  "conversion_notes": [
+    "Source MP3 files were decoded with FFmpeg into stereo 48 kHz PCM16 WAV, with a fixed gain to avoid conversion clipping.",
+    "No trimming or loudness normalization was applied to the WAV data. Loop configuration is separate in loops.json.",
+    "Packaged WAVs are byte-identical to the locally installed and tested WAVs.",
+    "Source paths are omitted; original basenames and content hashes identify the supplied recordings."
+  ],
+  "tracks": [
+    {
+      "id": "main_theme",
+      "title": "Main Theme",
+      "artist": "Bryan EL",
+      "album": null,
+      "attribution_basis": "Remake credit in supplied filename and embedded title; original embedded tags are retained below.",
+      "source_filename": "Wave Race 64 - Main Theme (Remake by Bryan EL).mp3",
+      "source_metadata": {
+        "title": "Wave Race 64 - Main Theme (Remake by Bryan EL)",
+        "artist": "Gaming Nostalgia Remastered"
+      },
+      "source_sha256": "cc44d8252866c16cd7a379b5118ea6983ddcc3ea24144f8d28ab416f86ad8271",
+      "source_bytes": 3504900,
+      "output": "main_theme.wav",
+      "output_sha256": "a18e28d21e340980f3d2968087218fb30fba0768cf62c389da92915e3161224c",
+      "output_bytes": 39642674,
+      "output_frames": 9910649,
+      "duration_seconds": 206.47185416666667,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 75.0,
+        "end_seconds": 171.634,
+        "crossfade_seconds": 0.25,
+        "gain_db": -3.5
+      },
+      "loop_note": "Candidate derived from measured repeated passages; crossfade preserves the measured repeat period. No claim of an auditioned exact musical seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -0.9382122755050659,
+        -0.7839627265930176
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "dolphin_park",
+      "title": "Dolphin Park",
+      "artist": "Bryan EL",
+      "album": null,
+      "attribution_basis": "Remake credit in supplied filename and embedded title; original embedded tags are retained below.",
+      "source_filename": "Wave Race 64 - Dolphin Park (Remake by Bryan EL).mp3",
+      "source_metadata": {
+        "title": "Wave Race 64 - Dolphin Park (Remake by Bryan EL)",
+        "artist": "Gaming Nostalgia Remastered"
+      },
+      "source_sha256": "69359db92b934e7568793aa42b2e01a542cf1e2b3fab5424d8fdec62c804fac2",
+      "source_bytes": 3430662,
+      "output": "dolphin_park.wav",
+      "output_sha256": "b384ec85c3f56a265409c231bd24641dc0120b0103387005cde6c5f5878a95fd",
+      "output_bytes": 38915982,
+      "output_frames": 9728976,
+      "duration_seconds": 202.687,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 75.0,
+        "end_seconds": 175.25,
+        "crossfade_seconds": 0.25,
+        "gain_db": 0
+      },
+      "loop_note": "Candidate derived from measured repeated passages; crossfade preserves the measured repeat period. No claim of an auditioned exact musical seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -2.0655016899108887,
+        -1.9888437986373901
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "options",
+      "title": "Options",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 01 Options.mp3",
+      "source_metadata": {
+        "title": "Options",
+        "artist": "Retro Game Remix",
+        "track": "1",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "24a57d124aa9cfb4d5c9360f4c7f178ba1bd39108b90453e726156f1f6c2e8d2",
+      "source_bytes": 7103798,
+      "output": "options.wav",
+      "output_sha256": "fc0235fd61cf4f37f250a835890ffd8b6c6da2c73581e5e0f65fd9e1a26973c3",
+      "output_bytes": 33444082,
+      "output_frames": 8361001,
+      "duration_seconds": 174.18752083333334,
+      "fixed_decode_gain_db": -2.00559,
+      "loop": {
+        "start_seconds": 0,
+        "end_seconds": 172.56,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.5568410158157349,
+        -1.240491271018982
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    },
+    {
+      "id": "sunny_beach",
+      "title": "Sunny Beach",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 02 Sunny Beach.mp3",
+      "source_metadata": {
+        "title": "Sunny Beach",
+        "artist": "Retro Game Remix",
+        "track": "2",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "7006c8fe505038699c8818e6da1c11538a92c922f1c10b53fa6a6c3ae90f258f",
+      "source_bytes": 7050463,
+      "output": "sunny_beach.wav",
+      "output_sha256": "e3a96d98a53daead4ad662ebb899d80767ae85ee7648edebeca58f88b37c32bb",
+      "output_bytes": 33188650,
+      "output_frames": 8297143,
+      "duration_seconds": 172.85714583333333,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 3.2,
+        "end_seconds": 170.66,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.5245561599731445,
+        -1.6224119663238525
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    },
+    {
+      "id": "twilight_city",
+      "title": "Twilight City",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 04 Twilight City.mp3",
+      "source_metadata": {
+        "title": "Twilight City",
+        "artist": "Retro Game Remix",
+        "track": "4",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "fd8fde4d86c34b83ce61b45099513ec7030ef9875edb1c7a59263348b1d1527d",
+      "source_bytes": 7100672,
+      "output": "twilight_city.wav",
+      "output_sha256": "7a4c349cad34b0d3c119b714eda9ee3faed0a2b2670aace28596e9f816dfa200",
+      "output_bytes": 33431118,
+      "output_frames": 8357760,
+      "duration_seconds": 174.12,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 0.12,
+        "end_seconds": 172.06,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.0445810556411743,
+        -1.4437389373779297
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    },
+    {
+      "id": "victory",
+      "title": "Victory!",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 05 Victory!.mp3",
+      "source_metadata": {
+        "title": "Victory!",
+        "artist": "Retro Game Remix",
+        "track": "5",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "5b10ee8df79a098357c02135f2592d4df4b0d04f291dbd4bf0b6ceb5ae8e2fb5",
+      "source_bytes": 8217729,
+      "output": "victory.wav",
+      "output_sha256": "54a477b0b1a01c185013759fccb2698decdccc88f14696a3e9ccd114b5c65e9d",
+      "output_bytes": 38789566,
+      "output_frames": 9697372,
+      "duration_seconds": 202.02858333333333,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 0.18,
+        "end_seconds": 199.98,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.3197392225265503,
+        -1.495224118232727
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    },
+    {
+      "id": "sunset_bay",
+      "title": "Sunset Bay",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 06 Sunset Bay.mp3",
+      "source_metadata": {
+        "title": "Sunset Bay",
+        "artist": "Retro Game Remix",
+        "track": "6",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "6199048b1646a0578fa72b79dfd5808bd4d9ddc2ba7537a2c34299ff0a82d724",
+      "source_bytes": 7415495,
+      "output": "sunset_bay.wav",
+      "output_sha256": "446957198b211f77b8d489446836c318e357de8d90eb723361df67c98ba393ed",
+      "output_bytes": 34941762,
+      "output_frames": 8735421,
+      "duration_seconds": 181.9879375,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 0.5,
+        "end_seconds": 176.22,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.4691294431686401,
+        -1.5128744840621948
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    },
+    {
+      "id": "glacier_coast",
+      "title": "Glacier Coast",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 07 Glacier Coast.mp3",
+      "source_metadata": {
+        "title": "Glacier Coast",
+        "artist": "Retro Game Remix",
+        "track": "7",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "ad697e9f38c32064fc38e2e1429abcd53674eb944ec55993af22977687b858b6",
+      "source_bytes": 6921816,
+      "output": "glacier_coast.wav",
+      "output_sha256": "7c41ea4486089a75059f0e942a8779c4b89a5f405ae0536c844a1d46d0632c05",
+      "output_bytes": 32573874,
+      "output_frames": 8143449,
+      "duration_seconds": 169.6551875,
+      "fixed_decode_gain_db": -2.0,
+      "loop": {
+        "start_seconds": 0,
+        "end_seconds": 166.14,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.3111037015914917,
+        -1.399405598640442
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    },
+    {
+      "id": "seafoam_shoreline",
+      "title": "Seafoam Shoreline",
+      "artist": "Retro Game Remix",
+      "album": "Dolphin Park",
+      "attribution_basis": "Supplied filename, embedded artist/album tags, and the artist album page.",
+      "source_filename": "Retro Game Remix - Dolphin Park - 08 Seafoam Shoreline.mp3",
+      "source_metadata": {
+        "title": "Seafoam Shoreline",
+        "artist": "Retro Game Remix",
+        "track": "8",
+        "album": "Dolphin Park",
+        "album_artist": "Retro Game Remix",
+        "date": "2023"
+      },
+      "source_sha256": "19278261575078eee022a2fbf6ecc7a25bd083d11968ca9512fd8a0ff65bf944",
+      "source_bytes": 9877658,
+      "output": "seafoam_shoreline.wav",
+      "output_sha256": "43b3d2696d585c9cf9660add15e9edf422987cc73d23766f1750bcf3ef520adb",
+      "output_bytes": 46745166,
+      "output_frames": 11686272,
+      "duration_seconds": 243.464,
+      "fixed_decode_gain_db": -2.54089,
+      "loop": {
+        "start_seconds": 0.7,
+        "end_seconds": 242.56,
+        "crossfade_seconds": 1,
+        "gain_db": 0
+      },
+      "loop_note": "Whole-recording repeat with measured quiet ends omitted on repeat and a one-second linear crossfade; not a verified beat-matched seam.",
+      "output_sample_peak_dbfs_left_right": [
+        -1.4184224605560303,
+        -1.7356140613555908
+      ],
+      "output_full_scale_sample_counts_left_right": [
+        0,
+        0
+      ],
+      "album_url": "https://retrogameremix.bandcamp.com/album/dolphin-park"
+    }
+  ]
+}
