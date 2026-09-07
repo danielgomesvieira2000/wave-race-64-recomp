@@ -83,6 +83,10 @@ Beyond running natively, the port adds:
 
 ## Modern water preview
 
+[![Watch the modern water showcase on YouTube](https://i.ytimg.com/vi/ikUGbLmPbvA/hqdefault.jpg)](https://www.youtube.com/watch?v=ikUGbLmPbvA)
+
+[Watch the water shader in motion on YouTube](https://www.youtube.com/watch?v=ikUGbLmPbvA).
+
 The source build includes an optional water renderer. In **Graphics → Water**,
 choose **Modern** for detailed ripples, sun/sky lighting, depth color,
 refraction, shoreline wash and persistent wakes, or **High** to add screen-space reflections
