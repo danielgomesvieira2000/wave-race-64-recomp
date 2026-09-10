@@ -607,6 +607,37 @@ for what it reads). Four things are worth knowing before doing the same:
   Note that the input-poll callback is not the main thread -- the game calls it
   too, through `osContStartReadData`.
 
+### Mods are already running before a port does anything
+
+`recomp::start` calls `recomp::mods::initialize_mods()` and `scan_mods()` itself,
+creates `mods/` and `mod_config/` in the settings folder and reads `mods.json`.
+A port supplies one thing for that to work -- `game.mod_game_id` on the
+`GameEntry` it registers -- and this port had set it from the beginning, so mods
+were being scanned for a year of releases with no way to see the result. A mod
+could be installed and never appear, never be enabled, and never report why it
+failed to open.
+
+What was missing was two calls: `recompui::config::create_mods_tab()` beside the
+other tabs, and `add_mods_option()` on the launcher's game-options menu. The tab
+itself, the install button, the mods folder button, per-mod options, enable and
+reorder are all RecompFrontend's.
+
+What ships in the runtime:
+
+| | |
+|---|---|
+| Container | `.nrm`, a zip, manifest required (`manifest.json`) |
+| Content: code | `mod_binary.bin` + `mod_syms.bin`, recompiled live at load |
+| Content: ROM patch | `patch.bps` |
+
+**A port can register content types of its own** with
+`recomp::mods::register_mod_content_type({ content_filename, allow_runtime_toggle,
+on_enabled, on_disabled, on_reordered })`. A mod is then detected as carrying
+that content simply by containing a file of that name, and the port is called
+when it is enabled or disabled -- with `allow_runtime_toggle` it can be flipped
+without restarting. That is the cheap way to make a mod format for data the port
+already understands, without any of the code-mod toolchain.
+
 ### Where settings go
 
 librecomp writes settings, profiles and mod state wherever it is told, and until

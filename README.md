@@ -115,6 +115,9 @@ Beyond running natively, the port adds:
 - Audio through the recompiled RSP microcode, with the Sound tab's **Main
   Volume** applied to it.
 
+**Mods.** The Mods tab installs and enables mods, and the launcher has an entry
+for it. The runtime accepts `.nrm` mods carrying recompiled code or a ROM patch.
+
 ### Debug controls
 
 Not a developer build -- these are in the release, because the person looking at

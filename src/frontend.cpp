@@ -195,6 +195,7 @@ void build_launcher(recompui::LauncherMenu* menu) {
     options->add_start_game_or_load_rom_option("Load ROM", "Start Game");
     options->add_setup_controls_option("Controls");
     options->add_settings_option("Settings");
+    options->add_mods_option("Mods");
     // Closing the window works, but a menu the pad can reach should not need a
     // mouse to leave. add_exit_option calls ultramodern::quit(), which unwinds
     // the game thread and the renderer in order rather than tearing the process
@@ -362,6 +363,18 @@ void init() {
             }
         });
     recompui::config::create_controls_tab();
+
+    // Mods. The runtime half of this has been running since the port first
+    // started: recomp::start calls initialize_mods() and scan_mods() on its own,
+    // main.cpp gives librecomp this game's mod id, and the mods and mod_config
+    // folders have existed in the settings directory all along. What was missing
+    // was any way to see what is in them -- so a mod could be installed and
+    // never appear, never be enabled and never be reported broken.
+    //
+    // The tab lists what was found, with each mod's description, author, version
+    // and its own options; the launcher entry below opens it without starting the
+    // game first.
+    recompui::config::create_mods_tab();
 
     // No add_game_input calls: recompinput already knows the N64 controller,
     // and this game has no inputs beyond it. Ports with extra actions -- an
