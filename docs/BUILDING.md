@@ -143,7 +143,8 @@ registering it. Add that directory to your user PATH.
 Apply the project's patches to RT64 first (see *The game's own black borders*
 below for what they do and why they are a script). This also applies the
 inspector hook from `tools/patch_rt64_inspector.py`, which the port links
-against, so the build needs it whether or not the inspector is ever used:
+against, so the build always needs it -- the debug menu it feeds is on F1 in
+every build (see [HUD-INSPECTOR.md](HUD-INSPECTOR.md)):
 
 ```
 python tools/patch_rt64.py

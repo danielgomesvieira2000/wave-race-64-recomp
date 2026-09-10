@@ -19,18 +19,27 @@ identity is not something a picture can show.
 
 ### Turning it on
 
-```
-set WR64_INSPECTOR=1
-build-fe\WaveRace64Recomp.exe
-```
+**Press F1.** In any build, released or not, with nothing set beforehand. F1
+again closes it.
 
-PowerShell: `$env:WR64_INSPECTOR="1"`. It needs a build with the frontend on
-(`build-fe`) -- **`build-rt` has no display-list rewriter at all**, so there is
-nothing for the inspector to show.
+F1 is RT64's own shortcut for its developer UI, and the port's window is drawn
+inside that UI, so both appear together: RT64's **Game editor** on one side and
+**Wave Race HUD** on the other. That pairing is the point -- half of what you
+need is already in RT64's half (see
+[What RT64 already does](#what-rt64-already-does)).
 
-The variable also forces RT64's developer mode on, so RT64's own **Game editor**
-window appears next to it. That is not a mistake: half of what you need is
-already in there (see [What RT64 already does](#what-rt64-already-does)).
+A debug menu that only exists in a build made for it is a debug menu nobody has
+when they need it: the person looking at a misplaced menu element is running the
+game they downloaded. Nothing is drawn until F1 is pressed -- RT64 creates its
+inspector on the keystroke, and `State::inspect()` returns immediately while
+there is none -- so leaving it available costs a null check per frame.
+
+The element list needs a build with the frontend on (`build-fe`), because
+**`build-rt` has no display-list rewriter at all** and so has nothing to list.
+RT64's own half of the menu works in both.
+
+`WR64_INSPECTOR=0` turns the port's half off, for an A/B against the rewriter's
+own classification. RT64's half stays on F1 regardless.
 
 ### The window
 
@@ -172,25 +181,49 @@ would fail at link time rather than at runtime.
 Check the two anchors against your RT64 revision. They are stable points, but
 they are still text.
 
-### 2. Force developer mode on
+### 2. Turn developer mode on and leave it on
 
-`State::inspect()` only runs when RT64 is in developer mode, and the setting
-behind it is a checkbox in the graphics tab. Do not send the reader there. Where
-the render context is created:
+RT64 gates **four** things on `userConfig.developerMode`, and every one of them
+is on the path between the F1 key and the window:
+
+| Gate | File |
+|---|---|
+| `usesWindowMessageFilter()` -- whether RT64 installs its SDL event filter and Win32 subclass at all | `rt64_application_window.cpp:398` |
+| `sdlEventFilter()` / `windowMessageFilter()` -- whether F1 is looked at | `rt64_application.cpp:556`, `:590` |
+| `processDeveloperShortcut(Inspector)` -- whether the keystroke creates the inspector | `rt64_application.cpp:628` |
+| `State::inspect()` -- whether any of it is drawn | `rt64_state.cpp:1638` |
+
+So there is no halfway position: the port turns it on unconditionally, at
+construction, before `setup()`.
 
 ```cpp
-const bool inspecting = wr64::inspector::enabled();     // getenv("WR64_INSPECTOR")
-if (inspecting) {
-    wr64::inspector::install();                         // sets the hook
-}
+// The frontend build, src/frontend.cpp
+(void)developer_mode;
+wr64::inspector::install();
 return std::make_unique<RewritingContext>(
     rdram, recompui::renderer::create_render_context(
-               rdram, window_handle, presentation_mode(),
-               developer_mode || inspecting));
+               rdram, window_handle, presentation_mode(), true));
 ```
 
-`install()` must run before the first frame and is a no-op when disabled, so it
-can sit here unconditionally.
+```cpp
+// The runtime-only build, src/renderer.cpp -- same idea, RT64 direct
+app_ = std::make_unique<RT64::Application>(core, app_config);
+app_->userConfig.developerMode = true;
+const RT64::Application::SetupResult result = app_->setup(window_handle.thread_id);
+```
+
+`install()` must run before the first frame and is a no-op when the port's half
+is disabled, so it sits there unconditionally.
+
+**What it costs:** a mutex lock and a null check per frame while the menu is
+closed, plus a handful of `if (warningsEnabled)` branches in the RDP command
+handlers that only build a string when a command is genuinely malformed
+(`rt64_rdp.cpp:617`). Nothing in the draw path. `set_application_user_config()`
+does not touch `developerMode`, so changing a graphics setting will not undo it.
+
+The frontend's own developer-mode checkbox in the graphics tab is left to mean
+whatever else it means -- it no longer decides whether the debug menu opens, and
+a reader should never have to find it.
 
 ### 3. The threading contract
 
@@ -300,7 +333,8 @@ and you would substitute your own.
 | `src/inspector.cpp` | The panel, the frame double-buffer, the override table, the save |
 | `tools/patch_rt64_inspector.py` | The RT64 hook. Idempotent; chained into `tools/patch_rt64.py` |
 | `src/dlrewrite.cpp` | The five call sites |
-| `src/frontend.cpp` | `install()`, and forcing developer mode |
+| `src/frontend.cpp` | `install()`, and forcing developer mode on so F1 works |
+| `src/renderer.cpp` | The same, for the runtime-only build |
 | `src/main.cpp` | `init()` |
 
 ---

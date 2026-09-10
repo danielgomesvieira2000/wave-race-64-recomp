@@ -985,7 +985,7 @@ anything is wrong.
 to use it, and how to put the same tool in another port. This section is why it
 looks the way it does.
 
-`WR64_INSPECTOR=1` draws a window inside RT64's developer UI listing every 2D
+**F1** draws a window inside RT64's developer UI listing every 2D
 element of the current frame -- its identity, its extent in the game's own
 320x240 pixels, whether it was drawn under a perspective or an orthographic
 matrix, whether it came from a rectangle command or a run of triangles, and the
@@ -1007,10 +1007,16 @@ Three pieces make it work, and the middle one is the part worth copying:
   `extern "C" void (*RT64_PortInspectorHook)()`, called once per frame from
   `State::inspect()` with an ImGui frame already open. Null unless the port sets
   it, so upstream behaviour is unchanged.
-- **`State::inspect()` only runs in RT64's developer mode**, and the setting
-  behind it is in the graphics tab. The port forces it on for itself when the
-  environment variable is set -- `developer_mode || inspecting` where the render
-  context is created -- rather than making the reader find a checkbox.
+- **Four things are gated on RT64's developer mode**, and all four sit between
+  the F1 key and the window: whether RT64 installs its event filter at all
+  (`usesWindowMessageFilter()`), whether it looks at F1, whether the keystroke
+  creates the inspector, and whether `State::inspect()` draws anything. The port
+  therefore turns developer mode on **unconditionally**, in both the frontend and
+  the runtime-only build. Gating a debug menu on a build flag or an environment
+  variable means nobody has it when they need it -- the person looking at a
+  misplaced menu element is running the game they downloaded. It costs a null
+  check per frame while the menu is closed, because RT64 creates its inspector
+  on the keystroke and `State::inspect()` returns immediately without one.
 - **Two threads meet.** The classifier runs on the thread that submits display
   lists; the panel runs on the renderer's UI thread. The classifier fills a frame
   under construction and publishes it under a mutex at the end of the frame; the
@@ -1047,7 +1053,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Lattice trace** (`WR64_LATTICE`) | Whether a mesh the game rebuilds every frame can be paired between frames at all. For each frame, and for each rebuilt mesh (the water through segment 3, the sky through segment 6), it writes how many vertex blocks moved in X or Z since the previous frame, how many moved only in height, the largest step in each, and **how many moved by the same step as the first** -- which is what separates a mesh being carried whole from one re-assigning its slots. A handful of frames of identical vertices proves nothing: with the camera parked, a mesh built around the camera is indistinguishable from a fixed one. |
 | **Rectangle log** (`WR64_RECT_LOG`, via `tools/patch_rt64_rectlog.py`) | Where every rectangle actually lands on the widened framebuffer, in RT64's own arithmetic: the game's coordinates, the origins and aspect flag the port set, the framebuffer width and scissor, and the resulting position. The port can say what it emitted and a screenshot can say what showed; only this says what the renderer did in between. |
 | **Race trace** (`WR64_HAPTICS_TRACE`) | Every frame of every race as a CSV row -- speed, vertical velocity, airborne, wetness, impact, lap, buoy, misses, power, countdown -- with the feedback events each frame produced. Written to check that a set of RDRAM addresses really means what it is supposed to: the countdown counts down, speed rises under throttle, misses appear where the HUD says MISS. A value that looks plausible in one frame is not evidence; a column that behaves across a race is. |
-| **HUD inspector** (`WR64_INSPECTOR`, via `tools/patch_rt64_inspector.py`) | Which 2D elements a frame contains, what identity each has, what class the rewriter gave it, and what happens if that class is changed -- answered while the frame is on the screen rather than in a log read afterwards. Hovering a row outlines the element; a dropdown changes its class from the next frame; a button writes the result into `hud.json`. See §7. |
+| **HUD inspector** (**F1**, via `tools/patch_rt64_inspector.py`) | Which 2D elements a frame contains, what identity each has, what class the rewriter gave it, and what happens if that class is changed -- answered while the frame is on the screen rather than in a log read afterwards. Hovering a row outlines the element; a dropdown changes its class from the next frame; a button writes the result into `hud.json`. See §7. |
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |

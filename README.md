@@ -101,6 +101,15 @@ Beyond running natively, the port adds:
 - Audio through the recompiled RSP microcode, with the Sound tab's **Main
   Volume** applied to it.
 
+**F1 opens the debug menu**, in this build and every build. On one side is
+RT64's own: pause the game and keep the frame interactive, right-click a pixel
+to see what drew it, browse the framebuffers and textures. On the other is the
+port's, listing the 2D elements of the frame with the class the widescreen
+rewriter gave each one, outlining one on the screen when you hover it, and
+letting you change that class while the game runs. If something in a menu sits
+in the wrong place, that window is how to say which thing. See
+[docs/HUD-INSPECTOR.md](docs/HUD-INSPECTOR.md).
+
 Known issues:
 
 - In a 4:3 window the picture is letterboxed. The game draws a 303x199 region

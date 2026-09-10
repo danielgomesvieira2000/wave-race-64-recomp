@@ -116,18 +116,25 @@ private:
 std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
         uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle,
         bool developer_mode) {
-    // The inspector needs RT64's developer mode, because that is the only path
-    // on which RT64 draws any UI at all -- and the setting behind it is hidden
-    // in the graphics tab, which is no place to send someone who only wants to
-    // look at a menu. WR64_INSPECTOR turns on both.
-    const bool inspecting = wr64::inspector::enabled();
-    if (inspecting) {
-        wr64::inspector::install();
-    }
+    // RT64 already binds F1 to its developer UI, and the port's HUD inspector
+    // draws inside it. Every path to that UI is gated on RT64's developer mode,
+    // though: the key handler, the event filter RT64 installs for itself, and
+    // State::inspect() at the other end. So it is on unconditionally here.
+    //
+    // A debug menu that only exists in a build made for it is a debug menu
+    // nobody has when they need it -- the person looking at a misplaced menu
+    // element is running the game they downloaded. Nothing is drawn until F1 is
+    // pressed: RT64 creates its inspector on the keystroke and State::inspect()
+    // returns immediately while there is none, so the cost of leaving this on
+    // is a null check per frame.
+    //
+    // The frontend's own developer-mode setting is left to mean whatever else
+    // it means; it no longer decides whether the debug menu can be opened.
+    (void)developer_mode;
+    wr64::inspector::install();
     return std::make_unique<RewritingContext>(
         rdram, recompui::renderer::create_render_context(
-                   rdram, window_handle, presentation_mode(),
-                   developer_mode || inspecting));
+                   rdram, window_handle, presentation_mode(), true));
 }
 
 // Which frame RT64 puts on screen, and when.

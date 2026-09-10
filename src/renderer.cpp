@@ -119,6 +119,14 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
 
     app_ = std::make_unique<RT64::Application>(core, app_config);
 
+    // F1 opens RT64's developer UI, and every path to it -- the key handler, the
+    // event filter RT64 installs for itself, State::inspect() -- is gated on
+    // this. It is on unconditionally so the debug menu is always one key away;
+    // nothing is drawn until F1 is pressed. The argument is kept in the
+    // signature because ultramodern's callback carries it.
+    (void)developer_mode;
+    app_->userConfig.developerMode = true;
+
     const RT64::Application::SetupResult result = app_->setup(window_handle.thread_id);
     setup_result = translate(result);
 
@@ -131,7 +139,6 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
 
     chosen_api = ultramodern::renderer::GraphicsApi::Auto;
     valid_ = true;
-    (void)developer_mode;
 }
 
 RT64Context::~RT64Context() = default;

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -53,7 +54,13 @@ uint64_t g_frames = 0;
 // What the panel has overridden, by identity. Read by the classifier on every
 // element of every frame, so it is kept small and looked up under the same lock
 // as the frames -- the whole table is a handful of entries by construction.
+//
+// The flag beside it is the whole point: the table is empty in every session
+// where nobody opens the debug menu, and this lets the classifier skip the lock
+// entirely in that case rather than taking an uncontended one per element per
+// frame. Write it inside the lock, read it outside.
 std::unordered_map<std::string, int> g_overrides;
+std::atomic<bool> g_any_overrides{ false };
 
 // A frame is only interesting while the game is on the screen it was captured
 // from, so the panel can hold one still while the game runs on.
@@ -172,8 +179,8 @@ void draw_panel() {
 
     ImGui::Text("state 0x%02X   frame %llu   %zu elements", frame.game_state,
                 static_cast<unsigned long long>(frame.number), frame.elements.size());
-    ImGui::TextDisabled("RT64's own pause (Debugger tab) freezes the game; Hold keeps this");
-    ImGui::TextDisabled("list on one frame while the game runs on.");
+    ImGui::TextDisabled("F1 closes this menu. RT64's own pause (Debugger tab) freezes the");
+    ImGui::TextDisabled("game; Hold keeps this list on one frame while the game runs on.");
 
     bool hold = g_hold;
     if (ImGui::Checkbox("Hold this frame", &hold)) {
@@ -191,6 +198,7 @@ void draw_panel() {
     if (ImGui::Button("Clear overrides")) {
         std::lock_guard<std::mutex> lock(g_mutex);
         g_overrides.clear();
+        g_any_overrides.store(false, std::memory_order_relaxed);
         status = "overrides cleared";
     }
     if (!status.empty()) ImGui::TextDisabled("%s", status.c_str());
@@ -221,7 +229,7 @@ void draw_panel() {
 
         for (size_t i = 0; i < frame.elements.size(); ++i) {
             const Element& e = frame.elements[i];
-            if (filter[0] != ' ' &&
+            if (filter[0] != '\0' &&
                 e.identity.find(filter) == std::string::npos &&
                 e.second_identity.find(filter) == std::string::npos) {
                 continue;
@@ -280,11 +288,13 @@ void draw_panel() {
                 if (ImGui::Selectable("as classified", selected == 0)) {
                     std::lock_guard<std::mutex> lock(g_mutex);
                     g_overrides.erase(e.identity);
+                    g_any_overrides.store(!g_overrides.empty(), std::memory_order_relaxed);
                 }
                 for (int c = 0; c < 4; ++c) {
                     if (ImGui::Selectable(items[c], selected == c + 1)) {
                         std::lock_guard<std::mutex> lock(g_mutex);
                         g_overrides[e.identity] = c;
+                        g_any_overrides.store(true, std::memory_order_relaxed);
                     }
                 }
                 ImGui::EndCombo();
@@ -318,9 +328,14 @@ bool enabled() {
 }
 
 void init() {
-    g_enabled = std::getenv("WR64_INSPECTOR") != nullptr;
-    if (g_enabled) {
-        std::fprintf(stderr, "[wr64] HUD inspector on; RT64's developer UI is forced on with it\n");
+    // On by default. The debug menu is part of the build, not something a
+    // player has to have been told to switch on, and the panel costs nothing
+    // until RT64's UI is open. WR64_INSPECTOR=0 turns the port's half off for
+    // an A/B; RT64's own debug menu stays on F1 either way.
+    const char* env = std::getenv("WR64_INSPECTOR");
+    g_enabled = (env == nullptr) || (env[0] != '0');
+    if (!g_enabled) {
+        std::fprintf(stderr, "[wr64] HUD inspector off (WR64_INSPECTOR=0)\n");
         std::fflush(stderr);
     }
 }
@@ -365,6 +380,7 @@ void end_frame() {
 
 bool override_class(const char* identity, int* out_class) {
     if (!g_enabled || identity == nullptr) return false;
+    if (!g_any_overrides.load(std::memory_order_relaxed)) return false;
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_overrides.empty()) return false;
     const auto it = g_overrides.find(identity);
