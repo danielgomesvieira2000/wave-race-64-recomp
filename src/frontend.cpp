@@ -20,6 +20,7 @@
 #include <recompui/config.h>
 #include <recompui/program_config.h>
 #include <recompui/renderer.h>
+#include <recompinput/players.h>
 
 #include <librecomp/config.hpp>
 #include <librecomp/game.hpp>
@@ -199,6 +200,13 @@ void init() {
     recompui::register_primary_font("LatoLatin-Regular.ttf", "LatoLatin");
 
     recompui::register_launcher_init_callback(build_launcher);
+
+    // Wave Race 64 is a two-player game, so the controls tab offers two player
+    // slots rather than the frontend's default four. Which pad is which is not
+    // a choice anyone should have to make here: the port assigns them in the
+    // order they are connected (see refresh_players in src/callbacks.cpp), and
+    // the modal in the controls tab is left for anyone who wants to override it.
+    recompinput::players::set_player_count_range(1, 2);
 
     // The prefab tabs. Wave Race has no gyro or mouse control, so the general
     // tab keeps only what applies.

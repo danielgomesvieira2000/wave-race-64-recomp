@@ -15,6 +15,7 @@ rest run wherever Python or PowerShell does.
 | `patch_n64recomp.py` | Exposes N64Recomp's `use_lookup_for_all_function_calls` as a config option, which overlay dispatch needs. Idempotent. |
 | `patch_librecomp.py` | Makes librecomp's function-lookup failures report the address they failed on. Idempotent. |
 | `patch_rsprecomp.py` | Makes RSPRecomp's indirect jumps ignore the low two bits of the target, as the hardware does. Idempotent. |
+| `patch_recompinput.py` | Adds `players::auto_assign_controllers` to RecompFrontend, so the port can put the first pad on player one and the second on player two without the assignment modal. Idempotent. |
 | `patch_rt64.py` | Patches RT64 so this game's inset frame is kept at 4:3 for the HUD and presented without its black borders. Idempotent. |
 | `wsl_setup_splat.sh` | Prepares a Python environment for the vendored splat. |
 | `wsl_run_splat.sh` | Disassembles the dump with the config written for it. |

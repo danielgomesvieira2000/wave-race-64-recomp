@@ -246,7 +246,15 @@ a race. Leave the variable unset and nothing is injected.
 `lib/RecompFrontend` is the shared library every N64: Recompiled port uses for
 the parts that are not game-specific: `recompinput` for controller mapping,
 rebindable keys and per-device profiles, and `recompui` for the config and mod
-menus, built on RmlUi and drawn through RT64. It is off by default:
+menus, built on RmlUi and drawn through RT64. It is off by default.
+
+Apply the project's patch to it first -- it adds the call that puts the first pad
+on player one without going through the assignment modal (see
+[PORTING.md](PORTING.md), *Players, pads and profiles*):
+
+```
+python tools/patch_recompinput.py
+```
 
 ```
 cmake -B build-fe -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON -DWR64_WITH_FRONTEND=ON

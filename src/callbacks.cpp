@@ -37,6 +37,8 @@
 #   include "wr64/frontend.h"
 #   include <recompinput/input_events.h>
 #   include <recompinput/input_state.h>
+#   include <recompinput/players.h>
+#   include <recompinput/profiles.h>
 #   include <recompui/config.h>
 #endif
 #include "wr64/display.h"
@@ -85,6 +87,45 @@ void refresh_primary_controller() {
         }
     }
 }
+
+// Who is player one, and who is player two.
+//
+// The frontend's own answer is a modal: it opens, each player presses a button
+// on the pad they want, and the assignment is committed. That suits a game where
+// which pad is which matters. Here the first pad is player one and the second is
+// player two, and until someone had been through that modal nothing was assigned
+// at all -- so a pad drove the game, because the port read it directly, while
+// rumble did nothing, because rumble goes through the player list.
+//
+// So the pads are assigned here instead, in the order SDL reports them, whenever
+// that set changes: plug one in and it is player one, plug a second in and it is
+// player two. Two is the maximum, because the game's is (frontend.cpp). With no
+// pad at all the keyboard becomes player one, so the game is still playable.
+// tools/patch_recompinput.py adds the call; the modal still wins while it is
+// open, for anyone who wants to choose.
+void refresh_players() {
+    std::vector<SDL_GameController*> connected;
+    for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+        if (!SDL_IsGameController(i)) continue;
+        // Opening an already-open device returns the existing handle.
+        if (SDL_GameController* pad = SDL_GameControllerOpen(i)) {
+            connected.push_back(pad);
+        }
+    }
+
+    static std::vector<SDL_GameController*> assigned;
+    if (connected == assigned) {
+        return;
+    }
+    assigned = connected;
+
+    recompinput::players::auto_assign_controllers(connected.data(), connected.size());
+    std::fprintf(stderr, "[wr64] %zu controller%s connected; assigned to %zu player%s\n",
+                 connected.size(), connected.size() == 1 ? "" : "s",
+                 recompinput::players::get_number_of_assigned_players(),
+                 recompinput::players::get_number_of_assigned_players() == 1 ? "" : "s");
+    std::fflush(stderr);
+}
 #endif
 
 void poll_input() {
@@ -102,6 +143,7 @@ void poll_input() {
     // which is why only a gamepad triggered it.
     recompinput::handle_events();
     refresh_primary_controller();
+    refresh_players();
 #else
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -175,21 +217,52 @@ float axis_to_n64(Sint16 value) {
 }
 
 bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
-    if (controller_num != 0) {
+#if WR64_WITH_FRONTEND
+    // Both players' pads are read through the frontend rather than from SDL
+    // here, and that is not only about the second player. recompinput owns the
+    // remapping and the per-device profiles the controls tab writes, and
+    // profiles::get_n64_input is where they are applied: a port that reads SDL
+    // buttons itself, as this one used to, silently ignores every rebinding the
+    // player has made. It returns the stick already normalized, which is what
+    // the runtime wants (see the note further down).
+    if (controller_num < 0 || controller_num >= 2) {
         return false;
     }
+    if (!recompinput::players::get_player_is_assigned(controller_num)) {
+        return false;   // nothing plugged in for this player; no controller
+    }
 
-#if WR64_WITH_FRONTEND
+    uint16_t pressed = 0;
+    float stick_x = 0.0f;
+    float stick_y = 0.0f;
+
     // While a menu has input, the game gets none. Otherwise the button that
     // closes a menu also reaches the game behind it -- Start to leave the
     // settings would pause the race underneath.
-    if (wr64::frontend::capturing_input()) {
-        *buttons = 0;
-        *x = 0.0f;
-        *y = 0.0f;
-        return true;
+    if (!wr64::frontend::capturing_input()) {
+        recompinput::profiles::get_n64_input(controller_num, &pressed, &stick_x, &stick_y);
+
+        // Scripted input is player one's, and is written in the N64's own
+        // +/-80 (see src/testdrive.cpp), so it is scaled to match.
+        if (controller_num == 0) {
+            uint16_t scripted_buttons = 0;
+            float scripted_x = 0.0f;
+            float scripted_y = 0.0f;
+            wr64::input_script_state(&scripted_buttons, &scripted_x, &scripted_y);
+            pressed |= scripted_buttons;
+            if (scripted_x != 0.0f) { stick_x = scripted_x / kN64Range; }
+            if (scripted_y != 0.0f) { stick_y = scripted_y / kN64Range; }
+        }
     }
-#endif
+
+    *buttons = pressed;
+    *x = stick_x;
+    *y = stick_y;
+    return true;
+#else
+    if (controller_num != 0) {
+        return false;
+    }
 
     uint16_t pressed = 0;
     float stick_x = 0.0f;
@@ -275,6 +348,7 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     *x = stick_x / kN64Range;
     *y = stick_y / kN64Range;
     return true;
+#endif
 }
 
 // The runtime's rumble callback. This game never reaches it -- it has no rumble
@@ -293,9 +367,21 @@ void set_rumble(int controller_num, bool rumble) {
 }
 
 ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
+#if WR64_WITH_FRONTEND
+    // The game asks this to decide which of its four controller ports has
+    // something in it, which is how two-player mode becomes available at all.
+    // A player slot with a pad -- or the keyboard, when there is no pad -- is a
+    // connected controller; the rest are empty. No Pak: the game reads the
+    // Controller Pak for its records and has no rumble code of its own.
+    if (controller_num >= 0 && controller_num < 2 &&
+        recompinput::players::get_player_is_assigned(controller_num)) {
+        return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
+    }
+#else
     if (controller_num == 0) {
         return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
     }
+#endif
     return { ultramodern::input::Device::None, ultramodern::input::Pak::None };
 }
 

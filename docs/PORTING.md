@@ -435,6 +435,41 @@ is worst in a game like this one, where steering is analogue throughout.
 Keep the ±80 range inside the port if the scripted-input files and the game's own
 constants are written in it, and divide by it once, at the callback boundary.
 
+### Players, pads and profiles
+
+**Symptom: the controls tab's remapping does nothing.** A port that reads SDL
+buttons in its own `get_input` callback -- the obvious way to write it, and what
+this one did -- never consults the bindings the player edited, because those live
+in recompinput's profiles. `profiles::get_n64_input(player_index, buttons, x, y)`
+is the function that applies them: it merges the player's controller and keyboard
+profiles, applies the deadzone from the settings, and returns the stick already
+normalized to ±1, which is the range the runtime wants. Call that instead, once
+per player index, and remapping, per-device profiles and the second player all
+start working at once.
+
+**Symptom: rumble does nothing until someone opens the controls tab and assigns a
+pad.** `update_rumble` iterates *assigned players*, and nothing is assigned until
+an assignment has been committed, which by default happens only through the
+modal. Meanwhile the pad plays the game fine, because the port was reading it
+directly, so the two halves disagree about whether a controller exists.
+
+The frontend's own model is a modal because it is written for games where which
+pad is which matters. Two smaller pieces make it automatic:
+
+- `players::set_player_count_range(min, max)` at startup, so the controls tab
+  offers the number of players the *game* has rather than the default four.
+- Assigning pads in connection order rather than by button press. There is no API
+  for that upstream, so this project adds one in
+  `tools/patch_recompinput.py` (`players::auto_assign_controllers`), which does
+  what committing a manual assignment does -- fill the player list and give each
+  player the profile belonging to its pad -- from a list the port supplies. The
+  port calls it whenever the set of connected pads changes, and it declines while
+  a manual assignment is open so the modal still wins.
+
+With no pad attached, assign the keyboard to player one, or a keyboard-only
+machine has no players and `get_connected_device_info` reports an empty port to
+the game.
+
 ### Rumble for a game that has none
 
 Wave Race 64 (USA, Rev A) predates the Rumble Pak, and `Motor` appears nowhere in
