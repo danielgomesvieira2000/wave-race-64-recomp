@@ -8,6 +8,7 @@
 // against the pinned target before anything else is attempted.
 
 #include "wr64/callbacks.h"
+#include "wr64/inspector.h"
 #include "wr64/crash_handler.h"
 #include "wr64/renderer.h"
 #include "wr64/rom.h"
@@ -299,6 +300,7 @@ int run(int argc, char** argv, const char* rom_arg) {
     config.argc = argc;
     config.argv = argv;
     config.project_version = recomp::Version{0, 3, 0, ""};
+    wr64::inspector::init();
     config.rsp_callbacks = wr64::rsp_callbacks();
 #if WR64_WITH_FRONTEND
     // RecompFrontend's renderer draws the game and the menus into the same

@@ -95,6 +95,7 @@
 
 #include "wr64/dlrewrite.h"
 #include "wr64/display.h"
+#include "wr64/inspector.h"
 #include "wr64/testdrive.h"
 
 #include <algorithm>
@@ -1148,6 +1149,10 @@ struct Walker {
             for (uint32_t t : textures) report_flip(hex_identity("tex", t), next);
         }
         report_flip(dl_id, next);
+        wr64::inspector::note_element(tex_id.c_str(), dl_id.c_str(),
+                                      (e.min_x + 1.0f) * 160.0f, (e.max_x + 1.0f) * 160.0f,
+                                      (1.0f - e.max_y) * 120.0f, (1.0f - e.min_y) * 120.0f,
+                                      projection_is_perspective, static_cast<int>(next), true);
         if (!noemit) set_rect_class(next, e);
     }
 
@@ -1175,6 +1180,19 @@ struct Walker {
     }
 
     Class classify(const Extent& e, const std::string& identity, const std::string& identity2) {
+        // The inspector's overrides come first, so that a class chosen in the
+        // panel takes effect on the next frame and can be taken away again
+        // without a restart. hud.json and the built-in table are below it.
+        int chosen = 0;
+        if (wr64::inspector::override_class(identity.c_str(), &chosen) ||
+            (!identity2.empty() && wr64::inspector::override_class(identity2.c_str(), &chosen))) {
+            switch (chosen) {
+                case wr64::inspector::kLeft:    return anchors ? Class::Left : Class::Auto;
+                case wr64::inspector::kRight:   return anchors ? Class::Right : Class::Auto;
+                case wr64::inspector::kStretch: return Class::Stretch;
+                default:                        return Class::Auto;
+            }
+        }
         Class tagged;
         if (tags != nullptr && (tags->lookup(identity, tagged) || tags->lookup(identity2, tagged))) {
             if (tagged == Class::Stretch || anchors) return tagged;
@@ -1253,6 +1271,12 @@ struct Walker {
                           class_name(next));
             trace->append(line);
         }
+        wr64::inspector::note_element(tex_id.c_str(), dl_id.c_str(),
+                                      e.empty() ? 0.0f : (e.min_x + 1.0f) * 160.0f,
+                                      e.empty() ? 0.0f : (e.max_x + 1.0f) * 160.0f,
+                                      e.empty() ? 0.0f : (1.0f - e.max_y) * 120.0f,
+                                      e.empty() ? 0.0f : (1.0f - e.min_y) * 120.0f,
+                                      projection_is_perspective, static_cast<int>(next), false);
         report_flip(dl_id.empty() ? tex_id : dl_id, next);
         if (!noemit) set_class(next);
     }
@@ -1573,6 +1597,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     const uint32_t state = wr64::current_game_state();
     const auto& config = ultramodern::renderer::get_graphics_config();
 
+    wr64::inspector::begin_frame(state);
     trace_3d(rdram, list_vaddr, state);
 
     Walker w{};
@@ -1790,6 +1815,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     }
 
     if (w.lattice_trace) w.flush_lattice(state);
+
+    wr64::inspector::end_frame();
 
     // The drawn region follows the game's scissor, once it has held for a few
     // frames: a transition frame can draw into less than the whole region, and

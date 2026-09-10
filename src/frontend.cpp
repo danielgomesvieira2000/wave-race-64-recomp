@@ -11,6 +11,7 @@
 #include "wr64/frontend.h"
 #include "wr64/callbacks.h"
 #include "wr64/music.h"
+#include "wr64/inspector.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -115,9 +116,18 @@ private:
 std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
         uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle,
         bool developer_mode) {
+    // The inspector needs RT64's developer mode, because that is the only path
+    // on which RT64 draws any UI at all -- and the setting behind it is hidden
+    // in the graphics tab, which is no place to send someone who only wants to
+    // look at a menu. WR64_INSPECTOR turns on both.
+    const bool inspecting = wr64::inspector::enabled();
+    if (inspecting) {
+        wr64::inspector::install();
+    }
     return std::make_unique<RewritingContext>(
         rdram, recompui::renderer::create_render_context(
-                   rdram, window_handle, presentation_mode(), developer_mode));
+                   rdram, window_handle, presentation_mode(),
+                   developer_mode || inspecting));
 }
 
 // Which frame RT64 puts on screen, and when.

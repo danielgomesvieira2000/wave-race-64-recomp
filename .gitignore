@@ -65,3 +65,6 @@ desktop.ini
 # Derived from the reference decomp's splat config at build time (tools/make_asm_only_yaml.py);
 # that repository publishes no license, so the derivative is not committed.
 /recomp/wr64.us.rev1.asm.yaml
+
+# Window captures from tools/capture_window.ps1.
+shots/

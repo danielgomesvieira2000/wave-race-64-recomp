@@ -69,6 +69,9 @@ Run from the repository root:
 """
 
 import sys
+from pathlib import Path as _Path
+
+sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -367,6 +370,13 @@ def main():
     patch(GAME_FRAME, PAIRING_INCLUDE_ANCHOR, PAIRING_INCLUDE_REPLACEMENT, "pairing counters (include)")
     patch(GAME_FRAME, PAIRING_COUNTERS_ANCHOR, PAIRING_COUNTERS_REPLACEMENT, "pairing counters (accessor)")
     patch(GAME_FRAME, PAIRING_ANCHOR, PAIRING_REPLACEMENT, "pairing counters (count)")
+
+    # The inspector hook lives in its own script because it answers a different
+    # question, but the port links against the symbol it adds, so a build needs
+    # it as much as the four above. One command applies everything required.
+    import patch_rt64_inspector
+    patch_rt64_inspector.main()
+
     print("Rebuild to pick it up.")
 
 

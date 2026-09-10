@@ -140,8 +140,10 @@ registering it. Add that directory to your user PATH.
 
 ## Building with the runtime (phase 03 onward)
 
-Apply the project's patch to RT64 first (see *The game's own black borders*
-below for what it does and why it is a script):
+Apply the project's patches to RT64 first (see *The game's own black borders*
+below for what they do and why they are a script). This also applies the
+inspector hook from `tools/patch_rt64_inspector.py`, which the port links
+against, so the build needs it whether or not the inspector is ever used:
 
 ```
 python tools/patch_rt64.py
