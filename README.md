@@ -40,13 +40,24 @@ Settings, controller profiles and saves live in
 `%LOCALAPPDATA%\WaveRace64Recomp`. Started by double-click, the program writes
 its log to `wr64.log` in that folder; attach that file to a bug report.
 
-## What 0.5 is
+## What 0.6 is
 
 The game boots, its menus work, and championship, time trial and two-player
 races run with audio, at speed, with records saved to the emulated EEPROM.
 Not every course has been played in both directions yet, and stunt mode and
 the championship ceremony have had less testing than the rest; reports of
 anything wrong there are welcome.
+
+New in 0.6, all of it about widescreen and the tool that made it findable.
+**F1 opens a debug menu**, in this build and every build, listing the frame's 2D
+elements with the class the widescreen rewriter gave each one and letting you
+change it while the game runs -- see *Debug controls* below. Four things that sat
+in the wrong place on a wide screen were found with it and fixed: the opening's
+**sun glare** now reaches the edges, the **menu cursor** stays beside the entry
+it marks instead of sliding into the corners, and the **craft on the results
+screen**, the **course overview's preview** and the **rider-select craft** line
+up with the layouts they belong to. **Quit** is on the launcher menu. The wipe
+between the select screens is still 4:3; it is understood now and written up.
 
 New in 0.5, all of it about the controller and the sound. The pad rumbles in a
 game that shipped a year before the Rumble Pak, worked out from the race itself:
@@ -101,18 +112,40 @@ Beyond running natively, the port adds:
 - Audio through the recompiled RSP microcode, with the Sound tab's **Main
   Volume** applied to it.
 
-**F1 opens the debug menu**, in this build and every build. On one side is
-RT64's own: pause the game and keep the frame interactive, right-click a pixel
-to see what drew it, browse the framebuffers and textures. On the other is the
-port's, listing the 2D elements of the frame with the class the widescreen
-rewriter gave each one, outlining one on the screen when you hover it, and
-letting you change that class while the game runs. If something in a menu sits
-in the wrong place, that window is how to say which thing. F3 views RDRAM and F4
-toggles texture replacements; F2 is deliberately unbound. See
-[docs/HUD-INSPECTOR.md](docs/HUD-INSPECTOR.md).
+### Debug controls
+
+Not a developer build -- these are in the release, because the person looking at
+something drawn in the wrong place is running the game they downloaded.
+
+| Key | Does |
+|---|---|
+| **F1** | Opens and closes the debug menu |
+| F2 | Nothing. RT64 binds it to a session-long ray-tracing toggle with nothing on screen to explain it; this port removes the binding. |
+| F3 | Views RDRAM |
+| F4 | Toggles texture replacements |
+
+F1 brings up two windows. **Game editor** is RT64's own: pause the game and keep
+the frame interactive, right-click a pixel to see which draw calls made it,
+browse the framebuffers and textures, turn widescreen or filtering off to isolate
+a fault. **Wave Race HUD** is this port's: every 2D element of the frame with its
+identity, its position in the game's own 320x240 pixels, and the class the
+widescreen rewriter gave it. Hover a row and that element is outlined on the
+screen; click to pin the outline; change the class from the dropdown and it
+applies on the next frame. **Hold this frame** keeps the list still while the
+game runs on, for a transition. **Save to hud.json** writes your choices to
+`%LOCALAPPDATA%\WaveRace64Recomp\hud.json`, which overrides what the port ships
+with; delete that file to go back to the defaults.
+
+If something sits in the wrong place, that window is how to say which thing.
+[docs/HUD-INSPECTOR.md](docs/HUD-INSPECTOR.md) is the manual, and its second half
+is a recipe for putting the same tool in another N64 port.
 
 Known issues:
 
+- The **wipe between the rider-select and course-overview screens** is still
+  boxed in the middle 4:3. It is understood -- two triangle calls in one
+  perspective group, with no rectangles in it, which is why rectangle attributes
+  never touched it -- and written up in [docs/PORTING.md](docs/PORTING.md).
 - In a 4:3 window the picture is letterboxed. The game draws a 303x199 region
   of its 320x240 framebuffer, which does not fit a 4:3 window without bars.
   Fullscreen on a widescreen display, the default, has no bars.

@@ -1,0 +1,157 @@
+# Wave Race 64: Recompiled 0.6.0
+
+The widescreen release, and the tool that made it possible. **F1 opens a debug
+menu in every build**, listing the 2D elements of the frame with the class the
+widescreen rewriter gave each one, outlining one on the screen when you hover it,
+and letting you change that class while the game runs. Four things that sat in
+the wrong place on a wide screen were found with it and fixed.
+
+**You need your own dump of Wave Race 64 (USA) (Rev A), also called v1.1**
+(revision 1, header CRC `0x492F4B61 0x04E5146A`). No other version works. The
+launcher checks the file you pick.
+
+## Download
+
+`WaveRace64Recomp-0.6.0-windows-x64.zip`: unzip anywhere, run
+`WaveRace64Recomp.exe`, pick your dump. Settings and saves go to
+`%LOCALAPPDATA%\WaveRace64Recomp`, and so does `wr64.log`, the file to attach to
+a bug report. Settings from earlier versions carry over.
+`WaveRace64Recomp-0.6.0-windows-x64-debug-symbols.zip` is not a second build: it
+holds the debug symbols for the same executable, only needed for a readable
+crash report.
+
+The zip contains the recompiled game code and none of the game's assets; the
+executable is a GPL-3.0 combined work (see the README's *Licensing*), and its
+source is this repository at tag `v0.6.0`.
+
+## Debug controls
+
+Not a developer build. These are in the release, because the person looking at
+something drawn in the wrong place is running the game they downloaded.
+
+| Key | Does |
+|---|---|
+| **F1** | Opens and closes the debug menu. Press it again to close. |
+| F2 | **Nothing.** RT64 binds it to a ray-tracing toggle that lasts the session with nothing on screen to explain it; this port removes the binding. |
+| F3 | Views RDRAM. |
+| F4 | Toggles texture replacements. |
+
+F1 brings up two windows side by side.
+
+**Wave Race HUD**, this port's, lists every 2D element of the current frame:
+
+| Column | Meaning |
+|---|---|
+| `identity` | `tex:0x…` (texture) or `dl:0x…` (display list) -- the name a tag uses |
+| `x`, `y` | where it sits, in the game's own 320x240 pixels |
+| `proj` | `persp`/`ortho`, and `rect`/`tris` |
+| `class` | what the rewriter decided: centre, left, right or stretch |
+
+- **Hover a row** and that element is outlined on the screen in yellow; **click**
+  and the outline stays up in blue while you use the dropdown.
+- **Change the class** and it applies from the next frame. No rebuild, no
+  restart.
+- **Hold this frame** freezes the list while the game runs on, for anything
+  animated -- a transition, a wipe.
+- **Save to hud.json** writes what you chose to
+  `%LOCALAPPDATA%\WaveRace64Recomp\hud.json`, so it survives a restart. That file
+  overrides what the port ships with, and deleting it restores the defaults.
+
+**Game editor**, RT64's own: pause the game and keep the frame interactive
+(*Debugger*), right-click a pixel to see which draw calls made it, browse the
+framebuffers and the textures, and turn widescreen, upscaling or filtering off to
+isolate a fault (*Configuration*).
+
+`WR64_INSPECTOR=0` in the environment turns this port's half off and leaves
+RT64's. [docs/HUD-INSPECTOR.md](HUD-INSPECTOR.md) is the manual, and the second
+half of it is a recipe for putting the same tool in another N64 port.
+
+## What changed
+
+**The opening's sun glare reaches the edges.** The haze laid over the intro is a
+textured rectangle covering the whole drawn region, issued under the world's own
+perspective projection -- which is otherwise the signature of a rectangle that
+belongs to the picture rather than lying over it, and stretching those magnifies
+the shot. It is now named specifically, so the glare stretches and the camera
+shots around it do not.
+
+**The menu cursor stays beside the entry it marks.** The two red cubes that flank
+the selected line are one display list drawn twice, and the rule that anchors a
+race HUD element to the edge it is nearer read each half as belonging to that
+edge and pinned one to each side of the screen, while the entry stayed in the
+middle. That rule is guarded on the frame being a race, and the main menu passes
+the guard -- it draws a 3D world first, into the same inset scissor a race uses --
+so the cursor is named instead.
+
+**The craft on the results screen line up with their rows again**, and so does
+the course overview's preview and the rider-select craft. The game places a 3D
+object inside a 2D layout by taking a **full-size** viewport and moving its
+centre to where the object goes. RT64 asks whether a pass covers the frame's
+width and measures a viewport through its clip ratios -- 3 here, so a 320-wide
+viewport measures 1920 wide and covers the frame however far it has been moved --
+so it rendered every such pass across the widened frame and the objects slid
+outwards by the widening factor. The port had the fix for this and was reaching
+it from the wrong signal: it asked whether the 2D layout had started, read as
+"an orthographic projection has been loaded", and the results screen lays its 2D
+out under a perspective one. It now reads the viewport's own centre, which is the
+only thing in the frame that says the object was placed rather than filling the
+screen.
+
+**Quit is on the launcher menu**, below Settings. It shuts down in order rather
+than tearing the process down.
+
+## For anyone building on this
+
+**`tools/promote_hud_tags.py`** copies the tags you save in the inspector out of
+the per-user `hud.json` and into the port's built-in table, so a build carries
+them and no player has to discover them. Promotion is additive, so the loop works
+-- tag, promote, `--clear`, tag more, promote -- and `--dry-run` shows the diff
+first.
+
+**`tools/patch_rt64_inspector.py`** is the RT64 side: one function pointer that
+RT64 calls once per frame from `State::inspect()` with an ImGui frame already
+open, for a port to draw its own window into. It is chained into
+`tools/patch_rt64.py`, so one command still applies everything a build needs.
+
+**`docs/HUD-INSPECTOR.md`** is new: how to use the inspector, and a five-piece
+recipe for building the same thing in another N64 port on RT64 -- the hook, the
+developer-mode gates, the threading contract between the display-list thread and
+the renderer's UI thread, the call sites in a classifier, and the ImGui details.
+
+`docs/GAME-INTERNALS.md` gains *Placing a 3D object inside a 2D layout*, with the
+viewport each screen uses, and the menu cursor's display list.
+`docs/PORTING.md` gains the clip-ratio trap -- which will bite any port on RT64,
+not only this game -- and the trap of a frame test fooled by a frame that looks
+like the thing it tests for.
+
+## What is not here
+
+The wipe between the rider-select and course-overview screens is still boxed in
+the middle 4:3. It is now understood: two triangle calls in one perspective group
+with a full-frame viewport and no rectangles in it at all, which is why every
+attempt to fix it with rectangle attributes did nothing. RT64 is not failing to
+widen it -- it *is* widening it, which for a quad built to fill the old frustum
+reveals the space beyond its edges. The fix is to keep the stretched viewport and
+drop the frustum widening, and it did not make this release.
+
+There is still no separate volume for the announcer, for the reason given in
+0.5.0 and written up in [docs/PORTING.md](PORTING.md).
+
+## Known issues
+
+- In a 4:3 window the picture is letterboxed; fullscreen on a widescreen display
+  has no bars.
+- The wipe between the select screens stays 4:3, as above.
+- The results screen's layout is wrong when HUD Placement is larger than
+  Original, and the MAX POWER banner loses its last letter while the HUD layout
+  is on.
+- No announcer volume.
+- Windows only, for now.
+
+## Credits
+
+Controller rumble, shipped in 0.5.0, is built on work by [Elliott
+Tate](https://github.com/elliotttate): the addresses this port reads a race from
+were identified in his fork and offered in
+[pull request #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
+re-verified here and recorded in `docs/GAME-INTERNALS.md` §7.
