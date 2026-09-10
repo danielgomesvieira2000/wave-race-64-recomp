@@ -697,20 +697,40 @@ interpolation translates the mesh rather than animating it.
 moving.** This is where this port got it wrong. The water passed the check across
 four consecutive frames -- identical vertex counts, every block's first vertex
 bit-for-bit identical -- and the check was taken as settled. Those four frames had
-a stationary camera. Measured across 3,973 frames of a scripted race
-(`WR64_WATER_LATTICE`), the lattice moves in 58% of them, and when it moves, all
-fifty of its vertex blocks move 91% of the time: the game builds the surface
-around the camera, quantized to multiples of 32 world units. Index *i* is a
-different point on the surface in almost every frame in which the player is
-moving, which is the whole race.
+a stationary camera, which is the one condition under which a mesh built around
+the camera is indistinguishable from a fixed one.
 
-A mesh a game builds around the camera cannot be paired by array slot at all.
-Pairing it means sampling the previous surface at each current world XZ, inside
-the renderer, with the history rejected at camera cuts and scene changes. Nothing
-about the stable vertex counts, or the identical first vertices of a parked
-camera, distinguishes that case from a genuinely fixed lattice -- only a
-measurement while moving does.
-([GAME-INTERNALS.md §6](GAME-INTERNALS.md#6-graphics) has the numbers.)
+Measured over 2,172 race frames instead (`WR64_LATTICE`), the two meshes here
+fail and pass in different ways, and the distinction is the useful part:
+
+| | the water | the sky |
+|---|---|---|
+| moves in X or Z | 74% of frames | 95% of frames |
+| all blocks move by the **same** step | **100%** of frames | 5% of frames |
+| step of 60 world units or more | 31% of frames | 37% of frames |
+| what it is | one rigid mesh, carried whole | three bands, each moving on its own |
+| index *i* means | the same slot, carrying the same detail | the same point of that band |
+| pairing by index | correspondence fine, **positions unusable** | sound |
+
+So there are two distinct failures, and "does index *i* mean the same thing" only
+catches the first:
+
+- **Slots re-assigned.** Correspondence is lost; blocks move by different
+  amounts. Interpolating smears one part of the mesh into another.
+- **Positions quantized.** Correspondence is kept -- every block moves by the
+  same step -- but the positions are the camera's, rounded to a grid the camera
+  does not move on: 32, 64, 96, 128 units, while the camera moves a few units a
+  frame. Interpolating between two of them is a surge, not motion. The mesh's
+  *detail* is worth interpolating; its positions are not.
+
+The second is what the water is, and it is invisible to every check made of a
+single frame: stable vertex counts, stable block count, a stable reference
+vertex, all hold. Only the step distribution over a moving run shows it. The
+treatment is to interpolate the heights and texture coordinates against the
+previous surface **sampled at each current world XZ**, inside the renderer, with
+the history rejected at camera cuts and scene changes -- and to leave the
+positions where the game put them.
+([GAME-INTERNALS.md §6](GAME-INTERNALS.md#6-graphics) has both meshes' numbers.)
 
 Two further details:
 
@@ -753,7 +773,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Function-entry instrumentation** (`tools/instrument_funcs.py`) | Inserts a one-shot `printf` at named recompiled functions, or with `NAME@0xADDR` prints an RDRAM word on every call. Order answers "did it run"; a watched value answers "and did it stay valid". Safe only because re-running the recompiler erases the edits. |
 | **Hang watchdog** | A microcode that spins forever faults nothing, prints nothing and returns nothing. After a deadline, a persistent thread suspends the stuck thread, samples its instruction pointer repeatedly and resolves the distinct addresses to source lines. Sample repeatedly, not once: with everything inlined, one sample usually names a helper rather than the loop. (A thread *per call* here was real overhead on the thread that has to keep pace with the game.) |
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
-| **Water lattice trace** (`WR64_WATER_LATTICE`) | Per-index interpolation of a mesh the game rebuilds every frame is only valid while index *i* keeps naming the same point. This writes, for each frame that draws the water, how many of its vertex blocks moved in X or Z since the previous frame and how many moved only in height. A few frames of identical vertices are not evidence that a mesh is fixed: a lattice built around the camera holds still between steps and shifts when the camera has moved far enough, which no short capture will show. |
+| **Lattice trace** (`WR64_LATTICE`) | Whether a mesh the game rebuilds every frame can be paired between frames at all. For each frame, and for each rebuilt mesh (the water through segment 3, the sky through segment 6), it writes how many vertex blocks moved in X or Z since the previous frame, how many moved only in height, the largest step in each, and **how many moved by the same step as the first** -- which is what separates a mesh being carried whole from one re-assigning its slots. A handful of frames of identical vertices proves nothing: with the camera parked, a mesh built around the camera is indistinguishable from a fixed one. |
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
@@ -790,10 +810,10 @@ Small things, each of which cost real time here.
   pointer faults immediately instead of silently corrupting memory.
 - **A few frames with the camera parked is not a measurement of a moving game.**
   Four consecutive frames said this game's water lattice was fixed, and the port
-  interpolated its vertices by index on that basis through a release. Over 3,973
-  frames of a scripted race the lattice moves in 58% of them. Whatever a capture
-  is meant to establish, take it while the thing it is about is happening --
-  a camera at rest hides everything that follows the camera.
+  interpolated its vertices by index on that basis through a release. Over 2,172
+  race frames it moves in 74% of them, in steps of 32 to 128 world units.
+  Whatever a capture is meant to establish, take it while the thing it is about
+  is happening -- a camera at rest hides everything that follows the camera.
 - **`head` on a search is not the whole answer.** A truncated grep supported a
   confident claim about "the single caller" of an address. There were 19 call
   sites across two functions.

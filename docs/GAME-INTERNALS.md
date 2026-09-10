@@ -349,6 +349,27 @@ Its own two matrix loads are inside the game's static lists, so the top-level
 list's first world matrix load is the course, not the sky. Segment 6 having a
 base at all is a reliable signal that the sky is about to be drawn.
 
+Measured over the same 2,172 race frames as the water below (`WR64_LATTICE`,
+segment 6), the sky behaves differently from it in every respect that matters to
+a renderer pairing frames:
+
+| | |
+|---|---:|
+| frames in which a band moved in X or Z | 95% |
+| frames in which all three bands moved by the **same** step | 5% |
+| frames whose largest step was 60 world units or more | 37% |
+| blocks whose first vertex changed height, ever | 0 |
+
+The three bands move **independently** -- each follows the camera at its own
+rate, which is the parallax between haze, horizon and clouds -- and none of them
+ever changes height. The block count is a constant three of seven vertices. So
+unlike the water, which is one rigid mesh carried whole, the sky is three
+coherent objects each moving on its own, and index *i* within a band keeps
+naming the same point of that band. Pairing them by index and interpolating is
+sound, and it is what smooths their motion. (The trace samples each band's first
+vertex, so correspondence *within* a band is inferred from the constant block
+count and the smooth per-band motion rather than measured directly.)
+
 ### The water
 
 A lattice of rows marching away from the camera: **fifty vertex blocks reached
@@ -370,31 +391,43 @@ player count, `D_801CE64C` and `D_800DAB2C`:
 Every block's vertex count is the same every frame: 13, 14, 15, then 16 for the
 rest.
 
-**The lattice is not fixed. It is built around the camera and moves with it.**
+**The lattice is not fixed. It is carried with the camera, in quantized steps.**
 An earlier measurement over four consecutive frames found every block's first
-vertex bit-for-bit identical and concluded that the lattice stood still and only
+vertex bit-for-bit identical and concluded that the lattice stood still while
 the heights on it moved. Four frames is an eighth of a second, and those four
-were evidently taken with the camera at rest. Measured over a whole scripted run
-instead -- 3,973 frames that draw the water, `WR64_WATER_LATTICE`:
+were taken with the camera at rest. Measured over 2,172 race frames instead
+(`WR64_LATTICE`, state `0x28`):
 
 | | |
 |---|---:|
-| frames where no block's first vertex moved in X or Z | 42% |
-| frames where it did move | 58% |
-| ...of those, frames where **all fifty** blocks moved | 91% |
-| mean blocks whose first vertex changed height | 15 of 50 |
+| frames in which the lattice moved in X or Z | 74% |
+| frames in which **all fifty blocks moved by the identical step** | **100%** |
+| frames whose step was 60 world units or more | 31% |
+| blocks whose first vertex changed height, on a 60-unit carry | 15.1 of 50 |
+| ...on a frame where the lattice did not move at all | 12.2 of 50 |
 
-The step is quantized. The largest X shift in a frame is almost always a multiple
-of 32 world units -- 64 (560 frames), 32 (343), 96 (39), 128 (9) -- with a
-1-unit trim between steps. `func_8008E794`, which builds the surface, loads
-`64.0f` in both of its branches next to a `trunc.w.s` whose result goes to an
-integer register, which is that quantization in the code.
+Three things follow, and the third is the one that matters.
 
-So **index *i* is not the same point on the surface from one frame to the next
-whenever the camera is moving**, which is most of a race. A renderer pairing
-vertices by index sees the whole surface translate rather than the waves move.
-Pairing water vertices between frames has to be done by world position -- sample
-the previous surface at each current XZ -- not by array slot.
+**It is a rigid carry, not a recentring.** Every block moves by the same step in
+every frame measured, so index *i* still names the same lattice slot, and the
+correspondence a renderer pairs on is intact.
+
+**The wave pattern is carried with it.** A 60-unit carry changes about as many
+heights as standing still does (15.1 against 12.2 of 50). Were the surface
+sampled from a world-fixed wave field, moving it 64 units would have changed
+nearly all of them. The heights travel with the lattice; what changes frame to
+frame is the animation on top.
+
+**The positions are quantized and the camera's motion is not.** The step is
+almost always a multiple of 32 world units -- 64, 32, 96, 128 -- while the
+camera moves a few units per frame. `func_8008E794`, which builds the surface,
+loads `64.0f` in both of its branches next to a `trunc.w.s` whose result goes to
+an integer register, which is that quantization in the game's code. So the
+vertex positions are not a sampling of where the surface is; they are the
+camera's position rounded. Interpolating between two of them makes the surface
+surge 64 units across the frames in between, in the 31% of race frames that
+carry. Interpolate the heights and texture coordinates of a mesh like this, and
+leave its positions where the game put them.
 
 ### Segments
 
