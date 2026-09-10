@@ -135,9 +135,9 @@ config, which is derived from the reference decompilation's.
 
 ## Technical documentation
 
-Two reference documents write down what this port reverse engineered or ran
-into, for anyone working on the Wave Race 64 decompilation or on another N64
-port. They are kept current as the port changes.
+Three documents write down what this port reverse engineered, ran into, or built
+to see with, for anyone working on the Wave Race 64 decompilation or on another
+N64 port. They are kept current as the port changes.
 
 - **[docs/GAME-INTERNALS.md](docs/GAME-INTERNALS.md)** -- the game. Cartridge
   identity and how Rev A relates to v1.0, the code and overlay layout, the main
@@ -153,9 +153,13 @@ port. They are kept current as the port changes.
   RT64 patches and the display-list rewriter behind widescreen and interpolation,
   the diagnostics that were worth building, and the measurement traps that cost
   the most time.
+- **[docs/HUD-INSPECTOR.md](docs/HUD-INSPECTOR.md)** -- the in-game inspector for
+  the widescreen 2D layer: how to use it to find and fix an element while the
+  game is running, and a five-piece recipe for putting the same tool in another
+  N64 port on RT64.
 
-The phase findings under `docs/` are the working record those two were distilled
-from; they keep the wrong turns, which are often the useful part.
+The phase findings under `docs/` are the working record the first two were
+distilled from; they keep the wrong turns, which are often the useful part.
 
 ## Contributing
 

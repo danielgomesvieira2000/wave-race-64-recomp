@@ -16,7 +16,7 @@ rest run wherever Python or PowerShell does.
 | `patch_librecomp.py` | Makes librecomp's function-lookup failures report the address they failed on. Idempotent. |
 | `patch_rsprecomp.py` | Makes RSPRecomp's indirect jumps ignore the low two bits of the target, as the hardware does. Idempotent. |
 | `patch_recompinput.py` | Adds `players::auto_assign_controllers` to RecompFrontend, so the port can put the first pad on player one and the second on player two without the assignment modal. Idempotent. |
-| `patch_rt64_inspector.py` | Adds one function pointer to RT64 (`RT64_PortInspectorHook`) that it calls once per frame from `State::inspect()` with an ImGui frame open, so the port can draw its own window inside RT64's developer UI. Null unless the port sets it. `WR64_INSPECTOR=1` switches the port's side on. Idempotent. |
+| `patch_rt64_inspector.py` | Adds one function pointer to RT64 (`RT64_PortInspectorHook`) that it calls once per frame from `State::inspect()` with an ImGui frame open, so the port can draw its own window inside RT64's developer UI. Null unless the port sets it. `WR64_INSPECTOR=1` switches the port's side on. Idempotent, and chained into `patch_rt64.py` because the port links against the symbol. See [../docs/HUD-INSPECTOR.md](../docs/HUD-INSPECTOR.md). |
 | `patch_rt64_rectlog.py` | Makes RT64 print where every rectangle actually lands on the widened framebuffer -- its own coordinates, origins, aspect flag and the resulting position and width. `WR64_RECT_LOG=1` switches it on. Idempotent. |
 | `patch_rt64.py` | Patches RT64 so this game's inset frame is kept at 4:3 for the HUD and presented without its black borders. Idempotent. |
 | `wsl_setup_splat.sh` | Prepares a Python environment for the vendored splat. |

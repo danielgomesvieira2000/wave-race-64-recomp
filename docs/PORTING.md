@@ -981,6 +981,10 @@ anything is wrong.
 
 ### The HUD inspector: fixing a 2D element with it in front of you
 
+**[docs/HUD-INSPECTOR.md](HUD-INSPECTOR.md) is the manual and the recipe** -- how
+to use it, and how to put the same tool in another port. This section is why it
+looks the way it does.
+
 `WR64_INSPECTOR=1` draws a window inside RT64's developer UI listing every 2D
 element of the current frame -- its identity, its extent in the game's own
 320x240 pixels, whether it was drawn under a perspective or an orthographic
