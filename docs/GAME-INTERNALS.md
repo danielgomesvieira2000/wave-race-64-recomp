@@ -493,45 +493,48 @@ scaled. It is derived per frame, and changing it means intervening inside
 this and the buoy cull: one is a comparison against a stored value, the other is
 generated geometry.
 
-### The gate markers: a known lead
+### The gate markers: identified, and what limits them
 
-The buoys are not the only thing culled by distance. The **yellow arrows and the
-chevron signs at the gates** disappear well before the buoys do, and they are
-drawn by different code: raising the buoy limit at struct `+0xA4` moves the buoys
-and leaves the arrows vanishing at exactly the same place.
+The **yellow arrows on the course** are not culled the way the buoys are. Raising
+the buoy limit at struct `+0xA4` moves the buoys and leaves the arrows exactly
+where they were.
 
-What is known, and what it cost to learn, so the next attempt starts further on:
+Identified by right-clicking one in RT64's debugger, reading the texture out of
+`Load operation #0`, and resolving it against the segment bases in a trace of the
+same session:
 
-- **They are two triangles**, drawn with a matrix from **segment 3**. That was
-  read off one of them in RT64's debugger: `Min matrix segmented address:
-  0x0300F208`, `Triangle count: 2`.
-- **That address is not a handle.** Segment 3 is a per-frame arena, so an offset
-  in it means only where the allocator happened to put that matrix in that frame,
-  on that course. Grepping the recompiled code for `0xF208` finds nothing, and
-  matching the address against a trace of a different course found a display list
-  drawn twice at 400-700 units, which is the player's own craft. The buoys were
-  findable because their matrices come from a **fixed** table, segment 5 at
-  `0xA1C0`, which greps straight to the function that fills it.
-- **A candidate family**, from a spaced 3D trace of a race: nine display lists in
-  three groups of three, four vertices each, never drawn beyond about 1,600 units
-  while the buoys reach 4,500.
+| | |
+|---|---|
+| Display list | `0x0102CE78` |
+| Vertex block | `0x0102CE38`, 4 vertices at `(+/-64, +/-64, 0)` -- a billboard quad |
+| Texture | **`0x01014A18`**, i.e. physical `0x0023D828` at that session's segment 1 base |
+| Matrices | **segment 5 at `0x4440`**, stride `0x80` -- a fixed table, like the buoys' at `0xA1C0` |
 
-  | | |
-  |---|---|
-  | `0x0806EC80`, `0x0806ED00`, `0x0806ED80` | 4 verts each |
-  | `0x0806EE00`, `0x0806EE80`, `0x0806EF00` | 4 verts, texture `0x0806D480` |
-  | `0x0806EF80`, `0x0806F000`, `0x0806F080` | 4 verts, texture `0x0806DC80` |
+Note how close the display list sits to the buoys' `0x0102CD78` and `0x0102CD90`:
+the same neighbourhood of the same segment, which is a hint they belong to one
+object system with different types. `func_8006E674` does branch on a type field at
+`+0x10` of each record, and types 4 and 5 skip the distance test entirely.
 
-  The shape and the distances fit. It is **not confirmed** that these are the
-  arrows.
+**The limit looks like a count, not a distance.** Across nine traced frames,
+**exactly two** arrows were drawn every frame, at fixed world positions
+`(-5000, 152, -750)` and `(-4750, 155, -2500)` -- 2,483 and 4,218 from the camera.
+A distance rule would let the number vary as the camera moves, the way the buoys'
+varied between 12 and 23. Two, every frame, does not.
 
-**What would settle it** is a stable identity for one arrow -- its texture image
-address, from `Load operation #0` in the debugger's call view, which survives
-between frames where a segment-3 matrix address does not. With that, find it in a
-trace of the same course, measure its ceiling the way the buoys' 4,500 was
-measured, and grep the recompiled C for whatever structural offset the trace
-shows it being drawn from. That last step is what found the buoy loop in one
-search.
+**What is left to do:** confirm that by driving rather than parking. The camera
+was stationary for those frames, which is exactly the condition under which a
+count and a distance look alike. Then find where the two comes from -- the matrix
+table at segment 5 `+0x4440` is the handle, being fixed rather than in the
+per-frame arena, though `0x4440` does not appear as an immediate in the recompiled
+code the way `0xA1C0` did.
+
+**One dead end, recorded so it is not repeated.** An earlier attempt read a
+different call's matrix address, `0x0300F208`, and treated it as an identity. It
+is not: segment 3 is a per-frame arena, so an offset there says only where the
+allocator landed that frame on that course. Matching it against a trace of another
+course produced a confident wrong answer -- a display list drawn twice at 400 to
+700 units, which is the player's own craft. **Only a fixed segment, or a texture,
+identifies an object between sessions.**
 
 ### Placing a 3D object inside a 2D layout
 
