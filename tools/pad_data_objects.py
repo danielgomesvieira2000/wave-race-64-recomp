@@ -3,7 +3,7 @@
 splat emits a subsegment only as far as its last symbol. Cartridge bytes past
 that symbol are dropped, nothing realigns the next object, and the error
 accumulates -- measured at 0x3080 by the end of main_segment, which dragged
-.bss and the boot stack pointer down with it. See docs/PHASE01-FINDINGS.md.
+.bss and the boot stack pointer down with it. See docs/findings/phase-01.md.
 
 Three things this has to get right:
 

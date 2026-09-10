@@ -68,3 +68,9 @@ desktop.ini
 
 # Window captures from tools/capture_window.ps1.
 shots/
+
+# Runtime output when the game is started from the repository root
+# (before the settings directory was registered; kept out of the tree).
+mods/
+mod_config/
+saves/

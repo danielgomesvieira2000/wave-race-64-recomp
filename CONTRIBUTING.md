@@ -106,7 +106,7 @@ Start with [docs/BUILDING.md](docs/BUILDING.md) and get a build running before
 changing anything; most of the pipeline's failure modes are easier to recognise
 once you have seen it work. [docs/PLAN.md](docs/PLAN.md) is the phase plan and
 the standing constraints, [docs/PORTING.md](docs/PORTING.md) explains the
-toolchain and runtime symptom-first, and the `docs/PHASE0*-FINDINGS.md` files are
+toolchain and runtime symptom-first, and the `docs/findings/` files are
 the working record, including the wrong turns.
 
 | Directory | Contents |

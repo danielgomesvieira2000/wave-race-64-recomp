@@ -1,5 +1,20 @@
 # Build plan
 
+> **This is a historical document.** It is the plan the project was executed
+> against, kept as written so the reasoning behind each phase survives. Two
+> things in it were overtaken by what the work found:
+>
+> - **The target revision changed.** The plan below argues for v1.0 (revision 0)
+>   and says the fallback is to "re-pin to Rev A". Phase 01 measured it and the
+>   project re-pinned: everything ships against **Wave Race 64 (USA) Rev A**,
+>   also called v1.1. Every address in the repository is tied to Rev A.
+> - **The phases ran out.** The plan stops at phase 07; the work continued past
+>   it -- rumble, audio, the debug menu, mods -- without new phase numbers. What
+>   changed and when is in [../CHANGELOG.md](../CHANGELOG.md) and
+>   [releases/](releases).
+>
+> The *Standing constraints* at the end are still in force.
+
 ## Target revision
 
 This project targets **Wave Race 64 (USA) v1.0** (revision 0, entry point

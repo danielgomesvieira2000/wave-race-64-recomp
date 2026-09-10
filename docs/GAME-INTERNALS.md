@@ -3,7 +3,7 @@
 Everything this port had to learn about the game itself, in a form a
 decompilation or another port can use directly. It is a reference, not a
 narrative; how each fact was established is in the phase findings
-(`docs/PHASE01-FINDINGS.md` through `docs/PHASE05-FINDINGS.md`).
+(`docs/findings/phase-01.md` through `docs/findings/phase-05.md`).
 
 The companion document, [PORTING.md](PORTING.md), covers the toolchain and
 runtime side -- N64Recomp, librecomp/ultramodern, RT64 -- which is game

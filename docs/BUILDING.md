@@ -170,7 +170,7 @@ reading; the microcode then sees a splice of two frames' commands, and one
 particular splice -- an ENVMIXER inheriting the frame-end SAVEBUFF's sample
 count -- walks a buffer off the end of DMEM onto the command jump table. That
 is the "audio frame dropped" click. Optimized, a task takes well under a
-millisecond and the window closes. See docs/PHASE05-FINDINGS.md.
+millisecond and the window closes. See docs/findings/phase-05.md.
 
 RT64 decides its warning flags from `CMAKE_CXX_SIMULATE_ID`: a Clang targeting
 the MSVC ABI gets `/W4`, on the assumption that such a Clang is `clang-cl`. That

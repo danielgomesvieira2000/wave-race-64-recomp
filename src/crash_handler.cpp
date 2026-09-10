@@ -185,7 +185,7 @@ namespace {
 // thread that has to keep pace with the game. That jitter was enough to let
 // the game get two audio frames ahead of the RSP and start rewriting a
 // command list the microcode was still reading (see the ENVMIXER notes in
-// docs/PHASE05-FINDINGS.md). Arming a watchdog must cost two atomic stores.
+// docs/findings/phase-05.md). Arming a watchdog must cost two atomic stores.
 std::atomic<long long> g_watch_deadline_ms{ 0 };   // 0 = nothing being watched
 std::atomic<const char*> g_watch_what{ nullptr };
 std::atomic<int> g_watch_seconds{ 0 };

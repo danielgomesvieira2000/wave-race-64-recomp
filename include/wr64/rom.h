@@ -36,7 +36,7 @@ struct RomHeader {
 // is no longer so, and Rev A is the right target by a wide margin: it is the
 // revision every piece of existing Wave Race 64 reverse engineering was built
 // for, and our dump is byte-identical to the one LLONSIT's decomp pins, so its
-// segment map and symbol corpus apply unmodified. docs/PHASE01-FINDINGS.md
+// segment map and symbol corpus apply unmodified. docs/findings/phase-01.md
 // records what we measured about v1.0 in the meantime -- the two revisions are
 // related by piecewise offsets, not a constant -- which is why targeting v1.0
 // would have cost weeks of sequence alignment for no benefit.
