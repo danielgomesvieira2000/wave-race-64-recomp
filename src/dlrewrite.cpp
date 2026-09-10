@@ -1763,9 +1763,17 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
 
     static const char* frames_env = std::getenv("WR64_3D_TRACE_FRAMES");
     static const int wanted = frames_env != nullptr ? std::atoi(frames_env) : 2;
+    // How far apart the traced frames are, in race frames. One is consecutive,
+    // which is what a frame-to-frame diff of the geometry wants. A larger
+    // number spreads them over the run, which is what a question about
+    // distance wants -- whether an object is submitted at all from far away.
+    static const char* every_env = std::getenv("WR64_3D_TRACE_EVERY");
+    static const int every = every_env != nullptr ? std::max(1, std::atoi(every_env)) : 1;
+    static int seen = 0;
     static int written = 0;
     static std::FILE* f = nullptr;
     if (written >= wanted) return;
+    if ((seen++ % every) != 0) return;
     if (f == nullptr) {
         f = std::fopen(path, "w");
         if (f == nullptr) {
@@ -1776,7 +1784,8 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
     }
 
     ++written;
-    std::fprintf(f, "==== frame %d (state 0x%02X, list 0x%08X) ====\n", written, state, list_vaddr);
+    std::fprintf(f, "==== frame %d of %d (race frame %d, state 0x%02X, list 0x%08X) ====\n",
+                 written, wanted, seen - 1, state, list_vaddr);
     Tracer t{};
     t.rdram = rdram;
     t.f = f;
