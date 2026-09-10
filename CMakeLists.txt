@@ -187,7 +187,8 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     list(APPEND WR64_SOURCES src/renderer.cpp src/callbacks.cpp src/overlays.cpp src/libultra_stubs.cpp
                              src/testdrive.cpp src/display.cpp src/dlrewrite.cpp
                              src/haptics.cpp src/music.cpp
-                             src/inspector.cpp src/mods.cpp)
+                             src/inspector.cpp src/mods.cpp
+                             src/drawdistance.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()

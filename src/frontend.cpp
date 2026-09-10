@@ -12,6 +12,7 @@
 #include "wr64/callbacks.h"
 #include "wr64/music.h"
 #include "wr64/inspector.h"
+#include "wr64/drawdistance.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -309,6 +310,31 @@ void init() {
         "<recomp-color primary>45</recomp-color> is what the game draws at; higher shows more "
         "without stretching anything. The HUD and the menus are unaffected.",
         45.0, 110.0, 5.0, 0, false, 45.0);
+    // Object draw distance. Not the far plane -- that is already twenty times
+    // further out than anything the game draws -- but the game's own culling,
+    // which drops buoys at 5000 units and is what shows as pop-in.
+    graphics.add_enum_option(
+        "object_draw_distance", "Object Draw Distance",
+        "How far away the game keeps drawing buoys and course markers. "
+        "<recomp-color primary>Original</recomp-color> is the game's own limit, which drops them "
+        "at a fraction of the distance the world is drawn to.",
+        std::vector<recomp::config::ConfigOptionEnumOption>{
+            { 0u, "Original", "Original" },
+            { 1u, "OneAndAHalf", "1.5x" },
+            { 2u, "Two", "2x" },
+            { 3u, "Four", "4x" },
+        },
+        0u);
+    graphics.add_option_change_callback(
+        "object_draw_distance",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            static const double steps[] = { 1.0, 1.5, 2.0, 4.0 };
+            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
+                wr64::drawdistance::set_multiplier(steps[*choice < 4 ? *choice : 0]);
+            }
+        });
+
     graphics.add_option_change_callback(
         "fov",
         [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,

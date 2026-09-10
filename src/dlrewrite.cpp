@@ -98,6 +98,7 @@
 
 #include "wr64/dlrewrite.h"
 #include "wr64/display.h"
+#include "wr64/drawdistance.h"
 #include "wr64/inspector.h"
 #include "wr64/testdrive.h"
 
@@ -1825,6 +1826,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     const uint32_t state = wr64::current_game_state();
     const auto& config = ultramodern::renderer::get_graphics_config();
 
+    wr64::drawdistance::apply(rdram);
+
     wr64::inspector::begin_frame(state);
     trace_3d(rdram, list_vaddr, state);
 

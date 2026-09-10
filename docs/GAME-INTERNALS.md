@@ -394,12 +394,41 @@ For contrast, the far plane is at 16,192 (*The world's frustum*, above). Buoys
 stop being drawn at somewhere under a third of the distance the frustum reaches,
 which is what a player sees as pop-in.
 
-**Where the check is has not been found.** `0x458CA000`, exactly `4500.0f`,
-occurs several times in the data at `0x800E63C4` and nearby -- but in context it
-is a coordinate inside a table of seven-word placement records, not a threshold,
-so the match is a coincidence worth writing down only so the next person does not
-spend the same hour on it. The code that fills the matrix table is still to be
-identified.
+**The check is in `func_8006E674`**, which builds the list of buoys to draw:
+
+```
+0x8006EC30  mul.s   $f10, $f20, $f20     ; dx^2, the camera at $s6+0x4C..0x54
+0x8006EC3C  mul.s   $f6,  $f22, $f22     ; dz^2
+0x8006EC44  cvt.s.w $f14, $f4            ; (float) the limit, an int in $s2
+0x8006EC48  add.s   $f12, $f10, $f6
+0x8006EC4C  jal     0x800C7010           ; sqrtf -> $f0
+0x8006EC60  c.lt.s  $f0, $f14            ; distance < limit ?
+0x8006EC70  bc1fl   L_8006ED20           ; no -> skip this buoy
+```
+
+`$s2` is `lw 0xA4($v0)` at `0x8006E9AC`, and `$v0` is the word at **`0x801C0C80`**
+-- a pointer the game leaves there to a per-course struct. So the limit is
+
+| | |
+|---|---|
+| Pointer to the struct | `0x801C0C80` |
+| Buoy distance | struct `+0xA4`, an `int`, **5000** on the courses measured |
+| Neighbours | `+0xA0` reads 400 and `+0xA8` reads 135; both are compared elsewhere in the same function |
+
+Raising `+0xA4` is the whole fix -- the game then submits the buoys it was
+skipping, and matrices, display list and renderer follow on their own. At four
+times, 5000 to 20000, the count drawn went from 12-23 to **40-54** and the
+furthest from 4,096-4,570 to **7,062-8,617**, which is the far side of the course:
+every buoy on it. That is why there is no point going higher.
+
+Two things that look like the source and are not. `0x458CA000` is exactly
+`4500.0f` and occurs several times around `0x800E63C4`, but in context it is a
+coordinate inside seven-word placement records. And the static table at
+`0x800D8578` -- twenty-seven four-word records, each ending in the sentinel
+`0x2D2D2D00`, holding distances of 5000, 3000 and 1000 on one set of courses and
+6000, 4000 and 2000 on the other -- looks exactly like where 5000 comes from.
+Scaling every record in it changes nothing: the value read at `+0xA4` stays 5000.
+Both were checked and both are coincidences.
 
 ### Placing a 3D object inside a 2D layout
 

@@ -929,6 +929,30 @@ Practical rules this port arrived at:
   built in. A field-of-view setting is then `m[0][0]` and `m[1][1]` divided by
   the ratio wanted, applied to **every** perspective pass of the frame, because
   the sky has a frustum of its own and comes apart from the world otherwise.
+- **Finding a game's culling: search the recompiled C for the offset, not the
+  threshold.** Draw distance is the game's own decision and a renderer cannot
+  undo it, so it has to be found in the game's code -- in a project where the
+  reference decompilation is still mostly assembly with `func_8xxxxxxx` names.
+  What worked was not searching for the threshold, which turned out to be a
+  variable rather than a constant, but searching for a **structural offset** that
+  had already been observed at runtime: the trace showed the object's matrices
+  coming from segment 5 at `+0xA1C0`, and `grep 0xA1C0 RecompiledFuncs/` found
+  the one function that loads it. Reading outward from there gave the loop, the
+  comparison and the address the limit is read from. **The recompiled C is a
+  better search space than the disassembly** -- every instruction is there with
+  its address in a comment, and it is one `grep` rather than a symbol hunt.
+- **Then change the value, not the code.** The limit was a field in a struct the
+  game keeps a pointer to, so the port writes it once per frame from the value
+  the game itself last wrote -- scaling the game's number rather than replacing
+  it, so a course that uses a different one keeps its proportions, and restoring
+  it when the setting goes back to default. No patch to the recompiled code, and
+  at the default setting nothing is written at all.
+- **Two coincidences cost an hour each.** The measured cutoff was about 4,500 and
+  `4500.0f` exists in the game's data; it is a coordinate. The value turned out
+  to be 5,000 and a static table of course parameters holds 5,000; scaling every
+  record in it changed nothing. Neither was the source. **A plausible constant in
+  the data is not evidence** -- the test is whether changing it changes the
+  behaviour.
 - **Measure a far plane before offering a draw distance setting.** It is the
   obvious knob and it is often worth nothing: this game's far plane is already
   about twenty times further out than anything it draws (GAME-INTERNALS, *The
