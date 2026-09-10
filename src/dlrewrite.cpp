@@ -1078,8 +1078,18 @@ struct Walker {
                 // the game's own rectangle rather than by the frame, and it
                 // undid the select screens' backgrounds, which this gets
                 // right.
+                // Both edges anchored to the frame's, and the aspect left
+                // alone. G_EX_ASPECT_STRETCH does not mean "cover the widened
+                // frame": it means "do not squeeze this back to 4:3", which
+                // leaves a screen-wide rectangle covering the game's own 320
+                // columns of a framebuffer that is now wider than that. What
+                // spreads an element across the widened frame is the extended
+                // origins, which is how anchoring works, so a full-frame
+                // element anchors its left edge to the frame's left and its
+                // right edge to the frame's right.
                 if (GfxCommand* cmd = reserve(2)) {
-                    gEXSetRectAlign(cmd, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE, 0, 0, 0, 0);
+                    gEXSetRectAlign(cmd, G_EX_ORIGIN_LEFT, G_EX_ORIGIN_RIGHT, 0, 0,
+                                    origin_cancel(G_EX_ORIGIN_RIGHT), 0);
                 }
                 if (GfxCommand* cmd = reserve(1)) gEXSetRectAspect(cmd, G_EX_ASPECT_STRETCH);
                 break;
