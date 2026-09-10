@@ -386,6 +386,7 @@ struct Walker {
     // Section state: A1's centred perspective sections, and the 2D class in
     // force.
     bool centred = false;
+    bool centred_by_viewport = false;   // ... and on_viewport_load is what decided it
     bool seen_ortho = false;
     RaceTest race_test;
     Class cls = Class::Auto;
@@ -479,12 +480,66 @@ struct Walker {
         return cmd;
     }
 
-    void align_viewport(uint32_t origin, int offset_x) {
+    // The origin RT64 is to apply to viewports from here on, on its own. Used
+    // where the game's own viewport command is about to follow anyway.
+    void viewport_align(uint32_t origin, int offset_x) {
         if (GfxCommand* cmd = reserve(2)) {
             gEXSetViewportAlign(cmd, origin, offset_x, 0);
         }
+    }
+
+    void align_viewport(uint32_t origin, int offset_x) {
+        viewport_align(origin, offset_x);
         if (have_viewport) {
             emit(viewport_w0, viewport_w1);
+        }
+    }
+
+    // Whether the viewport the game is loading is the whole frame.
+    //
+    // Vp carries vscale and vtrans as signed halves in 2.2 fixed point, so the
+    // full frame reads 640 and 640: a half-width of 160 about x = 160. The
+    // tolerance is four, which is one pixel.
+    bool viewport_is_full_frame(uint32_t segmented) const {
+        const uint32_t addr = physical(segmented);
+        const int full = kFramebufferWidth * 4 / 2;
+        return std::abs(int(signed_half(addr)) - full) <= 4 &&
+               std::abs(int(signed_half(addr + 8)) - full) <= 4;
+    }
+
+    // A viewport the game has moved off the centre of the screen is how it
+    // places a 3D object inside a 2D layout, and RT64 cannot see that.
+    //
+    // The race results screen gives each of its four craft a full-size frustum
+    // and moves the viewport's centre to that craft's row: scale 160x120,
+    // translate 86,88. RT64 decides whether to render a pass across the widened
+    // frame by asking whether it covers the frame's width, and it measures a
+    // viewport through its clip ratios -- 3 here, so a 320-wide viewport is
+    // measured 1920 wide and covers the frame however far it has been moved. So
+    // it answers yes, and the craft land at 86/320 of the widened frame instead
+    // of 86/320 of the 4:3 box: they slide outwards by the widening factor while
+    // the rows they belong to stay put.
+    //
+    // An origin on the viewport switches that off, and it is the same origin the
+    // menus' model boxes already get. The rule at the projection load decides it
+    // from whether the 2D layout has started, which it reads as "an orthographic
+    // projection has been loaded" -- and this screen lays its 2D out under a
+    // perspective one, so it never fired here. The viewport says it directly
+    // instead: it is the only thing in the list that states where the game meant
+    // the object to be.
+    void on_viewport_load(uint32_t segmented) {
+        if (!menu || noemit) return;
+        const bool full_frame = viewport_is_full_frame(segmented);
+        if (!full_frame && !centred) {
+            viewport_align(G_EX_ORIGIN_CENTER, origin_cancel(G_EX_ORIGIN_CENTER));
+            centred = true;
+            centred_by_viewport = true;
+            ++centred_sections;
+        }
+        else if (full_frame && centred_by_viewport) {
+            viewport_align(G_EX_ORIGIN_NONE, 0);
+            centred = false;
+            centred_by_viewport = false;
         }
     }
 
@@ -1733,11 +1788,15 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             w.viewport_w0 = w0;
             w.viewport_w1 = w1;
             if (w.trace != nullptr) {
-                char line[96];
-                std::snprintf(line, sizeof(line), "[hud] state 0x%02X viewport load 0x%08X (class %s)\n",
-                              state, w1, class_name(w.cls));
+                const uint32_t vp = w.physical(w1);
+                char line[176];
+                std::snprintf(line, sizeof(line),
+                              "[hud] state 0x%02X viewport load 0x%08X half-width %.1f centre %.1f%s (class %s)\n",
+                              state, w1, w.signed_half(vp) / 4.0f, w.signed_half(vp + 8) / 4.0f,
+                              w.viewport_is_full_frame(w1) ? "" : " OFF-CENTRE", class_name(w.cls));
                 w.trace->append(line);
             }
+            w.on_viewport_load(w1);
             w.emit(w0, w1);
             continue;
         }
@@ -1796,6 +1855,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 else if (!persp && w.centred) {
                     w.align_viewport(G_EX_ORIGIN_NONE, 0);
                     w.centred = false;
+                    w.centred_by_viewport = false;
                 }
             }
             if (projection_load && !w.projection_is_perspective) {

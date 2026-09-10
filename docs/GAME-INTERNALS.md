@@ -325,6 +325,33 @@ rectangle under a perspective one, with no overlap. So "world drawn first" plus
 "inset scissor" identifies a race frame, and the projection type per draw
 separates HUD from menu layout.
 
+### Placing a 3D object inside a 2D layout
+
+The game does not give an object its own small viewport. It takes a **full-size
+viewport -- scale 160x120, the whole 320x240 frame -- and moves its centre** to
+where the object should appear, then draws the object at the origin of a
+square-aspect perspective projection (`[0][0] == [1][1] == 3.370880`, fovy 33
+degrees, near 16, far 4096).
+
+| Screen | `gGameState` | Viewport | Centre (x, y) | What is placed |
+|---|---|---|---|---|
+| Rider select | `0x0A` | `0x800DA8F0` | 226, - | the rider's craft |
+| Course overview | `0x1E`, `0x1F` | `0x0106F728` | 105, - | the course preview |
+| Race results | `0x34` | `0x07001280`..`0x070012B0` | 86, 88 (and three more) | one craft per finishing position |
+
+The full-size scale is the trap. A widescreen renderer that asks "does this pass
+cover the frame's width?" -- and measures a viewport through its clip ratios,
+which are `3 3 -3 -3` here, so a 320-wide viewport measures 1920 wide -- answers
+yes however far the viewport has been moved. So **the viewport's translate is the
+only thing in the frame that says the object was placed rather than filling the
+screen.** Nothing else distinguishes it: same scale, same clip ratios, same
+scissor as the backdrop.
+
+The same projection value, `3.370880`, is also what the wipe between menus uses
+(below). It is the game's "draw this in screen space" projection, and it appears
+on a screen-filling quad and on a placed object alike, so it does not identify
+either on its own.
+
 That measurement is about **rectangles**. The menus also draw *triangles* under
 an orthographic projection, and the one that matters is the cursor: the pair of
 red cubes that flank the selected entry.

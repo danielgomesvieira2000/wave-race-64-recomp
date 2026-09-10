@@ -875,6 +875,20 @@ Practical rules this port arrived at:
   stretched everything drawn after it as well, including a logo drawn from a
   called list. Restore the previous class as soon as the tagged run is emitted
   rather than waiting for the next classified run.
+- **A viewport's clip ratios defeat a "does this pass cover the frame" test.**
+  RT64 measures a viewport as `translate +/- scale * clipRatio` (`rect()` in
+  `rt64_rsp_viewport.h`), and the ratios are typically 3, so a full-width
+  viewport measures three times the frame however far its centre has been moved.
+  This game places a 3D object inside a 2D layout by moving a **full-size**
+  viewport to the object's position (GAME-INTERNALS, *Placing a 3D object inside
+  a 2D layout*), so every such pass answers "yes, I cover the frame", gets
+  rendered across the widened frame, and the object lands at its 320-wide
+  coordinate as a fraction of the *widened* width -- sliding outwards by exactly
+  the widening factor while the 2D it belongs beside stays at 4:3. **Read the
+  viewport's translate, not its measured extent.** A viewport the game has moved
+  off centre is a placed object; give its pass an extended origin
+  (`gEXSetViewportAlign` with `G_EX_ORIGIN_CENTER`), which is what switches the
+  widening off for that projection and leaves it in the centred 4:3 region.
 - **A test that reads the frame can still be fooled by a frame that looks like
   the thing it tests for.** This port decides "is this a race?" from the frame --
   world drawn first, under a perspective projection, into the inset scissor --
