@@ -126,8 +126,6 @@ If something sits in the wrong place, that window is how to say which thing.
   boxed in the middle 4:3. It is understood -- two triangle calls in one
   perspective group, with no rectangles in it, which is why rectangle attributes
   never touched it -- and written up in [docs/PORTING.md](docs/PORTING.md).
-- The **MAX POWER** banner loses its last letter while the HUD layout is on. The
-  game's own rectangle clips it, rather than the frame's edge.
 - **Windows** is what this project builds and tests today. A fork carries native
   macOS support; wider platform coverage is intended.
 

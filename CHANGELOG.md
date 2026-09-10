@@ -17,7 +17,8 @@ Nothing yet.
 - Three more 2D elements placed correctly in widescreen, found with the debug
   menu and tagged into the port's built-in table, which now holds twenty-eight
   entries.
-- The **results screen's HUD layout** is fixed.
+- The **results screen's HUD layout** and the **MAX POWER banner's last letter**
+  are fixed.
 - **Every course has now been played** in both directions.
 - The known-issues list lost the things that were never faults: the **4:3
   letterbox** is the game's own overscan, recorded as a note rather than an
