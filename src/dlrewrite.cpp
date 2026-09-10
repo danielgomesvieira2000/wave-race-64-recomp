@@ -258,6 +258,22 @@ struct Tags {
     void load_defaults() {
         by_identity["tex:0x01005748"] = Class::Stretch;
         by_identity["dl:0x0106f408"] = Class::Auto;
+
+        // ---- promoted from hud.json by tools/promote_hud_tags.py ----
+        // Tagged in the inspector and promoted here so a release carries them.
+        // Everything between these two markers is rewritten by that script;
+        // hand-written entries go above the first marker, with their reasons.
+        by_identity["tex:0x01033cb8"] = Class::Auto;
+        by_identity["tex:0x01033e98"] = Class::Auto;
+        by_identity["tex:0x01034078"] = Class::Auto;
+        by_identity["tex:0x01034258"] = Class::Auto;
+        by_identity["tex:0x01034438"] = Class::Auto;
+        by_identity["tex:0x01034618"] = Class::Auto;
+        by_identity["tex:0x01035338"] = Class::Auto;
+        by_identity["tex:0x010358d8"] = Class::Auto;
+        by_identity["tex:0x010369b8"] = Class::Auto;
+        by_identity["tex:0x01036b98"] = Class::Auto;
+        // ---- end promoted ----
     }
 
     void load() {

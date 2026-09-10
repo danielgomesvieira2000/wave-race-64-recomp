@@ -115,9 +115,43 @@ costs people days; see PORTING.md §7, *Widescreen 2D*.
 3. Note the `identity`. That is the answer the screenshots could never give.
 4. Change the dropdown and watch the screen. The next frame uses the new class.
 5. When it looks right, press **Save to hud.json**.
-6. If the element belongs to the game rather than to your taste, move the
-   identity out of `hud.json` and into the built-in table in `src/dlrewrite.cpp`
-   (`by_identity["tex:0x01005748"] = Class::Stretch;`) so every player gets it.
+6. Run `python tools/promote_hud_tags.py` to copy what you saved into the port's
+   built-in table, so it ships. See [Making a tag ship](#making-a-tag-ship).
+
+### Making a tag ship
+
+**Save to hud.json** writes to the per-user settings folder --
+`%LOCALAPPDATA%\WaveRace64Recomp\hud.json` on Windows, `$XDG_DATA_HOME` or
+`~/.local/share` elsewhere, or the working directory when a `portable.txt` sits
+beside the executable. That is outside the repository and outside every build
+directory, which is what you want while you work: the tags follow you between
+builds, across a `git clean`, across a fresh clone. It also means **they exist
+only on the machine that made them.** A release carries none of them.
+
+```
+python tools/promote_hud_tags.py            # copy them into the code
+python tools/promote_hud_tags.py --dry-run  # show what it would do
+python tools/promote_hud_tags.py --clear    # ... and empty the local file
+```
+
+It rewrites one marker-delimited block inside `load_defaults()` in
+`src/dlrewrite.cpp`, so the hand-written entries above it -- the ones with a
+paragraph saying why they exist -- are untouched, and running it twice changes
+nothing further. Look at the diff, then commit. From there the tags are compiled
+into the executable and every build and every release has them.
+
+`--clear` is worth doing once a tag is in the code. A local `hud.json` repeating
+it keeps overriding the port even after the built-in entry is changed, and a
+stale local tag masking a classifier change is a confusing afternoon.
+
+Two things the script exists to get right:
+
+- **Identities are lower-cased.** `Tags::lookup` lower-cases what it is handed,
+  so an entry written with an upper-case hex digit is never found. That bug has
+  been made here once already.
+- **Precedence is highest-first: inspector dropdown, then `hud.json`, then the
+  built-in table, then the classifier.** So a promoted tag is still overridden by
+  the local file it came from -- which is why `--clear` is offered.
 
 ### Reading the outline
 
