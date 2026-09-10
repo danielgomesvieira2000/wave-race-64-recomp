@@ -840,6 +840,16 @@ Practical rules this port arrived at:
   the middle 4:3 of a widescreen picture. Keep a small built-in table of such
   identities in the port, above whatever override file players get, so the fix
   ships rather than being rediscovered by everyone.
+- **Put a rectangle state back immediately after the element you set it for.**
+  Alignment and aspect apply to every rectangle that follows, and a classifier
+  that works on the top-level list only ever sees the rectangles the top level
+  issues: a called list's rectangles are emitted by the renderer running that
+  list and never pass through it. So they inherit whatever was left set. That is
+  invisible while the state changes only between elements the top level draws in
+  sequence, and it appears the moment one element is tagged: tagging the glare
+  stretched everything drawn after it as well, including a logo drawn from a
+  called list. Restore the previous class as soon as the tagged run is emitted
+  rather than waiting for the next classified run.
 - **An element classified one way in one frame and another in the next flickers**,
   however defensible each classification is. Report those as they happen and
   provide an override table keyed by texture or static-list address (this port

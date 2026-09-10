@@ -927,6 +927,9 @@ struct Walker {
     std::vector<uint32_t> pending_textures;
     Extent pending_extent;
     bool pending_active = false;
+    // Whether the run just classified took its class from the tag table, and so
+    // has to hand the rect state back when it is done. See flush_run.
+    bool tagged_run = false;
 
     static bool run_command(uint8_t op) {
         switch (op) {
@@ -972,12 +975,30 @@ struct Walker {
     }
 
     void flush_run() {
+        const Class before = rect_cls;
         if (pending_active) {
             classify_rect(pending_extent, 0, pending_textures);
         }
         for (const auto& [w0, w1] : pending) {
             emit(w0, w1);
         }
+        // A tagged element gets the state put back immediately after it, rather
+        // than whenever the next classified run happens to come along.
+        //
+        // The rect states -- alignment and aspect -- apply to every rectangle
+        // that follows, and the runs collected here are only the rectangles the
+        // *top level* issues. A called list's rectangles are emitted by the
+        // renderer running that list, and never pass through this classifier, so
+        // they inherit whatever state was left set. That is harmless while the
+        // state only ever changes for elements the top level draws in sequence,
+        // and it is not harmless for a tag: tagging the opening's sun glare as
+        // stretched left every rectangle drawn after it stretched too, including
+        // the Wave Race logo, which is drawn from a called list and never
+        // reclassified.
+        if (tagged_run && rect_cls != before) {
+            set_rect_class(before);
+        }
+        tagged_run = false;
         pending.clear();
         pending_active = false;
     }
@@ -1092,11 +1113,16 @@ struct Walker {
         const std::string tex_id = hex_identity("tex", textures.empty() ? texture : textures.front());
         const std::string dl_id = dl_segmented != 0 ? hex_identity("dl", dl_segmented) : std::string{};
         Class next = classify(e, tex_id, dl_id);
+        Class ignored;
+        tagged_run = tags != nullptr &&
+                     (tags->lookup(tex_id, ignored) ||
+                      (!dl_id.empty() && tags->lookup(dl_id, ignored)));
         // A tag on any texture of the run applies to the run.
         for (uint32_t t : textures) {
             Class tagged;
             if (tags != nullptr && tags->lookup(hex_identity("tex", t), tagged)) {
                 next = (tagged == Class::Stretch || anchors) ? tagged : Class::Auto;
+                tagged_run = true;
                 break;
             }
         }
