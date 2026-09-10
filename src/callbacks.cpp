@@ -149,12 +149,17 @@ enum : uint16_t {
     BTN_CRIGHT  = 0x0001,
 };
 
+// The N64 stick reports roughly +/-80 at full deflection rather than the
+// +/-127 an SDL axis suggests. Everything below works in that range, because
+// it is the range the game's own code and the scripted-input files are written
+// in; get_input divides by it on the way out. See the note there -- passing
+// this range to the runtime unscaled is what saturates the stick.
+constexpr float kN64Range = 80.0f;
+
 float axis_to_n64(Sint16 value) {
-    // The N64 stick reports roughly +/-80 at full deflection rather than the
-    // +/-127 an SDL axis suggests, and Wave Race is unusually sensitive to how
-    // the stick is scaled -- steering is analogue throughout.
+    // Wave Race is unusually sensitive to how the stick is scaled -- steering
+    // is analogue throughout.
     constexpr float kDeadzone = 0.12f;
-    constexpr float kN64Range = 80.0f;
 
     float normalized = static_cast<float>(value) / 32767.0f;
     if (normalized > -kDeadzone && normalized < kDeadzone) {
@@ -258,8 +263,14 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (scripted_y != 0.0f) { stick_y = scripted_y; }
 
     *buttons = pressed;
-    *x = stick_x;
-    *y = stick_y;
+    // Normalized, not the N64 range. ultramodern::convert_to_n64_range takes
+    // this pair, clamps its *magnitude* to 1.0, and then scales by the stick's
+    // own radius (about 82) through the octagonal gate. Handing it +/-80
+    // therefore clamps every deflection past the deadzone to the maximum: the
+    // direction survives, the magnitude does not, and analogue steering
+    // becomes eight-way. Divide by the range the code above works in.
+    *x = stick_x / kN64Range;
+    *y = stick_y / kN64Range;
     return true;
 }
 

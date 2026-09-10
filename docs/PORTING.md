@@ -406,6 +406,35 @@ drain, and find controllers by rescanning (`SDL_GameControllerOpen` on an
 already-open device returns the existing handle, so rescanning is cheap and
 correct).
 
+### The stick the runtime expects is normalized
+
+**Symptom:** steering is on or off. The craft turns as hard as it can or not at
+all, a gentle lean does what a full one does, and the pad is indistinguishable
+from the keyboard. Nothing in the port looks wrong: the axis is read, a deadzone
+is applied, and a plausible value is handed over.
+
+`ultramodern::convert_to_n64_range` (`ultramodern/src/input.cpp`) is what turns
+the `get_input` callback's `x` and `y` into the `int8_t` pair the game reads. It
+takes the **magnitude** of that pair, clamps it to `1.0`, and then scales by the
+stick's own radius (about 82) through the octagonal gate:
+
+```c
+float magnitude = sqrtf(x * x + y * y);
+if (magnitude > 1.0f) magnitude = 1.0f;
+...
+output_magnitude = magnitude * n64_radius / square_radius;
+```
+
+So the callback must return a **normalized** pair, not the N64's own ±80. Handing
+it ±80 puts every deflection past the deadzone over the clamp: the angle survives
+the conversion and the magnitude does not, and an analogue stick arrives at the
+game as eight directions at full lock. The failure is invisible in a log -- the
+values going in are the right shape and the values coming out are legal -- and it
+is worst in a game like this one, where steering is analogue throughout.
+
+Keep the ±80 range inside the port if the scripted-input files and the game's own
+constants are written in it, and divide by it once, at the callback boundary.
+
 ### Where settings go
 
 librecomp writes settings, profiles and mod state wherever it is told, and until
@@ -558,6 +587,15 @@ GBI:
   fraction halves, row-major.
 - Put the scratch buffer where the game cannot reach: a 4 MB cartridge on a
   runtime reporting 8 MB leaves the whole upper half free.
+- **Cache what a called list draws by segmented *and* physical address.**
+  Scanning a called list to learn what it draws is worth doing once and
+  remembering, because the game's drawing lists are static and called by the same
+  address every frame. But a segmented address says which segment a list is in,
+  not where that segment is, and the game remaps segments between courses and
+  between screens. Key the answer on the pair, so a remap misses the cache and
+  rescans instead of answering for a list that is no longer there. Keying on the
+  segmented address alone is the kind of fault that survives all testing on one
+  course and appears on another.
 
 ### The four RT64 patches, and why each was needed
 
@@ -653,8 +691,26 @@ changes its vertices between frames has been *replaced* rather than moved.
 
 Before tagging a rebuilt mesh, check that index *i* means the same point in both
 frames: same vertex count per block, and a stable reference vertex. Otherwise
-interpolation smears rather than animates. ([GAME-INTERNALS.md §6](GAME-INTERNALS.md#6-graphics)
-records what that check looked like here.)
+interpolation translates the mesh rather than animating it.
+
+**Check it over a run, not over a handful of frames, and with the camera
+moving.** This is where this port got it wrong. The water passed the check across
+four consecutive frames -- identical vertex counts, every block's first vertex
+bit-for-bit identical -- and the check was taken as settled. Those four frames had
+a stationary camera. Measured across 3,973 frames of a scripted race
+(`WR64_WATER_LATTICE`), the lattice moves in 58% of them, and when it moves, all
+fifty of its vertex blocks move 91% of the time: the game builds the surface
+around the camera, quantized to multiples of 32 world units. Index *i* is a
+different point on the surface in almost every frame in which the player is
+moving, which is the whole race.
+
+A mesh a game builds around the camera cannot be paired by array slot at all.
+Pairing it means sampling the previous surface at each current world XZ, inside
+the renderer, with the history rejected at camera cuts and scene changes. Nothing
+about the stable vertex counts, or the identical first vertices of a parked
+camera, distinguishes that case from a genuinely fixed lattice -- only a
+measurement while moving does.
+([GAME-INTERNALS.md §6](GAME-INTERNALS.md#6-graphics) has the numbers.)
 
 Two further details:
 
@@ -697,6 +753,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Function-entry instrumentation** (`tools/instrument_funcs.py`) | Inserts a one-shot `printf` at named recompiled functions, or with `NAME@0xADDR` prints an RDRAM word on every call. Order answers "did it run"; a watched value answers "and did it stay valid". Safe only because re-running the recompiler erases the edits. |
 | **Hang watchdog** | A microcode that spins forever faults nothing, prints nothing and returns nothing. After a deadline, a persistent thread suspends the stuck thread, samples its instruction pointer repeatedly and resolves the distinct addresses to source lines. Sample repeatedly, not once: with everything inlined, one sample usually names a helper rather than the loop. (A thread *per call* here was real overhead on the thread that has to keep pace with the game.) |
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
+| **Water lattice trace** (`WR64_WATER_LATTICE`) | Per-index interpolation of a mesh the game rebuilds every frame is only valid while index *i* keeps naming the same point. This writes, for each frame that draws the water, how many of its vertex blocks moved in X or Z since the previous frame and how many moved only in height. A few frames of identical vertices are not evidence that a mesh is fixed: a lattice built around the camera holds still between steps and shifts when the camera has moved far enough, which no short capture will show. |
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
@@ -731,6 +788,12 @@ Small things, each of which cost real time here.
 - **A fault in the runtime is usually the runtime working.** librecomp allocates
   RDRAM inside a much larger `PAGE_NOACCESS` region precisely so an invalid game
   pointer faults immediately instead of silently corrupting memory.
+- **A few frames with the camera parked is not a measurement of a moving game.**
+  Four consecutive frames said this game's water lattice was fixed, and the port
+  interpolated its vertices by index on that basis through a release. Over 3,973
+  frames of a scripted race the lattice moves in 58% of them. Whatever a capture
+  is meant to establish, take it while the thing it is about is happening --
+  a camera at rest hides everything that follows the camera.
 - **`head` on a search is not the whole answer.** A truncated grep supported a
   confident claim about "the single caller" of an address. There were 19 call
   sites across two functions.

@@ -357,15 +357,44 @@ list. The game recomputes it every frame -- across four consecutive race frames,
 41 of the 50 blocks carried different vertex data each time while the course and
 the models were byte-for-byte identical.
 
-Two properties make the surface safe to interpolate per vertex, and both were
-measured rather than assumed:
+Which list is called is decided by `Draw_WaterEffects` (`code_43DA0.c`), from the
+player count, `D_801CE64C` and `D_800DAB2C`:
 
-- every block's vertex count is the same every frame (13, 14, 15, then 16 for the
-  rest), and
-- every block's first vertex is bit-for-bit identical across frames.
+| List | Drawn for |
+|---|---|
+| `0x010082F0` | the opening and rider-selection scene (`D_801CE64C == 1`) |
+| `0x0100B590` | one player |
+| `0x0100D258` | two players, upper view |
+| `0x0100E680` | two players, lower view |
 
-The lattice is fixed and only the heights on it move, so index *i* is the same
-point on the surface in both frames.
+Every block's vertex count is the same every frame: 13, 14, 15, then 16 for the
+rest.
+
+**The lattice is not fixed. It is built around the camera and moves with it.**
+An earlier measurement over four consecutive frames found every block's first
+vertex bit-for-bit identical and concluded that the lattice stood still and only
+the heights on it moved. Four frames is an eighth of a second, and those four
+were evidently taken with the camera at rest. Measured over a whole scripted run
+instead -- 3,973 frames that draw the water, `WR64_WATER_LATTICE`:
+
+| | |
+|---|---:|
+| frames where no block's first vertex moved in X or Z | 42% |
+| frames where it did move | 58% |
+| ...of those, frames where **all fifty** blocks moved | 91% |
+| mean blocks whose first vertex changed height | 15 of 50 |
+
+The step is quantized. The largest X shift in a frame is almost always a multiple
+of 32 world units -- 64 (560 frames), 32 (343), 96 (39), 128 (9) -- with a
+1-unit trim between steps. `func_8008E794`, which builds the surface, loads
+`64.0f` in both of its branches next to a `trunc.w.s` whose result goes to an
+integer register, which is that quantization in the code.
+
+So **index *i* is not the same point on the surface from one frame to the next
+whenever the camera is moving**, which is most of a race. A renderer pairing
+vertices by index sees the whole surface translate rather than the waves move.
+Pairing water vertices between frames has to be done by world position -- sample
+the previous surface at each current XZ -- not by array slot.
 
 ### Segments
 
@@ -375,6 +404,12 @@ point on the surface in both frames.
 | 3 | geometry the game builds this frame; in a race frame the whole of it is the water surface |
 | 5 | spray and splash particles, rebuilt every frame |
 | 6 | the sky's scratch vertex buffer |
+
+A segment's base is not fixed for the run: the game rewrites the table between
+courses and between the screens that are not races. A segmented address names a
+segment and an offset, so the same address resolves to different memory at
+different times, and anything a port remembers about a list has to be remembered
+against the physical address the table gave at the time.
 
 ---
 

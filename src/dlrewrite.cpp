@@ -85,6 +85,13 @@
 // rather than moves. WR64_3D_TRACE_FRAMES sets how many frames (two by
 // default) and WR64_3D_TRACE_STATE takes a game state in hexadecimal for the
 // screens that are not races.
+//
+// WR64_WATER_LATTICE names a file and writes one line per frame that draws the
+// water: how many of the surface's vertex blocks moved in X or Z since the
+// previous frame, and how many only in height. It answers whether the lattice
+// the waves are interpolated on stands still under a moving camera, which
+// per-index interpolation depends on and which was only ever measured across
+// four frames. WR64_WATER_LATTICE_FRAMES bounds the run.
 
 #include "wr64/dlrewrite.h"
 #include "wr64/display.h"
@@ -623,16 +630,27 @@ struct Walker {
     // waves moved at the game's twenty or thirty frames a second under a
     // camera gliding at sixty.
     //
-    // Interpolating them is safe here in a way it would not be for every
-    // rebuilt mesh. RT64 takes the per-vertex difference by index, guarded
-    // only by the block's vertex count being unchanged, so a mesh whose
-    // vertices mean something different from one frame to the next would
-    // smear rather than animate. This one does not: each block's vertex count
-    // is the same every frame (13, 14, 15, then 16 for the rest), and each
-    // block's first vertex is bit-for-bit identical across frames -- the
-    // lattice is fixed and only the heights on it move. Index i is the same
-    // point on the surface in both frames, and the difference between them is
-    // exactly the wave.
+    // RT64 takes the per-vertex difference by index, guarded only by the
+    // block's vertex count being unchanged, so a mesh whose vertices mean
+    // something different from one frame to the next translates rather than
+    // animates. This was believed to be safe here: each block's vertex count
+    // is the same every frame (13, 14, 15, then 16 for the rest), and across
+    // the four consecutive frames that were measured every block's first
+    // vertex was bit-for-bit identical.
+    //
+    // Those four frames were taken with the camera at rest, and that is the
+    // only condition under which it holds. Measured over a whole run with
+    // trace_lattice below -- 3,973 frames -- the lattice moves in 58% of them,
+    // and when it moves, all fifty blocks move 91% of the time: the game
+    // builds the surface around the camera, quantized to multiples of 32 world
+    // units (a 64-unit step in 560 frames, 32 in 343, 96 in 39, 128 in 9).
+    //
+    // So while the camera moves, index i is not the same point on the surface
+    // in both frames, and what RT64 interpolates is the lattice sliding rather
+    // than the waves moving. Pairing has to be done by world position -- the
+    // previous surface sampled at each current XZ -- which is a change inside
+    // the renderer, not here. The group below is left in place, and
+    // WR64_NO_WATER_INTERP=1 switches it off for the comparison.
     //
     // The whole surface is drawn from one of the game's static lists, so the
     // group can be put around the call rather than threaded through the list:
@@ -649,12 +667,21 @@ struct Walker {
     // list that draws none. The game's drawing lists are static and are
     // called by the same segmented address every frame, so each is scanned
     // once and answered from the table afterwards.
+    //
+    // The answer holds only for the segment table that produced it. A
+    // segmented address says which segment a list lives in, not where that
+    // segment is: the game remaps them between courses and between the
+    // screens that are not races, so the same address can name a different
+    // list later in the run. The physical address the current table resolves
+    // it to is therefore part of the key, and a remap simply misses the cache
+    // and rescans rather than answering from a list that is no longer there.
     uint32_t first_vertex_segment(uint32_t segmented) {
-        static std::unordered_map<uint32_t, uint32_t> cache;
-        const auto it = cache.find(segmented);
+        static std::unordered_map<uint64_t, uint32_t> cache;
+        const uint64_t key = (uint64_t(segmented) << 32) | physical(segmented);
+        const auto it = cache.find(key);
         if (it != cache.end()) return it->second;
         const uint32_t found = scan_first_vertex_segment(physical(segmented), 0);
-        cache.emplace(segmented, found);
+        cache.emplace(key, found);
         return found;
     }
 
@@ -688,6 +715,123 @@ struct Walker {
     bool draws_water(uint32_t segmented_list) {
         return water_interp && projection_is_perspective &&
                first_vertex_segment(segmented_list) == kWaterSegment;
+    }
+
+    // ---- diagnostic: is the lattice really fixed? -----------------------
+    //
+    // Everything above rests on index i naming the same point on the surface
+    // in both frames, and the evidence for it is four consecutive frames in
+    // which every block's first vertex was bit-for-bit identical. Four frames
+    // is an eighth of a second. If the game builds the lattice around the
+    // camera and shifts it when the camera has moved far enough -- a step of
+    // 64 world units is the shape to expect, and 64.0f does appear in the
+    // routine that builds the surface -- then those four frames would not have
+    // caught it, and the waves would smear for the one frame after each step
+    // while every vertex is paired with a neighbour rather than with itself.
+    //
+    // This answers it from the game rather than from the screen.
+    // WR64_WATER_LATTICE names a file; for each frame that draws the water it
+    // writes the first vertex of every block in the list and how many of them
+    // moved in X or Z since the previous frame. Drive in a straight line at
+    // speed and read the xz column: heights alone should move, and any frame
+    // where X or Z steps is the case this was written to find.
+    // WR64_WATER_LATTICE_FRAMES bounds the run (600 frames by default).
+
+    struct LatticeBlock {
+        int16_t x, y, z;
+        uint32_t count;
+    };
+
+    void collect_lattice(uint32_t physical_addr, int depth, std::vector<LatticeBlock>& out) const {
+        uint32_t cursor = physical_addr;
+        for (uint32_t steps = 0; steps < 4096 && out.size() < 256; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint32_t w0 = c[0];
+            const uint32_t w1 = c[1];
+            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
+            cursor += 8;
+            if (op == kOpEndDisplayList) return;
+            if (op == kOpVtx) {
+                const uint32_t addr = physical(w1);
+                out.push_back({ signed_half(addr), signed_half(addr + 2), signed_half(addr + 4),
+                                (w0 >> 9) & 0x7Fu });
+                continue;
+            }
+            if (op == kOpDisplayList) {
+                const bool branch = ((w0 >> 16) & 0xFF) != 0;
+                if (branch) { cursor = physical(w1); continue; }
+                if (depth < 3) collect_lattice(physical(w1), depth + 1, out);
+            }
+        }
+    }
+
+    void trace_lattice(uint32_t segmented_list) {
+        static const char* path = std::getenv("WR64_WATER_LATTICE");
+        if (path == nullptr) return;
+        // Say so once, before the test below: a diagnostic that is quietly
+        // watching nothing looks exactly like one that found nothing.
+        static bool announced = false;
+        if (!announced) {
+            announced = true;
+            std::fprintf(stderr, "[wr64] water lattice: watching, into %s\n", path);
+            std::fflush(stderr);
+        }
+        // Deliberately not gated on water_interp: the question is what the
+        // game builds, which is the same whether the port interpolates it.
+        if (!projection_is_perspective || first_vertex_segment(segmented_list) != kWaterSegment) return;
+
+        static const char* frames_env = std::getenv("WR64_WATER_LATTICE_FRAMES");
+        static const int wanted = frames_env != nullptr ? std::atoi(frames_env) : 600;
+        static int written = 0;
+        static std::FILE* f = nullptr;
+        static std::vector<LatticeBlock> previous;
+        if (written >= wanted) return;
+        if (f == nullptr) {
+            f = std::fopen(path, "w");
+            if (f == nullptr) {
+                written = wanted;
+                std::fprintf(stderr, "[wr64] water lattice: cannot write %s\n", path);
+                return;
+            }
+            std::fprintf(f, "# One line per frame that draws the water.\n"
+                            "# blocks: vertex blocks in the list. xz: blocks whose first vertex moved\n"
+                            "# in X or Z since the previous frame -- zero is the lattice standing still,\n"
+                            "# which is what per-index interpolation needs. y: blocks whose height moved.\n"
+                            "# dx/dz: the largest step in each, in world units. v0: block 0's first vertex.\n"
+                            "# frame blocks xz y dx dz v0\n");
+        }
+
+        std::vector<LatticeBlock> current;
+        collect_lattice(physical(segmented_list), 0, current);
+        ++written;
+        if (previous.size() == current.size() && !current.empty()) {
+            int moved_xz = 0, moved_y = 0, max_dx = 0, max_dz = 0, counts_changed = 0;
+            for (size_t i = 0; i < current.size(); ++i) {
+                const int dx = current[i].x - previous[i].x;
+                const int dz = current[i].z - previous[i].z;
+                if (dx != 0 || dz != 0) ++moved_xz;
+                if (current[i].y != previous[i].y) ++moved_y;
+                if (current[i].count != previous[i].count) ++counts_changed;
+                max_dx = std::max(max_dx, std::abs(dx));
+                max_dz = std::max(max_dz, std::abs(dz));
+            }
+            std::fprintf(f, "%5d %6zu %4d %4d %5d %5d (%d,%d,%d)%s\n", written, current.size(),
+                         moved_xz, moved_y, max_dx, max_dz, current[0].x, current[0].y, current[0].z,
+                         counts_changed != 0 ? "  vertex counts changed" : "");
+        } else {
+            std::fprintf(f, "%5d %6zu    -    -     -     - (%d,%d,%d)  block count changed from %zu\n",
+                         written, current.size(),
+                         current.empty() ? 0 : current[0].x, current.empty() ? 0 : current[0].y,
+                         current.empty() ? 0 : current[0].z, previous.size());
+        }
+        previous = std::move(current);
+        std::fflush(f);
+        if (written >= wanted) {
+            std::fclose(f);
+            f = nullptr;
+            std::fprintf(stderr, "[wr64] water lattice: %d frames written to %s\n", written, path);
+            std::fflush(stderr);
+        }
     }
 
     // ---- rectangles -----------------------------------------------------
@@ -1424,6 +1568,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // The water surface is drawn from one of the game's static lists;
             // the group goes around the call, since the transform inside it is
             // created at its first vertex rather than at its matrix load.
+            w.trace_lattice(w1);
             const bool water = w.draws_water(w1);
             if (water) w.vertex_interp_group(Walker::kWaterId);
             w.emit(w0, w1);
