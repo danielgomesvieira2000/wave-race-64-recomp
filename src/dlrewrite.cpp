@@ -1052,7 +1052,16 @@ struct Walker {
     void set_rect_class(Class next, const Extent& e = Extent{}) {
         if (next == rect_cls) return;
         (void)e;
-        widen_scissor(next == Class::Left || next == Class::Right);
+        // Stretching needs the widened scissor as much as anchoring does. The
+        // full-screen overlays that stretch in a race or a menu are drawn with
+        // the game's scissor spanning its whole framebuffer, so nothing clipped
+        // them and this went unnoticed. The wipe between the rider select and
+        // the course overview is drawn with the game's *inset* scissor, 8..311,
+        // and a stretched strip was cut straight back to the 4:3 frame: the
+        // transition swept across the middle of the picture with the previous
+        // screen's pixels left standing on either side.
+        widen_scissor(next == Class::Left || next == Class::Right ||
+                      next == Class::Stretch);
         if (rect_cls == Class::Stretch) {
             if (GfxCommand* cmd = reserve(1)) gEXSetRectAspect(cmd, G_EX_ASPECT_AUTO);
         }
