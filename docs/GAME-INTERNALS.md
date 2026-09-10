@@ -415,6 +415,22 @@ which is what a player sees as pop-in.
 | Buoy distance | struct `+0xA4`, an `int`, **5000** on the courses measured |
 | Neighbours | `+0xA0` reads 400 and `+0xA8` reads 135; both are compared elsewhere in the same function |
 
+**The limit is per course**, and it varies more than enough to matter. Observed
+in one session: **5000**, **3072** and **2500**. A course that starts at 2500 is
+at half another's draw distance before anything is changed, so the same
+multiplier does visibly different amounts of work on different courses -- two
+times on a 2500 course only reaches what a 5000 course has by default. Anyone
+judging a draw distance setting by eye needs to know which course they are on.
+
+**The buoys' display lists are per course too.** They are a pair, one triangle
+each, adjacent in segment 1: `0x0102CD78` and `0x0102CD90` on one course,
+`0x0102CC58` and `0x0102CC70` on another. So is the matrix table -- segment 5 is a
+per-course arena, and the tables land at `0x4140`, `0x9600`, `0xA1C0` and so on
+depending on the course. **An offset from one course says nothing about another**,
+which is why `0xA1C0` greping to the buoy loop was luck rather than method, and
+why the limit at `+0xA4` -- which is the same field on every course -- is the right
+thing to key on.
+
 Raising `+0xA4` is the whole fix -- the game then submits the buoys it was
 skipping, and matrices, display list and renderer follow on their own. At four
 times, 5000 to 20000, the count drawn went from 12-23 to **40-54** and the
