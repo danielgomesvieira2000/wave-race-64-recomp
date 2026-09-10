@@ -40,7 +40,7 @@ Settings, controller profiles and saves live in
 `%LOCALAPPDATA%\WaveRace64Recomp`. Started by double-click, the program writes
 its log to `wr64.log` in that folder; attach that file to a bug report.
 
-## What 0.3 is
+## What 0.5 is
 
 The game boots, its menus work, and championship, time trial and two-player
 races run with audio, at speed, with records saved to the emulated EEPROM.
@@ -48,7 +48,21 @@ Not every course has been played in both directions yet, and stunt mode and
 the championship ceremony have had less testing than the rest; reports of
 anything wrong there are welcome.
 
-New in 0.3, all of it widescreen work on the 2D layer: the race HUD is laid
+New in 0.5, all of it about the controller and the sound. The pad rumbles in a
+game that shipped a year before the Rumble Pak, worked out from the race itself:
+landings off waves, collisions, buoys taken and missed, the countdown and the
+flag. The Sound tab's **Main Volume** is applied for the first time -- it had
+never done anything -- and **Music Volume** sits beside it, scaling the music
+inside the game's own audio engine without touching the effects. The game goes
+quiet when another window has focus. Pads are assigned as they are plugged in,
+the keyboard works alongside them, and the remapping in the controls tab takes
+effect at last. Steering is analogue again, where every deflection past the
+deadzone used to clamp to full lock.
+
+From 0.4: the sky and the water move with everything else at high frame rates,
+and the opening keeps its proper width from shot to shot.
+
+From 0.3, all of it widescreen work on the 2D layer: the race HUD is laid
 out across the frame rather than kept at 4:3 in the middle of it -- time
 top-left, rank and lap centre, speed and the leaderboard right, MISS and power
 along the bottom -- while menus keep the 4:3 layouts their frames are drawn

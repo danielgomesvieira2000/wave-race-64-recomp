@@ -1,0 +1,117 @@
+# Wave Race 64: Recompiled 0.5.0
+
+The controller release. The pad rumbles in a game that shipped a year before the
+Rumble Pak, the volume sliders in the Sound tab finally do something, pads are
+picked up as they are plugged in, and the keyboard works alongside them.
+
+**You need your own dump of Wave Race 64 (USA) (Rev A), also called v1.1**
+(revision 1, header CRC `0x492F4B61 0x04E5146A`). No other version works. The
+launcher checks the file you pick.
+
+## Download
+
+`WaveRace64Recomp-0.5.0-windows-x64.zip`: unzip anywhere, run
+`WaveRace64Recomp.exe`, pick your dump. Settings and saves go to
+`%LOCALAPPDATA%\WaveRace64Recomp`, and so does `wr64.log`, the file to attach to
+a bug report. Settings from earlier versions carry over.
+`WaveRace64Recomp-0.5.0-windows-x64-debug-symbols.zip` is not a second build: it
+holds the debug symbols for the same executable, only needed for a readable
+crash report.
+
+The zip contains the recompiled game code and none of the game's assets; the
+executable is a GPL-3.0 combined work (see the README's *Licensing*), and its
+source is this repository at tag `v0.5.0`.
+
+## What changed
+
+**Rumble, in a game that has none.** Wave Race 64 shipped in 1996 and there is
+no rumble code anywhere in it -- `Motor` appears only in the SDK header that
+declares `osMotorStart`. So the port works the feedback out from the race itself,
+reading the game's own state once a frame: the slap of landing off a wave, scaled
+by how long the craft was in the air and how fast it was coming down; wave slaps;
+collisions scaled by closing speed; crashes; buoys taken and missed; power; laps;
+the countdown, the flag and retirement. **Rumble Strength** in the General tab
+sets how hard it is, and zero turns it off.
+
+**The volume sliders work.** Main Volume had never been applied to anything --
+the frontend defines the slider and leaves applying it to the port, and this port
+was not. It now scales every buffer on its way to the sound card, following the
+slider as you drag it. **If you left that slider low or at zero while it did
+nothing, the game is now correctly quiet.**
+
+**Music has its own volume**, separate from the effects. The mix cannot be
+separated after the fact -- music and effects arrive already mixed -- so this one
+reaches into the game's own audio engine and scales the music player there,
+composing with the game's own ducking rather than overriding it.
+
+**Mute When Not In Focus**, on by default: the game goes quiet while another
+window has focus, and the rumble stops with it.
+
+**Pads are assigned as they are plugged in.** The first is player one, a second
+is player two, and nothing has to be set up before playing -- where previously a
+pad had to be assigned through a modal in the controls tab before rumble would
+work at all. The controls tab now offers the two players this game has rather
+than four.
+
+**The keyboard works, at the same time as a pad.** Player one always has both,
+and neither has to be chosen. Two bugs sat behind this: the port never asked the
+input library to sample the keyboard, so every key read as unpressed while a pad
+worked perfectly; and once input moved onto the library's profiles, its default
+bindings silently replaced this port's own. The documented layout is back --
+arrows for the stick, `X`, `C`, `Z`, `Enter`, `A` and `S` for the shoulders,
+`I`/`J`/`K`/`L` for the camera, `T`/`F`/`G`/`H` for the D-pad -- and every one of
+them is rebindable in the controls tab. A keyboard profile saved by an earlier
+build keeps what it holds until it is reset there.
+
+**Steering is analogue again.** The port handed the runtime the N64's own ±80
+stick range where a normalized pair was expected, so everything past the deadzone
+clamped to full deflection: the direction survived and the magnitude did not, in
+a game whose steering is analogue throughout. A gentle lean is a gentle lean now.
+
+**Remapping takes effect.** The port read gamepad buttons directly and ignored
+every binding anyone had changed in the controls tab. Input goes through the
+library's profiles now, so the tab means what it says.
+
+## What is not here
+
+There is no separate volume for the announcer. Music and effects are separable
+because the game keeps them on different sequence players; the voice was expected
+to be separable the same way, and the channels that looked like it turned out to
+be a countdown sound that begins when the announcer does. Silencing them was
+verified in a trace and the announcer kept talking. The option is left out rather
+than shipped doing nothing, and what was learned is written up in
+[docs/PORTING.md](PORTING.md).
+
+## Also in this release
+
+The water's interpolation was measured rather than assumed, and the measurement
+overturned what it was built on: the game carries the whole wave lattice with the
+camera in quantized steps of 32 to 128 world units, so what the renderer
+interpolates between two frames is the surface surging rather than the waves
+moving. The sky, measured the same way, is sound. Both are recorded in
+[docs/GAME-INTERNALS.md](GAME-INTERNALS.md); the fix belongs in the renderer and
+is not in this release.
+
+`docs/GAME-INTERNALS.md` gains a section on reading a race out of RDRAM -- the
+globals, both per-rider arrays and their fields, and the audio engine's players
+and channels -- which is as useful for a speedometer or a telemetry overlay as it
+was for the rumble. `docs/PORTING.md` gains the input, audio and player-assignment
+traps, symptom-first.
+
+## Known issues
+
+- In a 4:3 window the picture is letterboxed; fullscreen on a widescreen display
+  has no bars.
+- The results screen's layout is wrong when HUD Placement is larger than
+  Original, and the MAX POWER banner loses its last letter while the HUD layout
+  is on.
+- No announcer volume, as above.
+- Windows only, for now.
+
+## Credits
+
+Controller rumble is built on work by [Elliott
+Tate](https://github.com/elliotttate): the addresses this port reads a race from
+were identified in his fork and offered in
+[pull request #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
+re-verified here and recorded in `docs/GAME-INTERNALS.md` §7.
