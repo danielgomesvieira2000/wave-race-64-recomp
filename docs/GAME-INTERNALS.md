@@ -325,6 +325,24 @@ rectangle under a perspective one, with no overlap. So "world drawn first" plus
 "inset scissor" identifies a race frame, and the projection type per draw
 separates HUD from menu layout.
 
+That measurement is about **rectangles**. The menus also draw *triangles* under
+an orthographic projection, and the one that matters is the cursor: the pair of
+red cubes that flank the selected entry.
+
+| | |
+|---|---|
+| Display list | `0x0106F408`, called twice per frame -- once for each cube |
+| Texture | in the dynamic segment (`0x08......`), so it moves between screens; the list address does not |
+| Position | clip x -0.49 and +0.49, y 0.26..0.34, symmetric about the centre |
+| Projection | orthographic |
+| Screens | the title menu (`gGameState` `0x03`) and the mode menus (`0x04`) |
+
+It is symmetric about the centre and it belongs to the entry between the two
+halves, so **it must be centred, not anchored.** A widescreen classifier that
+anchors an element to the nearer edge -- the right rule for a race HUD -- pulls
+one cube to each side of the screen and leaves the entry alone in the middle.
+The cubes are what a port has to name; nothing else on these menus needs it.
+
 Full-screen 2D overlays do not sit where you would expect them to:
 
 | Overlay | Horizontal span on the 320-wide screen |

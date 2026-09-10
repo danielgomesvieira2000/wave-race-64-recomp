@@ -875,6 +875,17 @@ Practical rules this port arrived at:
   stretched everything drawn after it as well, including a logo drawn from a
   called list. Restore the previous class as soon as the tagged run is emitted
   rather than waiting for the next classified run.
+- **A test that reads the frame can still be fooled by a frame that looks like
+  the thing it tests for.** This port decides "is this a race?" from the frame --
+  world drawn first, under a perspective projection, into the inset scissor --
+  precisely because the state variable was worse. The main menu draws exactly
+  that way, so it answers yes, and the race HUD's anchoring rule then ran on a
+  menu: it pinned each half of a symmetric pair to the edge it was nearer, and
+  the cursor's two halves slid into the corners while the entry they belong to
+  stayed centred. **Anchoring is by an element's centre past a third of the way
+  out, which is a statement about a race HUD's layout and not about geometry.**
+  Name the element in the tag table rather than loosening a frame test that earns
+  its keep in a dozen states around a race.
 - **An element classified one way in one frame and another in the next flickers**,
   however defensible each classification is. Report those as they happen and
   provide an override table keyed by texture or static-list address (this port

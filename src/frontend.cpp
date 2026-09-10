@@ -195,6 +195,11 @@ void build_launcher(recompui::LauncherMenu* menu) {
     options->add_start_game_or_load_rom_option("Load ROM", "Start Game");
     options->add_setup_controls_option("Controls");
     options->add_settings_option("Settings");
+    // Closing the window works, but a menu the pad can reach should not need a
+    // mouse to leave. add_exit_option calls ultramodern::quit(), which unwinds
+    // the game thread and the renderer in order rather than tearing the process
+    // down, so a race in progress saves its records on the way out.
+    options->add_exit_option("Quit");
 }
 
 }  // namespace

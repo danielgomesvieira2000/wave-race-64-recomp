@@ -237,9 +237,27 @@ struct Tags {
     // frame's edges like any other overlay, and 4:3 glare over a widescreen
     // picture is exactly what it looked like.
     //
+    // dl:0x0106F408 is the pair of red cubes that mark the selected entry on the
+    // menus. The game draws that one list twice under an orthographic
+    // projection, once on each side of the entry, at clip x -0.49 and +0.49 --
+    // and the anchoring rule, which exists for the race HUD, reads a centre past
+    // a third of the way out as belonging to that edge and pinned one cube to
+    // each edge of the frame. In widescreen they slid off towards the corners
+    // while the entry they belong to stayed in the middle.
+    //
+    // The rule was never meant to run here. It is guarded on the frame being a
+    // race, and the main menu passes that test: it draws a 3D world first, under
+    // a perspective projection, into the same inset scissor a race uses, which
+    // is exactly what the test looks for. Rather than loosen a test that earns
+    // its keep in a dozen states around a race, the cursor is named. Anything
+    // else on these menus is 2D over a 4:3 layout and classifies correctly.
+    //
     // hud.json still wins: a player who tags the same identity overrides this.
+    // Identities are looked up lower-cased (see lookup), so hex digits above
+    // nine must be written in lower case here or the entry is never found.
     void load_defaults() {
         by_identity["tex:0x01005748"] = Class::Stretch;
+        by_identity["dl:0x0106f408"] = Class::Auto;
     }
 
     void load() {

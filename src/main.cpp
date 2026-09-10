@@ -299,7 +299,7 @@ int run(int argc, char** argv, const char* rom_arg) {
     recomp::Configuration config{};
     config.argc = argc;
     config.argv = argv;
-    config.project_version = recomp::Version{0, 3, 0, ""};
+    config.project_version = recomp::Version{0, 6, 0, ""};
     wr64::inspector::init();
     config.rsp_callbacks = wr64::rsp_callbacks();
 #if WR64_WITH_FRONTEND
