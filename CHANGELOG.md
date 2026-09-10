@@ -12,6 +12,18 @@ notice changes.
 
 Nothing yet.
 
+## [0.7.1](docs/releases/0.7.1.md) — placement and a tidier known-issues list
+
+- Three more 2D elements placed correctly in widescreen, found with the debug
+  menu and tagged into the port's built-in table, which now holds twenty-eight
+  entries.
+- The **results screen's HUD layout** is fixed.
+- **Every course has now been played** in both directions.
+- The known-issues list lost the things that were never faults: the **4:3
+  letterbox** is the game's own overscan, recorded as a note rather than an
+  issue, and the **announcer volume** is a property of how the game mixes its
+  audio rather than something outstanding.
+
 ## [0.7.0](docs/releases/0.7.0.md) — mods
 
 - **Mod support.** The Mods tab installs, enables and reorders mods, and the

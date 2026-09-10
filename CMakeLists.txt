@@ -1,7 +1,7 @@
 ﻿cmake_minimum_required(VERSION 3.20)
 
 project(WaveRace64Recomp
-    VERSION 0.7.0
+    VERSION 0.7.1
     DESCRIPTION "Native PC port of Wave Race 64 via static recompilation"
     LANGUAGES C CXX)
 

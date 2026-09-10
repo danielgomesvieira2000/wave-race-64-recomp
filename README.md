@@ -126,18 +126,15 @@ If something sits in the wrong place, that window is how to say which thing.
   boxed in the middle 4:3. It is understood -- two triangle calls in one
   perspective group, with no rectangles in it, which is why rectangle attributes
   never touched it -- and written up in [docs/PORTING.md](docs/PORTING.md).
-- In a 4:3 window the picture is letterboxed. The game draws a 303x199 region of
-  its 320x240 framebuffer, which does not fit a 4:3 window without bars.
-  Fullscreen on a widescreen display, the default, has no bars.
-- The **results screen**'s layout is wrong when HUD Placement is larger than
-  Original, and the **MAX POWER** banner loses its last letter while the HUD
-  layout is on.
-- There is **no separate volume for the announcer**. The channels that looked
-  like it turned out to be a countdown sound that starts when the announcer does.
-  See [docs/PORTING.md](docs/PORTING.md), *Separating one sound from another*.
-- Not every course has been played in both directions yet, and stunt mode and the
-  championship ceremony have had less testing than the rest.
-- Windows only, for now.
+- The **MAX POWER** banner loses its last letter while the HUD layout is on. The
+  game's own rectangle clips it, rather than the frame's edge.
+- **Windows** is what this project builds and tests today. A fork carries native
+  macOS support; wider platform coverage is intended.
+
+Not bugs, though they get reported as such: in a **4:3 window** the picture is
+letterboxed, because the game draws a 303x199 region of its 320x240 framebuffer
+and always did -- those are the overscan borders a CRT hid. Fullscreen on a
+widescreen display, the default, has no bars.
 
 ## Layout
 

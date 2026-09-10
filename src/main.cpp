@@ -300,7 +300,7 @@ int run(int argc, char** argv, const char* rom_arg) {
     recomp::Configuration config{};
     config.argc = argc;
     config.argv = argv;
-    config.project_version = recomp::Version{0, 7, 0, ""};
+    config.project_version = recomp::Version{0, 7, 1, ""};
     wr64::inspector::init();
     // Before recomp::start, which scans the mods folder from inside itself: a
     // mod's content is detected when it is opened, so a content type registered
