@@ -45,6 +45,8 @@
 
 #include <ultramodern/ultramodern.hpp>
 
+#include "wr64/haptics.h"
+
 extern "C" void osViSwapBuffer_recomp(uint8_t* rdram, recomp_context* ctx);
 
 // Provided by RT64 through tools/patch_rt64.py, so that nothing here needs
@@ -96,6 +98,12 @@ constexpr uint32_t kFrameDividerAddress = 0x800D461Cu;
 
 void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     osViSwapBuffer_recomp(rdram, ctx);
+
+    // The game calls this once per frame it has finished, which makes it the
+    // one place in the run where its state is complete and consistent and this
+    // thread is inside it. Controller feedback reads the race from there; it
+    // takes a copy and never writes anything back. See src/haptics.cpp.
+    wr64::haptics::capture(rdram);
 
     using clock = std::chrono::steady_clock;
     static clock::time_point window_start = clock::now();

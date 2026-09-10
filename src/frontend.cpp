@@ -200,10 +200,18 @@ void init() {
 
     recompui::register_launcher_init_callback(build_launcher);
 
-    // The prefab tabs. Wave Race predates the Rumble Pak and has no gyro or
-    // mouse control, so the general tab keeps only what applies.
+    // The prefab tabs. Wave Race has no gyro or mouse control, so the general
+    // tab keeps only what applies.
+    //
+    // Rumble strength is on, and it is the only control the feedback has: the
+    // slider is 0-100, recompinput scales the motor by it, and zero is off.
+    // The game itself never asks for rumble -- it predates the Rumble Pak, and
+    // `Motor` appears nowhere in its code -- so what the slider governs is the
+    // feedback this port works out for itself from the race (src/haptics.cpp).
+    // Without the option the whole rumble path in recompinput is skipped, so
+    // this line is also what turns the feature on at all.
     recompui::config::GeneralTabOptions general{};
-    general.has_rumble_strength = false;
+    general.has_rumble_strength = true;
     general.has_gyro_sensitivity = false;
     general.has_mouse_sensitivity = false;
 

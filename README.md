@@ -75,6 +75,11 @@ Beyond running natively, the port adds:
   in the menus and Time Trial, by its own choice) and RT64 interpolates each
   object's movement between game frames, so it presents at your display's
   refresh rate. Physics, camera and timers are untouched.
+- **Controller rumble**, which the game never had: it shipped a year before the
+  Rumble Pak and has no rumble code at all, so the port works the feedback out
+  from the race itself -- the slap of landing off a wave, buoys taken and missed,
+  collisions, the countdown and the flag. **Rumble Strength** in the General tab
+  sets how hard, and zero turns it off.
 - A launcher with a ROM picker, a settings menu, and controller remapping with
   per-device profiles, from RecompFrontend.
 - Audio through the recompiled RSP microcode.

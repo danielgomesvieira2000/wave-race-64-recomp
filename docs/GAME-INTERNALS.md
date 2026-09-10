@@ -140,7 +140,7 @@ direct `jal`s into the overlay window. Nineteen of the call sites -- 14 in
 | `gGameModes` | `0x801CE620` | mode: 0 time trials, 1 2P vs, 4 championship, 11 stunt |
 | `gGameModeState` | `0x801CE650` | sub-state within a mode |
 | `D_801CE638` | `0x801CE638` | screen state; gates `func_800922E4`'s overlay calls |
-| `D_800D461C` | `0x800D461C` | VI frame divider (see §7) |
+| `D_800D461C` | `0x800D461C` | VI frame divider (see §8) |
 | `gDisplayListHead` | `0x80151944` | see §6 |
 
 `gGameState` values observed in play:
@@ -446,7 +446,79 @@ against the physical address the table gave at the time.
 
 ---
 
-## 7. Video timing
+## 7. Reading a race from RDRAM
+
+What the game knows about a race in progress, for a port that wants to react to
+it -- controller feedback here, but the same values would drive a speedometer, a
+replay, or a telemetry overlay. All of it is read-only; none of it is a place to
+write.
+
+The addresses were identified by Elliott Tate in pull request #2 of this project
+and re-verified here against a scripted race with `WR64_HAPTICS_TRACE` (see
+[PORTING.md](PORTING.md), *Diagnostics*). What "verified" means: the countdown
+counts 3, 2, 1 and hands over to the race, speed rises from zero to 118 under
+throttle and the craft is airborne in 41% of the frames of a run driven straight
+into the waves, buoys and misses advance where the HUD says they do, and the run
+ends with the retirement the script earns.
+
+**Globals.**
+
+| Address | Contents |
+|---|---|
+| `0x80151960` | frame counter; a race's own tick |
+| `0x800D8170` | course id, 0-8 |
+| `0x800DAB24` | game state; `0x28` is a race, `0x28`-`0x2C` its surroundings |
+| `0x800DAB28` | players, 1 or 2 |
+| `0x801982F0` | riders on the course, 1-4 |
+| `0x800D48DC` | which race slot the human holds |
+| `0x801CE624` | half; `0xFFFF` while **not** paused |
+| `0x801CE648` | 3 while a race is under way |
+| `0x801CE650` | race phase; 2 and 3 are the race proper |
+| `0x80228D08` | 1 while the start countdown is live |
+| `0x80228A90` | that countdown, 60 down to 0 -- `(n - 1) / 15` is the number on screen |
+
+**Per rider, by race slot.** Two arrays, one for the craft's simulation and one
+for its standing in the race. Index both with the slot from `0x800D48DC`, and
+only after the state, course, player and rider counts have been checked: outside
+a race the slot is whatever the last one left behind.
+
+| Array | Base | Stride |
+|---|---|---:|
+| craft | `0x80192690` | `0x1718` |
+| standing | `0x801C2938` | `0x378` |
+
+| Craft offset | Type | Contents |
+|---|---|---|
+| `+0x0028` | word | hull contact points tested this step |
+| `+0x0B60` | word | steering, in the stick's own ±80 |
+| `+0x0B7C` | float | vertical velocity, up positive |
+| `+0x0B90` | float | speed; the HUD shows this ×1.8 |
+| `+0x0C40` | float | craft-to-craft closing speed, worst this step |
+| `+0x0C44` | float | craft-to-barrier closing speed, worst this step |
+| `+0x0C54` | word | animation id (`0x17`, and 7 before frame `0x38`, are the crash) |
+| `+0x0C58` | word | animation frame |
+| `+0x0C66` | half | throttle; `0xA000` masked in while held |
+| `+0x0C78` | word | contact points touching water -- over `+0x28`, how wet the hull is |
+| `+0x0C7C` | half | zero while airborne |
+| `+0x1608` | half | crashed |
+
+| Standing offset | Type | Contents |
+|---|---|---|
+| `+0x0000` | word | lap; 1 from the moment the race starts |
+| `+0x000C` | word | buoys passed |
+| `+0x0028` | word | 1 when the last buoy was taken on the correct side |
+| `+0x012C` | word | power, 0-5. The first racing frame is where the game fills the standings in -- in a championship race it read 5 there, in a run that took no buoys it stayed 0 -- so treat that frame as the baseline rather than as a change |
+| `+0x0134` | word | buoys missed |
+| `+0x02EC` | word | retired |
+| `+0x02F4` | word | finished |
+
+`osViSwapBuffer` is the place to read all of it: the game calls it once per frame
+it has finished, so the state is complete and consistent, and a port's hook is
+already on the game's own thread there.
+
+---
+
+## 8. Video timing
 
 The game picks its own update rate by writing a divider that the video interrupt
 handler counts retraces against: **`D_800D461C`**, read by `Main_Thread` and
@@ -466,7 +538,7 @@ keeping up, and what the game chose.
 
 ---
 
-## 8. Audio
+## 9. Audio
 
 The game mixes on the RSP, not the CPU. Its audio thread builds a list of ABI
 commands each frame, hands it to the RSP as a task, and the RSP writes finished

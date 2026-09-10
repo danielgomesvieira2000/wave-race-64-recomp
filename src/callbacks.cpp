@@ -36,8 +36,11 @@
 #if WR64_WITH_FRONTEND
 #   include "wr64/frontend.h"
 #   include <recompinput/input_events.h>
+#   include <recompinput/input_state.h>
+#   include <recompui/config.h>
 #endif
 #include "wr64/display.h"
+#include "wr64/haptics.h"
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
 
@@ -274,13 +277,19 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     return true;
 }
 
+// The runtime's rumble callback. This game never reaches it -- it has no rumble
+// code at all, see src/haptics.cpp -- but a port of a game that does should send
+// it the same way the feedback below goes, so that one path owns the motor.
 void set_rumble(int controller_num, bool rumble) {
+#if WR64_WITH_FRONTEND
+    recompinput::set_rumble(controller_num, rumble);
+#else
     if (controller_num != 0 || g_controller == nullptr) {
         return;
     }
-    // Wave Race predates the Rumble Pak, but the runtime may still ask.
     SDL_GameControllerRumble(g_controller, rumble ? 0xFFFF : 0, rumble ? 0xFFFF : 0,
                              rumble ? 1000 : 0);
+#endif
 }
 
 ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
@@ -852,6 +861,34 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     ++ticks;
     poll_input();
     wr64::poll_game_state();
+
+    // The motor is driven from here, not from poll_input: this is librecomp's
+    // main loop body, which is the thread SDL belongs to, while poll_input is
+    // also called on the game thread when the game reads its controllers.
+    //
+    // With the frontend, recompinput owns the motor: it ramps towards full
+    // while the effect is asked for and decays afterwards, the way a Rumble Pak
+    // behaved, and scales the result by the Rumble Strength slider -- so zero on
+    // that slider is off. Without the frontend the same on/off goes to SDL.
+    const bool feedback = wr64::haptics::motor_on();
+#if WR64_WITH_FRONTEND
+    // Said once, because everything between the race and the motor is silent
+    // when it fails: no controller, a driver that refuses SDL's rumble call, or
+    // the slider at zero all look identical from the sofa.
+    if (feedback) {
+        static bool announced = false;
+        if (!announced) {
+            announced = true;
+            std::fprintf(stderr, "[wr64] feedback: first pulse (rumble strength %.0f%%)\n",
+                         recompui::config::general::get_rumble_strength());
+            std::fflush(stderr);
+        }
+    }
+    recompinput::set_rumble(0, feedback);
+    recompinput::update_rumble();
+#else
+    set_rumble(0, feedback);
+#endif
 }
 
 }  // namespace

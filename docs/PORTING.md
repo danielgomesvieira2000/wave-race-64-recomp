@@ -435,6 +435,35 @@ is worst in a game like this one, where steering is analogue throughout.
 Keep the ±80 range inside the port if the scripted-input files and the game's own
 constants are written in it, and divide by it once, at the callback boundary.
 
+### Rumble for a game that has none
+
+Wave Race 64 (USA, Rev A) predates the Rumble Pak, and `Motor` appears nowhere in
+its disassembly outside the SDK header that declares `osMotorStart`. There is
+nothing to pass through, so the feedback in this port is worked out from the
+game's own state (`src/haptics.cpp`, and [GAME-INTERNALS.md §7](GAME-INTERNALS.md#7-reading-a-race-from-rdram)
+for what it reads). Four things are worth knowing before doing the same:
+
+- **RecompFrontend already has the control and the feel.** `has_rumble_strength`
+  on the general tab gives a 0-100 slider, and `recompinput::update_rumble` ramps
+  the motor towards full by 0.17 per update while an effect is wanted, decays it
+  by ×0.92 after, smoothsteps the result and scales it by the slider. Zero on the
+  slider is off, so a separate on/off toggle is a second control for a state the
+  first already expresses. **The whole path is skipped unless the option is
+  declared**, so that one flag is also what turns the feature on.
+- **Nothing calls `update_rumble` for you.** It is exposed for the port to call
+  once a frame; without that, `set_rumble` only ever sets a flag.
+- **Its interface is a bool, not an amplitude**, which is what a Rumble Pak was:
+  a fixed-speed motor a game switched on and off. So an effect's strength is the
+  *length* of the pulse asked for -- 30 ms is a tick, 200 ms a thump -- and that
+  is a feature rather than a limitation, since it is how the games being ported
+  shaped their own feedback.
+- **Read the game on the game's thread, drive the motor on the main one.** The
+  frame's `osViSwapBuffer` is the point where the game's update has finished and
+  its memory is consistent, and a port's hook there is already on its thread; SDL
+  belongs to the main loop. In between, pass timestamps, not pointers into RDRAM.
+  Note that the input-poll callback is not the main thread -- the game calls it
+  too, through `osContStartReadData`.
+
 ### Where settings go
 
 librecomp writes settings, profiles and mod state wherever it is told, and until
@@ -774,6 +803,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Hang watchdog** | A microcode that spins forever faults nothing, prints nothing and returns nothing. After a deadline, a persistent thread suspends the stuck thread, samples its instruction pointer repeatedly and resolves the distinct addresses to source lines. Sample repeatedly, not once: with everything inlined, one sample usually names a helper rather than the loop. (A thread *per call* here was real overhead on the thread that has to keep pace with the game.) |
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
 | **Lattice trace** (`WR64_LATTICE`) | Whether a mesh the game rebuilds every frame can be paired between frames at all. For each frame, and for each rebuilt mesh (the water through segment 3, the sky through segment 6), it writes how many vertex blocks moved in X or Z since the previous frame, how many moved only in height, the largest step in each, and **how many moved by the same step as the first** -- which is what separates a mesh being carried whole from one re-assigning its slots. A handful of frames of identical vertices proves nothing: with the camera parked, a mesh built around the camera is indistinguishable from a fixed one. |
+| **Race trace** (`WR64_HAPTICS_TRACE`) | Every frame of every race as a CSV row -- speed, vertical velocity, airborne, wetness, impact, lap, buoy, misses, power, countdown -- with the feedback events each frame produced. Written to check that a set of RDRAM addresses really means what it is supposed to: the countdown counts down, speed rises under throttle, misses appear where the HUD says MISS. A value that looks plausible in one frame is not evidence; a column that behaves across a race is. |
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
