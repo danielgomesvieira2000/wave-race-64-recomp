@@ -353,6 +353,22 @@ Nothing in the frame separates them -- same projection, same extent (`9..310`,
 `21..218`, the drawn region), both textured -- so the texture address is the
 discriminator, and this port keeps it in a built-in tag table.
 
+### The wipe between menus
+
+Choosing a rider wipes to the course overview through state `0x0B`, which lasts
+0.6 s -- too short for once-a-second screenshots, which is why it took a rectangle
+log to see. The wipe is drawn under an **orthographic** projection, with the
+game's **inset** scissor (`8,20`-`311,219`), as horizontal strips 5 pixels tall
+in four textured tiles per row spanning `x 0..96`, `96..192`, `192..288` and
+`288..384`, with rows running to `y 288`: the game overdraws its own 320x240 by
+20% in both axes, and the overdraw is not centred (`0..384` centres on 192). A
+port widening the frame has to get all four tiles out to its edges. **This port
+does not yet.** The wipe stays boxed in the middle 4:3 with the previous screen's
+background standing either side of it, and anchoring the tiles to both edges of
+the frame placed them across it in the renderer's own arithmetic without changing
+what reached the screen -- so something after placement is still deciding the
+width. Unsolved.
+
 ### The sky
 
 Three bands -- haze, horizon, clouds -- of seven vertices each, drawn under the

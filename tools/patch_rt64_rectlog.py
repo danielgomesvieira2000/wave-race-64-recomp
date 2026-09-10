@@ -45,11 +45,12 @@ REPLACEMENT = """                            RenderViewport viewportRect = conve
                                 // tools/patch_rt64_rectlog.py.
                                 static const char *wr64RectLog = std::getenv("WR64_RECT_LOG");
                                 if (wr64RectLog != nullptr) {
-                                    fprintf(stderr, "[rt64] rect %d..%d origins %u/%u aspect %u ratio %.3f fb %d -> x %.1f w %.1f (fb viewport %.1f)\\n",
+                                    fprintf(stderr, "[rt64] rect %d..%d origins %u/%u aspect %u ratio %.3f fb %d -> x %.1f w %.1f (fb viewport %.1f) scissor %d..%d\\n",
                                         call.callDesc.rect.left(true), call.callDesc.rect.right(true),
                                         unsigned(call.callDesc.rectLeftOrigin), unsigned(call.callDesc.rectRightOrigin),
                                         unsigned(call.callDesc.rectAspect), invRatioScale, int(p.fbWidth),
-                                        viewportRect.x, viewportRect.width, framebuffer.viewport.width);
+                                        viewportRect.x, viewportRect.width, framebuffer.viewport.width,
+                                        int(fbPair.scissorRect.ulx), int(fbPair.scissorRect.lrx));
                                 }
                             }"""
 

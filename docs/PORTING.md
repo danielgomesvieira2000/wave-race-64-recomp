@@ -815,8 +815,33 @@ Practical rules this port arrived at:
 - **Inset anchors by how far the visible picture's edge lies inside RT64's
   widened frame**, or "anchored to the left edge" means RT64's edge rather than
   the window's, and the element sits off screen.
+- **`G_EX_ASPECT_STRETCH` does not mean "cover the widened frame".** In RT64 it
+  sets the rectangle's `aspectRatioScale` to 1, and that scale is what squeezes
+  2D content back into the middle 4:3 of a widened framebuffer -- so the flag
+  only says "do not squeeze this one". A rectangle the game draws across its own
+  screen then covers the game's own columns of a framebuffer that is now wider,
+  and stops short of the edges. What spreads an element across the frame is the
+  **extended origins**, the mechanism anchoring already uses: a full-frame
+  element anchors its left edge to the frame's left and its right edge to the
+  frame's right (`convertViewportRect` places each edge relative to the origin it
+  is given). Measured on a menu wipe drawn as four 96-pixel tiles: with the flag
+  alone they landed at `x 0 w 96` and so on, unchanged; with both origins they
+  landed at `x 0 w 441`, `441`, `882`, `1326` across a 1474-wide framebuffer.
+  **Anchoring both edges is not on its own a fix, and it is not free.** Doing it
+  for every stretched element placed them across the frame in the rectangle log
+  and changed nothing that reached the screen, so something after placement is
+  still deciding the width; and the same build began exiting cleanly of its own
+  accord a minute or two into a run, which `WR64_HUD_OFF=1` stopped. Both are
+  reverted. Whatever finally does this has to be checked over a whole run, not a
+  frame.
 - **Widen the scissor while anchoring**, and reissue the game's scissor command,
   or an anchored element is cut off at the frame's old edge.
+- **When the pixels and the classifier disagree, ask the renderer.**
+  `tools/patch_rt64_rectlog.py` makes RT64 print, under `WR64_RECT_LOG`, every
+  rectangle's own coordinates, its origins and aspect flag, the framebuffer's
+  width and scissor, and where it landed. It answered in one run what a day of
+  screenshots had not: where each rectangle is placed, and so whether a fault
+  lies in the port's classification or in what happens to the draw afterwards.
 - **2D projection groups must carry no interpolation.** The same projection is
   reissued several times per frame with different flags, and RT64 must never
   blend one with another.
@@ -966,6 +991,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Hang watchdog** | A microcode that spins forever faults nothing, prints nothing and returns nothing. After a deadline, a persistent thread suspends the stuck thread, samples its instruction pointer repeatedly and resolves the distinct addresses to source lines. Sample repeatedly, not once: with everything inlined, one sample usually names a helper rather than the loop. (A thread *per call* here was real overhead on the thread that has to keep pace with the game.) |
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
 | **Lattice trace** (`WR64_LATTICE`) | Whether a mesh the game rebuilds every frame can be paired between frames at all. For each frame, and for each rebuilt mesh (the water through segment 3, the sky through segment 6), it writes how many vertex blocks moved in X or Z since the previous frame, how many moved only in height, the largest step in each, and **how many moved by the same step as the first** -- which is what separates a mesh being carried whole from one re-assigning its slots. A handful of frames of identical vertices proves nothing: with the camera parked, a mesh built around the camera is indistinguishable from a fixed one. |
+| **Rectangle log** (`WR64_RECT_LOG`, via `tools/patch_rt64_rectlog.py`) | Where every rectangle actually lands on the widened framebuffer, in RT64's own arithmetic: the game's coordinates, the origins and aspect flag the port set, the framebuffer width and scissor, and the resulting position. The port can say what it emitted and a screenshot can say what showed; only this says what the renderer did in between. |
 | **Race trace** (`WR64_HAPTICS_TRACE`) | Every frame of every race as a CSV row -- speed, vertical velocity, airborne, wetness, impact, lap, buoy, misses, power, countdown -- with the feedback events each frame produced. Written to check that a set of RDRAM addresses really means what it is supposed to: the countdown counts down, speed rises under throttle, misses appear where the HUD says MISS. A value that looks plausible in one frame is not evidence; a column that behaves across a race is. |
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
