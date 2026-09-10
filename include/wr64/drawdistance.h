@@ -34,8 +34,11 @@
 //
 // **Not in the list, and why**
 //
-// The arrows and signs at the gates are culled at roughly 1,600 by code that has
-// not been found; turning this up leaves them vanishing in the same place.
+// The course's yellow direction arrows are not culled by distance at all, so
+// there is nothing here to scale. Measured over a lap: one or two drawn per
+// frame out of thirteen, and the drawn ones are not the nearest -- one at 531
+// units gets skipped while one at 4,923 is drawn. They are navigational markers
+// selected by where the player is on the course, not scenery being dropped.
 //
 // The animated water is not culled at all. It is *generated*: a fixed 500-vertex
 // patch reaching 922 units, rebuilt around the camera every frame, whose spacing

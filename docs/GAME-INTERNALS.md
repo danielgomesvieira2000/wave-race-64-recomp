@@ -515,18 +515,31 @@ the same neighbourhood of the same segment, which is a hint they belong to one
 object system with different types. `func_8006E674` does branch on a type field at
 `+0x10` of each record, and types 4 and 5 skip the distance test entirely.
 
-**The limit looks like a count, not a distance.** Across nine traced frames,
-**exactly two** arrows were drawn every frame, at fixed world positions
-`(-5000, 152, -750)` and `(-4750, 155, -2500)` -- 2,483 and 4,218 from the camera.
-A distance rule would let the number vary as the camera moves, the way the buoys'
-varied between 12 and 23. Two, every frame, does not.
+**They are not culled by distance at all.** Measured over a full lap, thirty
+frames spread across forty-five seconds of racing:
 
-**What is left to do:** confirm that by driving rather than parking. The camera
-was stationary for those frames, which is exactly the condition under which a
-count and a distance look alike. Then find where the two comes from -- the matrix
-table at segment 5 `+0x4440` is the handle, being fixed rather than in the
-per-frame arena, though `0x4440` does not appear as an immediate in the recompiled
-code the way `0xA1C0` did.
+- **Thirteen positions** exist in the table, at matrix slots `0x4140` to `0x44C0`,
+  one `Mtx` apart. Several slots share the same coordinates -- `0x4200`, `0x4280`,
+  `0x42C0` and `0x4340` are all at `(-1166, 966)` -- so one signpost has several
+  entries, differing in the direction the arrow points.
+- **One or two are drawn per frame**, never more, never none.
+- **The drawn ones are not the nearest ones.** In 27 of 29 frames the game skipped
+  nearer arrows to draw further ones: at one point it drew an arrow at 7,114 while
+  skipping arrows at 5,286 and 6,448, and at another it drew out to 4,923 while
+  skipping three at 531.
+- The furthest ever drawn was **8,746**, beyond the distance at which buoys are
+  culled.
+
+An arrow at 531 units being skipped while one at 4,923 is drawn rules out a
+distance rule, and rules out a nearest-N rule with it. **The selection is by
+relevance to the racing line, not by distance**: these are navigational markers
+telling the player which way the course goes next, and the game draws the one or
+two that apply to where the player is.
+
+So there is nothing here for a draw distance setting to reach, and nothing being
+lost to a limit. Drawing more of them would mean showing directions for parts of
+the course the player is not on, which is a change to what the game says rather
+than to how far it draws.
 
 **One dead end, recorded so it is not repeated.** An earlier attempt read a
 different call's matrix address, `0x0300F208`, and treated it as an identity. It
