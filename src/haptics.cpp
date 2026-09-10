@@ -169,6 +169,19 @@ struct Pulse {
 
 constexpr size_t kMaxPulses = 16;
 
+// Every effect's length, and so every effect's strength, is scaled by this.
+// The lengths below were written blind and came out light on a real pad: at 75%
+// on the slider they read as a buzz rather than a knock, so they are half again
+// as long as first written. Raising this is the way to make everything firmer at
+// once; a single effect is tuned in fire() instead.
+//
+// It cannot fix the ceiling, though. recompinput drives **only the pad's
+// high-frequency motor** -- it passes zero for the low-frequency one -- and on
+// most pads that is the small, light one. Nothing this file does can produce the
+// heavy motor's thump while that holds. See docs/PORTING.md, *Rumble for a game
+// that has none*.
+constexpr double kStrengthScale = 1.5;
+
 std::mutex g_mutex;
 Pulse g_pulses[kMaxPulses];
 size_t g_next_pulse = 0;
@@ -176,7 +189,7 @@ size_t g_next_pulse = 0;
 void schedule(double delay_ms, double length_ms) {
     const double base = now_seconds() + delay_ms / 1000.0;
     std::lock_guard<std::mutex> lock(g_mutex);
-    g_pulses[g_next_pulse] = { base, base + length_ms / 1000.0 };
+    g_pulses[g_next_pulse] = { base, base + (length_ms * kStrengthScale) / 1000.0 };
     g_next_pulse = (g_next_pulse + 1) % kMaxPulses;
 }
 

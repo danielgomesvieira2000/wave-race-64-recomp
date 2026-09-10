@@ -456,7 +456,17 @@ for what it reads). Four things are worth knowing before doing the same:
   a fixed-speed motor a game switched on and off. So an effect's strength is the
   *length* of the pulse asked for -- 30 ms is a tick, 200 ms a thump -- and that
   is a feature rather than a limitation, since it is how the games being ported
-  shaped their own feedback.
+  shaped their own feedback. Pulses shorter than about 100 ms are where that
+  scaling lives: at 0.17 a frame the ramp reaches full in six, so anything longer
+  is already at the ceiling and only lasts longer.
+- **Symptom: everything feels light, even with the slider high.**
+  `recompinput::update_rumble` calls `SDL_JoystickRumble(joystick, 0, strength,
+  duration)` -- zero for the **low-frequency motor**, which on most pads is the
+  big, heavy one, and the strength on the high-frequency one, which is the small
+  buzzing one. Every effect a port sends through it is therefore a buzz by
+  construction, and no amount of pulse length or slider will make it a knock.
+  Fixing that means patching recompinput to drive both motors, which is a change
+  to a submodule and so belongs in a script under `tools/` like the others.
 - **Read the game on the game's thread, drive the motor on the main one.** The
   frame's `osViSwapBuffer` is the point where the game's update has finished and
   its memory is consistent, and a port's hook there is already on its thread; SDL
