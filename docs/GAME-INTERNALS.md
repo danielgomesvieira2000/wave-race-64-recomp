@@ -353,6 +353,54 @@ A race frame loads a second perspective projection with `m[1][1]` = 0.577 -- a
 much wider frustum, for the sky -- so anything done to the field of view has to
 be done to both or they come apart.
 
+### The buoys, and where they stop being drawn
+
+A buoy is **two triangles**, drawn as two calls to a pair of static display lists
+in the course segment, with a modelview matrix per instance taken from a table in
+segment 5:
+
+| | |
+|---|---|
+| Display lists | `0x0102CD78` (first vertex `(0, 35, 0)`) and `0x0102CD90` (`(0, -35, 0)`) |
+| Geometry | three vertices each, `(0, ±35, 0)`, `(-35, 0, 0)`, `(35, 0, 0)` -- a billboard quad in two halves |
+| Matrices | segment 5, offset `0xA1C0`, one 64-byte `Mtx` per instance |
+
+**The game repacks that matrix table every frame.** Whatever it decides to draw
+goes into slots `0`, `1`, `2` … with no gaps: across five frames of a race the
+slots used were `0-22`, `0-11`, `0-13`, `0-14` and `0-1`. So the number of
+matrices written is the number of buoys the game chose, and the choice is made
+before anything reaches the display list — a renderer cannot put back what was
+never submitted.
+
+**The choice is a distance cull at about 4,500 world units.** Measured over a
+race by locating the camera from the water lattice, which is built around it
+(below), and taking the distance to each drawn buoy:
+
+| Camera | Buoys drawn | Nearest | Furthest |
+|---|---:|---:|---:|
+| (4358, -720) | 23 | 3283 | **4501** |
+| (3494, -4101) | 12 | 2335 | **4096** |
+| (-3898, -4711) | 14 | 1586 | **4197** |
+| (-6299, 2217) | 15 | 1026 | **4212** |
+| (-282, 3880) | 2 | 4446 | **4570** |
+
+The nearest varies with where the craft is; **the furthest is pinned in every
+frame** in a band a few hundred units wide, which is the buoy spacing (about 340)
+landing wherever it falls below the threshold. The count varying between 12 and
+23 is the course curving away, not a cap: a cap would hold the count constant and
+let the furthest reach further, and it does neither.
+
+For contrast, the far plane is at 16,192 (*The world's frustum*, above). Buoys
+stop being drawn at somewhere under a third of the distance the frustum reaches,
+which is what a player sees as pop-in.
+
+**Where the check is has not been found.** `0x458CA000`, exactly `4500.0f`,
+occurs several times in the data at `0x800E63C4` and nearby -- but in context it
+is a coordinate inside a table of seven-word placement records, not a threshold,
+so the match is a coincidence worth writing down only so the next person does not
+spend the same hour on it. The code that fills the matrix table is still to be
+identified.
+
 ### Placing a 3D object inside a 2D layout
 
 The game does not give an object its own small viewport. It takes a **full-size
