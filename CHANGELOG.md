@@ -10,7 +10,21 @@ notice changes.
 
 ## Unreleased
 
-Nothing yet.
+- **Draw Distance** in the Graphics tab, up to 4x. There is no global draw
+  distance in this game -- the far plane is already twenty times further out than
+  anything drawn, and each kind of object is culled by its own code -- so this is
+  one setting over the limits that have been found. Today it reaches the buoys,
+  which the game drops **between 2500 and 5000 units depending on the course**
+  while drawing the world to 16,192. At 4x on a 2500 course the count drawn goes
+  from a handful to the whole course.
+- `WR64_3D_TRACE_EVERY` spaces the 3D trace's frames over a run instead of taking
+  them consecutively, which is what a question about distance needs.
+- `docs/GAME-INTERNALS.md` gains the world's frustum, the buoy cull and where its
+  limit lives, the course arrows (which turn out **not** to be distance-culled at
+  all -- they are navigational markers chosen by where the player is), and the
+  animated water: a 500-vertex patch reaching 922 units whose spacing is computed
+  per frame rather than stored, with the three ways of looking for it that do not
+  work.
 
 ## [0.7.1](docs/releases/0.7.1.md) — placement and a tidier known-issues list
 
