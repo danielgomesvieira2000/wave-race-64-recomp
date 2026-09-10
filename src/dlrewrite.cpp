@@ -84,7 +84,7 @@
 // frames diffed against each other say which geometry the game rebuilds
 // rather than moves. WR64_3D_TRACE_FRAMES sets how many frames (two by
 // default) and WR64_3D_TRACE_STATE takes a game state in hexadecimal for the
-// screens that are not races. WR64_3D_TRACE_EVERY spaces them out, in race
+// screens that are not races, or "any" for whatever is on screen. WR64_3D_TRACE_EVERY spaces them out, in race
 // frames: consecutive frames answer "what can the renderer pair between them",
 // and spaced ones answer "is this object submitted at all from over there",
 // which is the question behind a report of things popping in.
@@ -1762,8 +1762,16 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
     // Race frames by default; WR64_3D_TRACE_STATE names another game state,
     // in hexadecimal, for the screens that are not races.
     static const char* state_env = std::getenv("WR64_3D_TRACE_STATE");
-    static const long wanted_state = state_env != nullptr ? std::strtol(state_env, nullptr, 16) : -1;
-    if (wanted_state >= 0 ? (state != uint32_t(wanted_state)) : !racing(state)) return;
+    // "any" traces whatever the game is showing, which is how to reach a mode
+    // whose state number is not known yet -- stunt mode, a ceremony, a screen
+    // nobody has enumerated. A hexadecimal number picks one state; the default
+    // is the race states.
+    static const bool any_state = state_env != nullptr && std::strcmp(state_env, "any") == 0;
+    static const long wanted_state =
+        (state_env != nullptr && !any_state) ? std::strtol(state_env, nullptr, 16) : -1;
+    if (!any_state && (wanted_state >= 0 ? (state != uint32_t(wanted_state)) : !racing(state))) {
+        return;
+    }
 
     static const char* frames_env = std::getenv("WR64_3D_TRACE_FRAMES");
     static const int wanted = frames_env != nullptr ? std::atoi(frames_env) : 2;

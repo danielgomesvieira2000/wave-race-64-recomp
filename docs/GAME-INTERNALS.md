@@ -509,6 +509,32 @@ scaled. It is derived per frame, and changing it means intervening inside
 this and the buoy cull: one is a comparison against a stored value, the other is
 generated geometry.
 
+### Stunt mode's rings
+
+Stunt mode runs in `gGameState` **`0x28`**, the same state as a race, so a
+diagnostic keyed on race states reaches it without being told about it.
+
+| | |
+|---|---|
+| Display list | `0x0101E620`, called through `0x0101EA48` |
+| Geometry | 48 triangles -- a real torus, not a billboard |
+| Matrices | segment 5, a table stepping `0x40`, seen from `0x4200` to at least `0x4700` |
+| Positions seen | 22 in one run |
+
+**No distance cull was found.** Over thirteen traced frames the number drawn
+varied between 2 and 10, and the furthest drawn ranged from 2,507 to **9,406**
+with no ceiling -- against the buoys, whose furthest sat between 4,096 and 4,570
+in every frame, which is what a distance limit looks like. 9,406 is beyond the
+distance at which buoys are dropped entirely.
+
+So what looks like rings popping in is most likely them entering the view rather
+than passing a threshold. It is worth saying that this is a **negative result
+from one run**, not a proof: a ring that is never drawn anywhere in the trace
+cannot be distinguished from one that does not exist, so a cull that hides
+everything past some distance would leave no trace of the things it hid. What
+would settle it is catching one ring appearing and knowing roughly how far away
+it was.
+
 ### The gate markers: identified, and what limits them
 
 The **yellow arrows on the course** are not culled the way the buoys are. Raising
