@@ -84,7 +84,10 @@
 // frames diffed against each other say which geometry the game rebuilds
 // rather than moves. WR64_3D_TRACE_FRAMES sets how many frames (two by
 // default) and WR64_3D_TRACE_STATE takes a game state in hexadecimal for the
-// screens that are not races.
+// screens that are not races. WR64_3D_TRACE_EVERY spaces them out, in race
+// frames: consecutive frames answer "what can the renderer pair between them",
+// and spaced ones answer "is this object submitted at all from over there",
+// which is the question behind a report of things popping in.
 //
 // WR64_LATTICE names a file and writes one line per frame for each of the two
 // meshes the game rebuilds -- the water through segment 3, the sky through
