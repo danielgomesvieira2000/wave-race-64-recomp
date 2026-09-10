@@ -1017,6 +1017,12 @@ Three pieces make it work, and the middle one is the part worth copying:
   misplaced menu element is running the game they downloaded. It costs a null
   check per frame while the menu is closed, because RT64 creates its inspector
   on the keystroke and `State::inspect()` returns immediately without one.
+- **Developer mode is a bundle**, and turning it on for everyone arms every key
+  behind it. Audit them rather than inheriting them: F2 toggles ray tracing for
+  the session with nothing in a menu saying so and nothing on screen to explain
+  the change, so `tools/patch_rt64_inspector.py` removes its `case` from both
+  key filters and the key passes through to the game. F3 (view RDRAM) and F4
+  (texture replacements) are visibly reversible and were kept.
 - **Two threads meet.** The classifier runs on the thread that submits display
   lists; the panel runs on the renderer's UI thread. The classifier fills a frame
   under construction and publishes it under a mutex at the end of the frame; the

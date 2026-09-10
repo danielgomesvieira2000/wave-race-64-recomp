@@ -41,6 +41,18 @@ RT64's own half of the menu works in both.
 `WR64_INSPECTOR=0` turns the port's half off, for an A/B against the rewriter's
 own classification. RT64's half stays on F1 regardless.
 
+### The other keys
+
+Developer mode arms three more of RT64's shortcuts for everyone, so they are part
+of the shipped build too:
+
+| Key | Does |
+|---|---|
+| **F1** | Opens and closes this menu |
+| F2 | **Unbound.** RT64 uses it to toggle ray tracing for the session, with no menu entry saying so and nothing on screen to explain what changed. `tools/patch_rt64_inspector.py` removes the case from both key filters, so the key passes through to the game like any other. |
+| F3 | Views RDRAM. Visibly reversible, plainly diagnostic. |
+| F4 | Toggles texture replacements. Same. |
+
 ### The window
 
 ```
@@ -224,6 +236,14 @@ does not touch `developerMode`, so changing a graphics setting will not undo it.
 The frontend's own developer-mode checkbox in the graphics tab is left to mean
 whatever else it means -- it no longer decides whether the debug menu opens, and
 a reader should never have to find it.
+
+**Then audit the other shortcuts.** Developer mode is a bundle: turning it on
+for everyone arms every key RT64 binds behind it, not just the one wanted. Go
+through them and decide each on its own. Here F2 (a session-wide ray tracing
+toggle, invisible in any menu, unexplained on screen) was removed and F3 and F4
+kept, because both of those are visibly reversible and plainly diagnostic. The
+same script does it -- removing the `case` leaves the key unfiltered, so it
+reaches the game like any other.
 
 ### 3. The threading contract
 

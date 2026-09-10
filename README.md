@@ -107,7 +107,8 @@ to see what drew it, browse the framebuffers and textures. On the other is the
 port's, listing the 2D elements of the frame with the class the widescreen
 rewriter gave each one, outlining one on the screen when you hover it, and
 letting you change that class while the game runs. If something in a menu sits
-in the wrong place, that window is how to say which thing. See
+in the wrong place, that window is how to say which thing. F3 views RDRAM and F4
+toggles texture replacements; F2 is deliberately unbound. See
 [docs/HUD-INSPECTOR.md](docs/HUD-INSPECTOR.md).
 
 Known issues:
