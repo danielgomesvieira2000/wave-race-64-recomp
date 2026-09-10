@@ -461,6 +461,38 @@ been set by people who could not hear the result.** This project's own saved
 setting was zero. Making the slider work made the port correctly silent, which
 is indistinguishable from breaking the audio unless the log says which it is.
 
+### Separating one sound from another after the mix is impossible
+
+**So do it before the mix.** A main volume can scale the finished buffer; a music
+or voice volume cannot, because the microcode has already mixed everything into
+one stereo stream by the time a port sees it. Both have to reach into the game's
+audio engine, which for this era usually means the sequence-player engine with
+its `gSequencePlayers` array: music and effects are separate *players*, and
+within a player, separate *channels*.
+
+Two fields are the hooks, and both are ones the sequences themselves write:
+
+| Level | Field | Recompute asked for by |
+|---|---|---|
+| player | `fadeVolumeScale` | the player's `recalculateVolume` bit |
+| channel | `volumeScale` | the channel's `changes.volume` bit |
+
+Because the game writes them too, **compose rather than replace**: shadow the
+value, treat anything you did not write as the game's new intent, and write that
+base times your setting. Every write the game makes to them is an absolute
+assignment, so nothing compounds. Replacing instead would break the game's own
+ducking -- this one drops the title music to `0.55` under the menu.
+
+**Finding which channel is a voice is a correlation problem, not a search.**
+Nothing names them. What worked here: log every channel's activity per frame
+against the game's own tick, log gameplay events with the same tick from the
+feedback code, and line the two up. The announcer's channel began three frames
+after the countdown started and ran for the 144 frames of "three, two, one, go",
+spoke again on the course screens and after a retirement, and was idle in
+between -- while every other channel of that player either ran continuously (the
+engine, the water) or fired in short bursts at splashes and collisions. No other
+channel had that shape.
+
 ### Players, pads and profiles
 
 **Symptom: the controls tab's remapping does nothing.** A port that reads SDL

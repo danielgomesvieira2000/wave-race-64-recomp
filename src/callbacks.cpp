@@ -114,10 +114,17 @@ void refresh_players() {
         }
     }
 
+    // The first call always assigns, even with nothing connected. Comparing
+    // against the last set alone is what broke input entirely on a machine with
+    // no pad attached: an empty set matched an empty set, so nothing was ever
+    // assigned, player one did not exist, and get_input reported no controller
+    // to the game at all -- keyboard included.
+    static bool assigned_once = false;
     static std::vector<SDL_GameController*> assigned;
-    if (connected == assigned) {
+    if (assigned_once && connected == assigned) {
         return;
     }
+    assigned_once = true;
     assigned = connected;
 
     recompinput::players::auto_assign_controllers(connected.data(), connected.size());
@@ -229,8 +236,13 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (controller_num < 0 || controller_num >= 2) {
         return false;
     }
-    if (!recompinput::players::get_player_is_assigned(controller_num)) {
-        return false;   // nothing plugged in for this player; no controller
+    // Player one always exists, because a keyboard is always attached: the
+    // assignment gives player one the keyboard profile as well as whatever pad
+    // it has, and get_n64_input merges the two, so the keys and the pad both
+    // play at any moment without either having to be chosen. Player two exists
+    // only once a second pad has been plugged in.
+    if (controller_num == 1 && !recompinput::players::get_player_is_assigned(1)) {
+        return false;
     }
 
     uint16_t pressed = 0;
@@ -374,8 +386,8 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
     // A player slot with a pad -- or the keyboard, when there is no pad -- is a
     // connected controller; the rest are empty. No Pak: the game reads the
     // Controller Pak for its records and has no rumble code of its own.
-    if (controller_num >= 0 && controller_num < 2 &&
-        recompinput::players::get_player_is_assigned(controller_num)) {
+    if (controller_num == 0 ||
+        (controller_num == 1 && recompinput::players::get_player_is_assigned(1))) {
         return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
     }
 #else
@@ -410,6 +422,13 @@ uint32_t g_audio_frequency = 32000;
 // being copied for the channel swap -- one multiply per sample, in a loop that
 // was running anyway.
 std::atomic<int> g_audio_volume{ 100 };
+
+// Whether the window has focus, and whether losing it should silence the game.
+// Both are read on the audio thread and written on the main one. The setting is
+// separate from the state so that turning it off restores sound immediately
+// rather than at the next focus change.
+std::atomic<bool> g_window_focused{ true };
+std::atomic<bool> g_mute_unfocused{ true };
 
 // The N64 mixes 16-bit stereo, and the game's own sample rate is whatever it
 // asks for through set_frequency.
@@ -498,7 +517,11 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
     // second pass over the same samples. Scaled with integers, and only when it
     // is not full, so the common case is the copy it always was. A percentage of
     // a signed 16-bit sample cannot overflow it.
-    const int volume = std::clamp(g_audio_volume.load(std::memory_order_relaxed), 0, 100);
+    int volume = std::clamp(g_audio_volume.load(std::memory_order_relaxed), 0, 100);
+    if (g_mute_unfocused.load(std::memory_order_relaxed) &&
+        !g_window_focused.load(std::memory_order_relaxed)) {
+        volume = 0;
+    }
 
     static std::vector<int16_t> unswapped;
     unswapped.resize(sample_count);
@@ -983,7 +1006,18 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     // while the effect is asked for and decays afterwards, the way a Rumble Pak
     // behaved, and scales the result by the Rumble Strength slider -- so zero on
     // that slider is off. Without the frontend the same on/off goes to SDL.
-    const bool feedback = wr64::haptics::motor_on();
+    // Alt-tabbing away should not leave the game shouting from behind another
+    // window, and it should not leave the pad buzzing either. The state is kept
+    // rather than acted on directly, so that the Sound tab's setting can be
+    // turned off and take effect at once.
+    const bool focused = g_window == nullptr ||
+                         (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    g_window_focused.store(focused, std::memory_order_relaxed);
+    if (!focused && g_mute_unfocused.load(std::memory_order_relaxed)) {
+        wr64::haptics::silence();
+    }
+
+    const bool feedback = focused && wr64::haptics::motor_on();
 #if WR64_WITH_FRONTEND
     // Said once, because everything between the race and the motor is silent
     // when it fails: no controller, a driver that refuses SDL's rumble call, or
@@ -1007,6 +1041,10 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
 }  // namespace
 
 namespace wr64 {
+
+void set_mute_when_unfocused(bool mute) {
+    g_mute_unfocused.store(mute, std::memory_order_relaxed);
+}
 
 void set_audio_volume(double percent) {
     const int clamped = static_cast<int>(std::lround(std::clamp(percent, 0.0, 100.0)));

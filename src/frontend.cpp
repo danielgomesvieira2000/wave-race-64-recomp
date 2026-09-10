@@ -259,6 +259,33 @@ void init() {
                 wr64::music::set_volume(*percent);
             }
         });
+
+    sound.add_percent_number_option(
+        "announcer_volume", "Announcer Volume",
+        "Controls the volume of the announcer's voice, without changing the "
+        "other effects.",
+        100.0);
+    sound.add_option_change_callback(
+        "announcer_volume",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* percent = std::get_if<double>(&value)) {
+                wr64::music::set_announcer_volume(*percent);
+            }
+        });
+
+    sound.add_bool_option(
+        "mute_unfocused", "Mute When Not In Focus",
+        "Silences the game while another window has focus. Feedback stops with it.",
+        true);
+    sound.add_option_change_callback(
+        "mute_unfocused",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const bool* mute = std::get_if<bool>(&value)) {
+                wr64::set_mute_when_unfocused(*mute);
+            }
+        });
     recompui::config::create_controls_tab();
 
     // No add_game_input calls: recompinput already knows the N64 controller,

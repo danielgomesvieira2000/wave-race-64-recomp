@@ -13,6 +13,10 @@ namespace wr64::music {
 // UI thread, when the slider moves. 0-100.
 void set_volume(double percent);
 
+// The Sound tab's Announcer Volume, applied to the voice channels of the
+// effects player. 0-100.
+void set_announcer_volume(double percent);
+
 // Game thread, once per frame, from the frame's osViSwapBuffer.
 void apply(uint8_t* rdram);
 

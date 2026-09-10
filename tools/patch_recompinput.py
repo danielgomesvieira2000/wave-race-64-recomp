@@ -15,6 +15,11 @@ profile that belongs to its controller -- from a list the caller supplies rather
 than from button presses. It refuses while a manual assignment is open, so the
 modal still wins where someone has chosen to use it.
 
+Player one also keeps the keyboard, whatever else it has. A keyboard is always
+attached, so it should always play: `get_n64_input` merges a player's controller
+and keyboard profiles, so giving player one both means the pad and the keys work
+at the same time and neither has to be chosen.
+
 Nothing upstream changes behaviour: the function is only what the port calls.
 
 Scripted and idempotent because it patches a submodule: a submodule update would
@@ -77,6 +82,13 @@ SOURCE_REPLACEMENT = """void players::auto_assign_controllers(SDL_GameController
             profiles::set_input_profile_for_player(i, profiles::get_or_create_mp_keyboard_profile_index(i), InputDevice::Keyboard);
         }
     }
+
+    // Player one keeps the keyboard as well, and it is the single-player
+    // keyboard profile -- the one the controls tab edits and the one that has
+    // the default bindings, where a freshly created multiplayer keyboard
+    // profile has none. get_n64_input reads a player's controller and keyboard
+    // profiles and merges them, so player one can use either at any moment.
+    profiles::set_input_profile_for_player(0, profiles::get_sp_keyboard_profile_index(), InputDevice::Keyboard);
 }
 
 // playerassignment start"""

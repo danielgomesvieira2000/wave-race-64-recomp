@@ -28,6 +28,9 @@ ultramodern::renderer::callbacks_t       renderer_callbacks();
 // slider and leaves applying it to the port.
 void set_audio_volume(double percent);
 
+// The Sound tab's "Mute when the window is not in focus". On by default.
+void set_mute_when_unfocused(bool mute);
+
 void shutdown_platform();
 
 // Defined in src/overlays.cpp, which owns the generated section tables.
