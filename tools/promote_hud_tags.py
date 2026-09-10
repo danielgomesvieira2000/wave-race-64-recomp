@@ -19,6 +19,14 @@ Only the block between the two markers is rewritten, so the hand-written entries
 above it -- the ones with a paragraph saying why they exist -- are left alone.
 Running it twice makes no further change.
 
+**Promotion is additive.** What is already in the block stays there, and the
+local file is merged into it; an identity in both takes the local file's class.
+That is what makes the loop work -- tag, promote, --clear, tag more, promote --
+because after a --clear the local file no longer holds what was promoted before
+it, and a script that rewrote the block from the file alone would drop it.
+--replace starts the block from the local file instead, for when that is what
+you actually mean.
+
 **Identities are lower-cased.** `Tags::lookup` lower-cases what it is given, so
 an entry written with an upper-case hex digit is never found. This does it for
 you; that bug has been made once already.
@@ -32,6 +40,7 @@ classifier change is a confusing afternoon.
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -54,6 +63,9 @@ CLASSES = {
     "right": "Class::Right",
     "stretch": "Class::Stretch",
 }
+BY_EXPRESSION = {v: k for k, v in CLASSES.items()}
+
+ENTRY = re.compile(r'^\s*by_identity\["([^"]+)"\]\s*=\s*(Class::\w+)\s*;')
 
 
 def settings_directory():
@@ -113,6 +125,8 @@ def main():
     ap.add_argument("--file", type=Path, help="a hud.json to read instead of the local one")
     ap.add_argument("--dry-run", action="store_true", help="print the block, change nothing")
     ap.add_argument("--clear", action="store_true", help="empty the local hud.json afterwards")
+    ap.add_argument("--replace", action="store_true",
+                    help="start the block from the local file instead of merging into it")
     args = ap.parse_args()
 
     source = args.file if args.file is not None else settings_directory() / "hud.json"
@@ -131,7 +145,21 @@ def main():
             print(f"  note: {identity} is already set above the marker; "
                   f"the promoted {name} will win")
 
-    block = build_block(tags)
+    # Merge into whatever the block already holds, unless told to replace it.
+    merged = {}
+    if BEGIN in lines and END in lines and not args.replace:
+        for line in lines[lines.index(BEGIN) : lines.index(END)]:
+            m = ENTRY.match(line)
+            if m and m.group(2) in BY_EXPRESSION:
+                merged[m.group(1)] = BY_EXPRESSION[m.group(2)]
+        if merged:
+            print(f"  {len(merged)} tag(s) already promoted; merging")
+    for identity, name in tags:
+        if identity in merged and merged[identity] != name:
+            print(f"  note: {identity} was {merged[identity]}, now {name}")
+        merged[identity] = name
+
+    block = build_block(sorted(merged.items()))
     if BEGIN in lines and END in lines:
         start, stop = lines.index(BEGIN), lines.index(END)
         lines[start : stop + 1] = block

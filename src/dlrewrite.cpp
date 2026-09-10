@@ -263,6 +263,7 @@ struct Tags {
         // Tagged in the inspector and promoted here so a release carries them.
         // Everything between these two markers is rewritten by that script;
         // hand-written entries go above the first marker, with their reasons.
+        by_identity["tex:0x010331d0"] = Class::Right;
         by_identity["tex:0x01033cb8"] = Class::Auto;
         by_identity["tex:0x01033e98"] = Class::Auto;
         by_identity["tex:0x01034078"] = Class::Auto;
@@ -273,6 +274,20 @@ struct Tags {
         by_identity["tex:0x010358d8"] = Class::Auto;
         by_identity["tex:0x010369b8"] = Class::Auto;
         by_identity["tex:0x01036b98"] = Class::Auto;
+        by_identity["tex:0x0103d8d8"] = Class::Right;
+        by_identity["tex:0x0103ddd8"] = Class::Right;
+        by_identity["tex:0x0103e2d8"] = Class::Right;
+        by_identity["tex:0x0103e7d8"] = Class::Right;
+        by_identity["tex:0x0103ecd8"] = Class::Right;
+        by_identity["tex:0x0103f1d8"] = Class::Right;
+        by_identity["tex:0x0103f6d8"] = Class::Right;
+        by_identity["tex:0x0103fbd8"] = Class::Right;
+        by_identity["tex:0x010400d8"] = Class::Right;
+        by_identity["tex:0x010405d8"] = Class::Right;
+        by_identity["tex:0x010515a8"] = Class::Auto;
+        by_identity["tex:0x08025c88"] = Class::Stretch;
+        by_identity["tex:0x08027748"] = Class::Stretch;
+        by_identity["tex:0x08028470"] = Class::Auto;
         // ---- end promoted ----
     }
 
