@@ -130,6 +130,15 @@ port. They are kept current as the port changes.
 The phase findings under `docs/` are the working record those two were distilled
 from; they keep the wrong turns, which are often the useful part.
 
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rules and the working conventions.
+The short version: no copyrighted game material enters this repository -- no
+dump, nothing extracted from one, and nothing derived from what was extracted,
+upscaled textures included. Facts about the ROM (addresses, layouts, formats)
+are what the documentation is made of and are welcome; the ROM's contents are
+not.
+
 ## Licensing
 
 The project's own code and artwork are under the MIT License (`LICENSE`).
