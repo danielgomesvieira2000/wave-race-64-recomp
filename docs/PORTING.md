@@ -830,6 +830,16 @@ Practical rules this port arrived at:
   composes shots from full-frame rectangles under the world's own projection, and
   stretching them made the picture jump between its proper width and a magnified
   one from shot to shot.
+- **Not every full-frame rectangle under a perspective projection belongs to the
+  picture.** The rule that keeps the 3D pass's own rectangles from being
+  stretched -- they are already at the frame's full width, so stretching
+  magnifies the picture -- also catches overlays that the game happens to issue
+  inside the 3D pass. This game's opening lays a sun glare over its shots that
+  way: same projection, same extent, same textured rectangle as the picture
+  itself, and nothing in the frame distinguishes them. It showed as glare over
+  the middle 4:3 of a widescreen picture. Keep a small built-in table of such
+  identities in the port, above whatever override file players get, so the fix
+  ships rather than being rediscovered by everyone.
 - **An element classified one way in one frame and another in the next flickers**,
   however defensible each classification is. Report those as they happen and
   provide an override table keyed by texture or static-list address (this port

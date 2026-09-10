@@ -337,6 +337,22 @@ A "covers the frame" test on width alone, at nine tenths of the drawn width,
 accepts both overlays and still refuses the HUD. Testing height as well rejects
 the dim, which is drawn as strips.
 
+### The opening's full-frame rectangles
+
+The intro composes its camera shots from rectangles covering the whole drawn
+region, issued **under the world's own perspective projection** rather than an
+orthographic one. Two different things are drawn that way, and a port widening
+the frame has to tell them apart:
+
+| Identity | What it is | Widescreen |
+|---|---|---|
+| the shot's own picture | part of the 3D pass, already drawn at the frame's full width | leave alone; stretching magnifies the picture |
+| `tex:0x01005748` | the sun glare laid over the shot | stretch, or it hazes only the middle 4:3 of a widescreen frame |
+
+Nothing in the frame separates them -- same projection, same extent (`9..310`,
+`21..218`, the drawn region), both textured -- so the texture address is the
+discriminator, and this port keeps it in a built-in tag table.
+
 ### The sky
 
 Three bands -- haze, horizon, clouds -- of seven vertices each, drawn under the

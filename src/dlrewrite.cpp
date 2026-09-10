@@ -223,8 +223,27 @@ struct Tags {
         return s;
     }
 
+    // What the port knows before anyone edits anything. These are elements whose
+    // class cannot be worked out from the frame alone, found with the trace and
+    // written down here rather than left for every player to discover.
+    //
+    // tex:0x01005748 is the sun glare over the opening. It is a textured
+    // rectangle covering the whole drawn region, and it is issued under the
+    // world's own perspective projection, which is otherwise the signature of a
+    // rectangle that belongs to the picture rather than lying over it -- the
+    // intro's camera shots are composed that way, and stretching those magnifies
+    // the picture. This one is a haze laid over the shot, so it has to reach the
+    // frame's edges like any other overlay, and 4:3 glare over a widescreen
+    // picture is exactly what it looked like.
+    //
+    // hud.json still wins: a player who tags the same identity overrides this.
+    void load_defaults() {
+        by_identity["tex:0x01005748"] = Class::Stretch;
+    }
+
     void load() {
         loaded = true;
+        load_defaults();
         const std::filesystem::path path = recomp::get_config_path() / "hud.json";
         std::ifstream in(path);
         if (!in) {
