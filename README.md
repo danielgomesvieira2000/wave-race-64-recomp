@@ -81,8 +81,11 @@ Beyond running natively, the port adds:
   collisions, the countdown and the flag. **Rumble Strength** in the General tab
   sets how hard, and zero turns it off.
 - A launcher with a ROM picker, a settings menu, and controller remapping with
-  per-device profiles, from RecompFrontend.
-- Audio through the recompiled RSP microcode.
+  per-device profiles, from RecompFrontend. **Pads are assigned as they are
+  plugged in** -- the first is player one, a second is player two -- so nothing
+  has to be set up before playing.
+- Audio through the recompiled RSP microcode, with the Sound tab's **Main
+  Volume** applied to it.
 
 Known issues:
 

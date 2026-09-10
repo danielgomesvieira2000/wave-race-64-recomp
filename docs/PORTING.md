@@ -435,6 +435,32 @@ is worst in a game like this one, where steering is analogue throughout.
 Keep the ±80 range inside the port if the scripted-input files and the game's own
 constants are written in it, and divide by it once, at the callback boundary.
 
+### A setting the frontend defines is not a setting the frontend applies
+
+**Symptom: a slider in the settings menu does nothing.** recompui's Sound tab
+defines **Main Volume**, stores it, restores it between sessions and exposes
+`config::sound::get_main_volume()` -- and nothing upstream ever reads it. The
+same is true of Rumble Strength, which recompinput does consume, but only for
+the motor: every other tab's values are the port's to act on. Grep the library
+for the accessor before assuming a control is wired: if the only callers are the
+tab that created it, the port is the missing half.
+
+Two details make it feel right rather than merely work:
+
+- **Hook the option's change callback rather than polling.** It fires with
+  `Load` when the saved value is read at startup, `Temporary` while the slider is
+  being dragged -- which is what makes the volume audibly follow the handle --
+  and `Permanent` on Apply. Polling gives you the first and the last only.
+- **Apply it where the samples already are.** This port copies every buffer once
+  to undo a channel swap, so the volume is one multiply inside a loop that was
+  running anyway. The value crosses from the UI thread to the audio thread, so
+  it is an atomic; the config API is not something to call per buffer.
+
+And a warning for anyone doing this late: **a control that has never worked has
+been set by people who could not hear the result.** This project's own saved
+setting was zero. Making the slider work made the port correctly silent, which
+is indistinguishable from breaking the audio unless the log says which it is.
+
 ### Players, pads and profiles
 
 **Symptom: the controls tab's remapping does nothing.** A port that reads SDL

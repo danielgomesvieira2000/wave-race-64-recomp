@@ -9,6 +9,8 @@
 // game this is, what the menu entries should say, and a stylesheet.
 
 #include "wr64/frontend.h"
+#include "wr64/callbacks.h"
+#include "wr64/music.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -225,7 +227,38 @@ void init() {
 
     recompui::config::create_general_tab(general);
     recompui::config::create_graphics_tab();
-    recompui::config::create_sound_tab();
+    // Main Volume did nothing until this. recompui defines the slider and reads
+    // it back, and nothing upstream ever applies it -- the port is expected to,
+    // and this one was not. The callback covers all three ways it changes:
+    // Load, when the saved setting is read at startup; Temporary, while the
+    // slider is being dragged, which is what makes it audible as you move it;
+    // and Permanent, on Apply.
+    auto& sound = recompui::config::create_sound_tab();
+    sound.add_option_change_callback(
+        recompui::config::sound::options::main_volume,
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* percent = std::get_if<double>(&value)) {
+                wr64::set_audio_volume(*percent);
+            }
+        });
+
+    // Music separately from everything else. Main Volume is applied to the
+    // finished buffer; this one cannot be, because music and effects are already
+    // mixed together by then, so it is applied inside the game's own sequence
+    // players instead (src/music.cpp).
+    sound.add_percent_number_option(
+        "music_volume", "Music Volume",
+        "Controls the volume of the game's music, without changing the effects.",
+        100.0);
+    sound.add_option_change_callback(
+        "music_volume",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* percent = std::get_if<double>(&value)) {
+                wr64::music::set_volume(*percent);
+            }
+        });
     recompui::config::create_controls_tab();
 
     // No add_game_input calls: recompinput already knows the N64 controller,

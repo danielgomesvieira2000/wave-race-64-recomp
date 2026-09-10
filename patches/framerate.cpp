@@ -46,6 +46,7 @@
 #include <ultramodern/ultramodern.hpp>
 
 #include "wr64/haptics.h"
+#include "wr64/music.h"
 
 extern "C" void osViSwapBuffer_recomp(uint8_t* rdram, recomp_context* ctx);
 
@@ -104,6 +105,10 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     // thread is inside it. Controller feedback reads the race from there; it
     // takes a copy and never writes anything back. See src/haptics.cpp.
     wr64::haptics::capture(rdram);
+
+    // The Music Volume setting, pushed into the game's sequence players. Same
+    // thread and same moment as the game's own audio commands.
+    wr64::music::apply(rdram);
 
     using clock = std::chrono::steady_clock;
     static clock::time_point window_start = clock::now();

@@ -23,6 +23,11 @@ ultramodern::error_handling::callbacks_t error_handling_callbacks();
 ultramodern::threads::callbacks_t        threads_callbacks();
 ultramodern::renderer::callbacks_t       renderer_callbacks();
 
+// The Sound tab's Main Volume, 0-100, applied to every buffer on its way to the
+// sound card. Nothing upstream consumes the setting: recompui defines the
+// slider and leaves applying it to the port.
+void set_audio_volume(double percent);
+
 void shutdown_platform();
 
 // Defined in src/overlays.cpp, which owns the generated section tables.

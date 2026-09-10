@@ -545,6 +545,36 @@ commands each frame, hands it to the RSP as a task, and the RSP writes finished
 16-bit stereo samples into RDRAM; the CPU then points the AI at that buffer with
 `osAiSetNextBuffer`.
 
+### The sequence players, and where music can be separated from effects
+
+The CPU side is the sequence-player engine most of this era's Nintendo games
+share -- the one decompilations name `gSequencePlayers`, four players of sixteen
+channels each. This is the only place where music and effects are still separable:
+after the RSP has mixed, nothing downstream can tell them apart.
+
+| | |
+|---|---|
+| `gSequencePlayers` | `0x8003FCC8`, four players, stride `0x140` (the next symbol, `gSequenceChannels`, is `0x800401C8`) |
+| player 0 | the effects, sequence id 0 |
+| player 1 | the music: sequence 3 is the main theme, and the courses follow |
+
+Offsets within a player, verified by reading them during a run:
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0x00` | byte | flags: `enabled` is `0x80`, `recalculateVolume` is `0x04` (MIPS packs bitfields from the top bit down) |
+| `+0x04` | byte | sequence id |
+| `+0x18` | float | `fadeVolume` -- the engine's own fade, ramped per frame |
+| `+0x28` | float | `fadeVolumeScale` -- a scale for something outside the sequence to duck it |
+| `+0x2C` | float | `appliedFadeVolume`, recomputed as `fadeVolume * fadeVolumeScale` whenever `recalculateVolume` is set, and cleared afterwards |
+
+**`fadeVolumeScale` is the hook for a music volume**, and the game uses it too:
+it was measured ducking the title music to `0.55`. Every write to it in the game
+is an absolute assignment -- from a sequence script byte as `(s8)n / 127`, from
+an audio command, or `1.0` when a sequence starts -- so a port can multiply its
+own setting into the field without the value compounding, as long as it treats a
+value it did not write as the game's new intent.
+
 ### The microcode
 
 | | |

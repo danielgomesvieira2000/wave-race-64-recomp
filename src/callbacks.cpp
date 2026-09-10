@@ -12,6 +12,7 @@
 #include "wr64/callbacks.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -399,6 +400,17 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
 SDL_AudioDeviceID g_audio_device = 0;
 uint32_t g_audio_frequency = 32000;
 
+// The Sound tab's Main Volume, as a percentage.
+//
+// recompui defines the slider and reads it back, and nothing upstream ever
+// applies it: a port that does not multiply its own samples by this has a volume
+// control that does nothing at all, which is what this one had. It is written
+// from the UI thread when the slider moves and read on the audio thread for
+// every buffer, so it is atomic, and it is applied where the samples are already
+// being copied for the channel swap -- one multiply per sample, in a loop that
+// was running anyway.
+std::atomic<int> g_audio_volume{ 100 };
+
 // The N64 mixes 16-bit stereo, and the game's own sample rate is whatever it
 // asks for through set_frequency.
 constexpr int kAudioChannels = 2;
@@ -481,6 +493,13 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
         std::fflush(stderr);
     }
 
+    // The volume is applied here rather than to the device: SDL's per-device
+    // volume does not exist, and mixing through SDL_MixAudioFormat would be a
+    // second pass over the same samples. Scaled with integers, and only when it
+    // is not full, so the common case is the copy it always was. A percentage of
+    // a signed 16-bit sample cannot overflow it.
+    const int volume = std::clamp(g_audio_volume.load(std::memory_order_relaxed), 0, 100);
+
     static std::vector<int16_t> unswapped;
     unswapped.resize(sample_count);
     for (size_t i = 0; i + 1 < sample_count; i += 2) {
@@ -489,6 +508,14 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
     }
     if (sample_count & 1) {
         unswapped[sample_count - 1] = audio_data[sample_count - 1];
+    }
+    if (volume == 0) {
+        std::fill(unswapped.begin(), unswapped.end(), int16_t{ 0 });
+    }
+    else if (volume < 100) {
+        for (int16_t& sample : unswapped) {
+            sample = static_cast<int16_t>(static_cast<int32_t>(sample) * volume / 100);
+        }
     }
 
     SDL_QueueAudio(g_audio_device, unswapped.data(),
@@ -980,6 +1007,21 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
 }  // namespace
 
 namespace wr64 {
+
+void set_audio_volume(double percent) {
+    const int clamped = static_cast<int>(std::lround(std::clamp(percent, 0.0, 100.0)));
+    const int previous = g_audio_volume.exchange(clamped, std::memory_order_relaxed);
+    if (clamped == previous) {
+        return;
+    }
+    // Worth a line, because this setting used to do nothing: anyone who left the
+    // slider at zero while it was inert now has a port that is correctly silent,
+    // and the log is where that is explained rather than guessed at.
+    std::fprintf(stderr, "[wr64] main volume: %d%%%s\n", clamped,
+                 clamped == 0 ? " -- the game will be silent until the Sound tab's"
+                                " Main Volume is raised" : "");
+    std::fflush(stderr);
+}
 
 ultramodern::input::callbacks_t input_callbacks() {
     return { poll_input, get_input, set_rumble, get_connected_device_info };
