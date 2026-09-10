@@ -96,6 +96,9 @@ Beyond running natively, the port adds:
   own black overscan borders removed. **HUD Placement** in the Graphics tab
   chooses whether the race HUD is laid out across the frame or kept at 4:3 in
   the middle of it.
+- **Field of View** in the Graphics tab, 45 to 110 degrees. The game draws at
+  45; higher shows more of the world without stretching anything, and the HUD and
+  menus are untouched.
 - **High frame rate.** The game keeps its own update rate (30 Hz in a race, 20
   in the menus and Time Trial, by its own choice) and RT64 interpolates each
   object's movement between game frames, so it presents at your display's

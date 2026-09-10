@@ -24,4 +24,11 @@ namespace wr64::dlrewrite {
 // is valid until the next call.
 uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr);
 
+// The vertical field of view the world is drawn with, in degrees. The game's
+// own is 45; wider shows more without changing the shape of anything, because
+// the horizontal half is derived from it and the aspect ratio.
+//
+// Called from the settings menu, read on the thread that submits display lists.
+void set_field_of_view(double degrees);
+
 }  // namespace wr64::dlrewrite

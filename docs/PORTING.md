@@ -875,6 +875,20 @@ Practical rules this port arrived at:
   stretched everything drawn after it as well, including a logo drawn from a
   called list. Restore the previous class as soon as the tagged run is emitted
   rather than waiting for the next classified run.
+- **Rewriting the world's frustum: copy the matrix, do not edit the game's.**
+  A perspective projection arrives as a `G_MTX` pointing at a fixed-point `Mtx`
+  the game owns and reuses; editing it in place corrupts the game's own data.
+  Write a modified copy into scratch RDRAM and point the emitted `G_MTX` at that
+  instead -- this port keeps a small area just past the one the rewritten list is
+  built in. A field-of-view setting is then `m[0][0]` and `m[1][1]` divided by
+  the ratio wanted, applied to **every** perspective pass of the frame, because
+  the sky has a frustum of its own and comes apart from the world otherwise.
+- **Measure a far plane before offering a draw distance setting.** It is the
+  obvious knob and it is often worth nothing: this game's far plane is already
+  about twenty times further out than anything it draws (GAME-INTERNALS, *The
+  world's frustum*), so a multiplier on it changes nothing. The test that settles
+  it is to make the plane *smaller*, not larger -- if a quarter of the distance
+  clips nothing, there is nothing out there to reveal.
 - **A viewport's clip ratios defeat a "does this pass cover the frame" test.**
   RT64 measures a viewport as `translate +/- scale * clipRatio` (`rect()` in
   `rt64_rsp_viewport.h`), and the ratios are typically 3, so a full-width

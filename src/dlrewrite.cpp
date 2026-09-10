@@ -99,6 +99,7 @@
 #include "wr64/testdrive.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -176,6 +177,16 @@ constexpr float kAnchorThird = 1.0f / 3.0f;
 
 // The states in which the game is racing: the attract demo, and the race
 // itself, whichever mode it is in.
+// The game's own vertical field of view, from its projection: m[1][1] is
+// cot(fovy/2) and reads 2.4142, which is cot(22.5) to five figures. Every wider
+// setting is expressed as a ratio against this, and the ratio is applied to
+// every perspective pass of the frame so that the sky -- which has a frustum of
+// its own -- keeps step with the world.
+constexpr double kGameFovY = 45.0;
+
+// Set from the settings menu, read once per display list.
+std::atomic<float> g_fov_scale{ 1.0f };
+
 // A multiplier read from the environment, for measuring one of these before it
 // is worth a setting. Out-of-range or unparseable values are reported and
 // ignored rather than silently taken.
@@ -1814,9 +1825,11 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     // whether a frame is a race is read from the frame (see RaceTest), not
     // from this state number. WR64_HUD_NO_ANCHORS switches anchoring off.
     static const float far_scale = env_scale("WR64_FAR", 1.0f);
-    static const float fov_scale = env_scale("WR64_FOV", 1.0f);
+    // WR64_FOV overrides the setting, for measuring against it.
+    static const float fov_override = env_scale("WR64_FOV", 0.0f);
     w.far_scale = far_scale;
-    w.fov_scale = fov_scale;
+    w.fov_scale = fov_override != 0.0f ? fov_override
+                                       : g_fov_scale.load(std::memory_order_relaxed);
     static const bool anchors_disabled = std::getenv("WR64_HUD_NO_ANCHORS") != nullptr;
     static const bool sky_interp_off = std::getenv("WR64_NO_SKY_INTERP") != nullptr;
     w.sky_interp = !sky_interp_off;
@@ -2105,6 +2118,21 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
         std::fflush(stderr);
     }
     return kScratch;
+}
+
+// The setting, converted to the ratio the rewriter applies.
+//
+// m[1][1] is cot(fovy/2), so the ratio between the game's frustum and the one
+// asked for is tan(target/2) / tan(45/2). Forty-five degrees gives exactly one
+// and the projection is then left alone entirely, which is what keeps the
+// default free of any rewriting at all.
+void set_field_of_view(double degrees) {
+    const double clamped = std::min(std::max(degrees, 30.0), 130.0);
+    const double ratio = std::tan(clamped * 0.5 * 3.14159265358979323846 / 180.0) /
+                         std::tan(kGameFovY * 0.5 * 3.14159265358979323846 / 180.0);
+    g_fov_scale.store(static_cast<float>(ratio), std::memory_order_relaxed);
+    std::fprintf(stderr, "[wr64] field of view: %.0f degrees (x%.3f)\n", clamped, ratio);
+    std::fflush(stderr);
 }
 
 }  // namespace wr64::dlrewrite

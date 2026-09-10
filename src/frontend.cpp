@@ -289,7 +289,33 @@ void init() {
     general.has_mouse_sensitivity = false;
 
     recompui::config::create_general_tab(general);
-    recompui::config::create_graphics_tab();
+    // Field of view, on the world's own frustum. The game draws at 45 degrees
+    // vertically; this widens it without changing the shape of anything, since
+    // the horizontal half is derived from the vertical one and the aspect ratio.
+    // The sky has a frustum of its own and is widened by the same ratio, so it
+    // keeps step.
+    //
+    // There is no draw distance beside it, and the reason is worth writing down
+    // where the next person looks: the game's far plane is already at about
+    // 16,000 units against a course that needs a few hundred, so pushing it out
+    // reveals nothing. What limits the view is the game's own geometry -- the
+    // water lattice is built around the camera -- which the display-list
+    // rewriter cannot reach.
+    auto& graphics = recompui::config::create_graphics_tab();
+    graphics.add_number_option(
+        "fov", "Field of View",
+        "How much of the world is in view, vertically, in degrees. "
+        "<recomp-color primary>45</recomp-color> is what the game draws at; higher shows more "
+        "without stretching anything. The HUD and the menus are unaffected.",
+        45.0, 110.0, 5.0, 0, false, 45.0);
+    graphics.add_option_change_callback(
+        "fov",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* degrees = std::get_if<double>(&value)) {
+                wr64::dlrewrite::set_field_of_view(*degrees);
+            }
+        });
     // Main Volume did nothing until this. recompui defines the slider and reads
     // it back, and nothing upstream ever applies it -- the port is expected to,
     // and this one was not. The callback covers all three ways it changes:

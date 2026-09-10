@@ -325,6 +325,34 @@ rectangle under a perspective one, with no overlap. So "world drawn first" plus
 "inset scissor" identifies a race frame, and the projection type per draw
 separates HUD from menu layout.
 
+### The world's frustum
+
+Read out of the projection a race loads, on Dolphin Park:
+
+| | |
+|---|---|
+| Near plane | 10 |
+| Far plane | 16191.8 |
+| Vertical field of view | 45 degrees (`m[1][1]` = 2.4142, which is cot(22.5)) |
+| Horizontal | `m[0][0]` = 1.811, i.e. `m[1][1]` divided by 4/3 |
+
+The projection is built the way `gluPerspective` does, so the planes come back
+out of it as
+
+    near = m[3][2] / (m[2][2] - 1)        far = m[3][2] / (m[2][2] + 1)
+
+**The far plane is not what limits the view.** It sits roughly twenty times
+further out than anything the game draws: quartering it to 4048 changes nothing
+on screen, and only at 810 units does the scene begin to clip -- and then the
+sky, the pier and the far islands all vanish at once. What limits the view is
+the geometry the game builds: the water lattice is carried around the camera
+(below) and the courses are not large. A port cannot buy draw distance by moving
+this plane.
+
+A race frame loads a second perspective projection with `m[1][1]` = 0.577 -- a
+much wider frustum, for the sky -- so anything done to the field of view has to
+be done to both or they come apart.
+
 ### Placing a 3D object inside a 2D layout
 
 The game does not give an object its own small viewport. It takes a **full-size
