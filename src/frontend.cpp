@@ -301,20 +301,6 @@ void init() {
             }
         });
 
-    sound.add_percent_number_option(
-        "announcer_volume", "Announcer Volume",
-        "Controls the volume of the announcer's voice, without changing the "
-        "other effects.",
-        100.0);
-    sound.add_option_change_callback(
-        "announcer_volume",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            if (const double* percent = std::get_if<double>(&value)) {
-                wr64::music::set_announcer_volume(*percent);
-            }
-        });
-
     sound.add_bool_option(
         "mute_unfocused", "Mute When Not In Focus",
         "Silences the game while another window has focus. Feedback stops with it.",

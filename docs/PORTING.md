@@ -483,15 +483,36 @@ base times your setting. Every write the game makes to them is an absolute
 assignment, so nothing compounds. Replacing instead would break the game's own
 ducking -- this one drops the title music to `0.55` under the menu.
 
-**Finding which channel is a voice is a correlation problem, not a search.**
-Nothing names them. What worked here: log every channel's activity per frame
-against the game's own tick, log gameplay events with the same tick from the
-feedback code, and line the two up. The announcer's channel began three frames
-after the countdown started and ran for the 144 frames of "three, two, one, go",
-spoke again on the course screens and after a retirement, and was idle in
-between -- while every other channel of that player either ran continuously (the
-engine, the water) or fired in short bursts at splashes and collisions. No other
-channel had that shape.
+**Finding which channel carries one particular sound is harder than it looks,
+and a correlation is not an identification.** This port tried and failed to
+separate the announcer's voice, and the failure is the useful part.
+
+The method looked sound: log every channel's activity per frame against the
+game's own tick, log gameplay events with the same tick from the feedback code,
+and line the two up. One channel of the effects player began three frames after
+the countdown started and ran for the 144 frames of "three, two, one, go", spoke
+again on the course screens and after a retirement, and was idle in between,
+while every other channel either ran continuously (the engine, the water) or
+fired in short bursts at splashes and collisions. No other channel had that
+shape.
+
+It was still the wrong channel. Scaling it to zero was verified in the trace --
+`volumeScale` and `appliedVolume` both at zero for hundreds of consecutive
+frames -- and the announcer kept talking. What the correlation had actually found
+was a countdown *sound* that happens to start when the announcer does.
+
+Two lessons, in order of how much time they cost:
+
+- **A trace can prove a write landed and still say nothing about what it is
+  heard as.** Separating one sound from another needs an ear in the loop at some
+  point. `WR64_AUDIO_MUTE` exists for that: it silences a whole player or a
+  single channel from the environment, so a candidate can be ruled out in one
+  race rather than one build.
+- **Do not assume the shape of the engine from one screen.** At the title only
+  two players are ever enabled, which is what the first traces showed, and the
+  rule "sequence ids from 3 up are music" was written from that. In a race a
+  *third* player is running, and the sequence ids there are nothing like the
+  menu's -- so a rule keyed on the id alone mislabels what it scales.
 
 ### Players, pads and profiles
 

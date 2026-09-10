@@ -95,6 +95,11 @@ Known issues:
 - The **results screen**'s layout is wrong when HUD Placement is set larger
   than Original.
 - The **MAX POWER** banner loses its last letter while the HUD layout is on.
+- There is **no separate volume for the announcer**. Music and effects have their
+  own sliders because the game keeps them on separate sequence players, and the
+  voice was expected to be separable the same way; the channels that looked like
+  it turned out to be a countdown sound that starts when the announcer does. See
+  [docs/PORTING.md](docs/PORTING.md), *Separating one sound from another*.
 - Windows only, for now.
 
 ## Layout
@@ -177,3 +182,15 @@ contributors; RT64 is by Darío and the RT64 contributors. The function names
 this project leans on come from the Wave Race 64 decompilation by LLONSIT and
 contributors. Earlier recompilation attempts by WACOMalt and chronic8000 showed
 what to expect.
+
+**Controller rumble is built on work by [Elliott
+Tate](https://github.com/elliotttate).** The addresses this port reads a race
+from -- the craft's speed, its vertical velocity, whether it is airborne, how wet
+the hull is, collisions, laps, buoys, misses, power, the countdown -- were
+identified in his fork and offered to this project in
+[pull request #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
+where they drive a much larger feedback system than this one. They are
+re-verified here against a scripted race, and recorded in
+[docs/GAME-INTERNALS.md](docs/GAME-INTERNALS.md) §7 so the next port does not
+have to find them again. That pull request also carries native macOS support and
+a modern water renderer, neither of which is in this repository.

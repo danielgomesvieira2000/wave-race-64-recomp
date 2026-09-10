@@ -106,26 +106,6 @@ void write_float(uint8_t* ram, uint32_t address, float value) {
 }
 
 std::atomic<int> g_volume{ 100 };
-std::atomic<int> g_announcer{ 100 };
-
-// The announcer's channels on the effects player, and the channel field that
-// says a channel's volume needs recomputing.
-//
-// Nothing names them; they were found by lining channel activity up against the
-// events in the feedback trace. Channel 14 begins three frames after the
-// countdown starts and runs for 144 -- the count and the "GO!" -- and it speaks
-// again on the course screens and after a retirement, while every other channel
-// of that player either runs continuously (the engine, the water) or fires in
-// bursts at splashes and collisions. Channel 13 accompanies it on the longer
-// lines, starting and ending on exactly the same frames.
-constexpr uint32_t kAnnouncerChannels[] = { 13, 14 };
-constexpr uint32_t kChannelChanges = 0x01;     // byte: freqScale 0x80, volume 0x40, pan 0x20
-constexpr uint8_t kChannelVolumeChanged = 0x40;
-
-float g_channel_base[16] = {};
-float g_channel_written[16] = {};
-bool g_channel_seen[16] = {};
-
 // What the game asked for, and what was last written over it, per player. See
 // the comment in apply(): the two together are what lets the slider scale the
 // game's own value instead of replacing it.
@@ -134,15 +114,6 @@ float g_written[kPlayerCount] = { -1.0f, -1.0f, -1.0f, -1.0f };
 
 }  // namespace
 
-void set_announcer_volume(double percent) {
-    const int clamped = static_cast<int>(std::lround(std::clamp(percent, 0.0, 100.0)));
-    const int previous = g_announcer.exchange(clamped, std::memory_order_relaxed);
-    if (clamped != previous) {
-        std::fprintf(stderr, "[wr64] announcer volume: %d%%\n", clamped);
-        std::fflush(stderr);
-    }
-}
-
 void set_volume(double percent) {
     const int clamped = static_cast<int>(std::lround(std::clamp(percent, 0.0, 100.0)));
     const int previous = g_volume.exchange(clamped, std::memory_order_relaxed);
@@ -150,6 +121,38 @@ void set_volume(double percent) {
         std::fprintf(stderr, "[wr64] music volume: %d%%\n", clamped);
         std::fflush(stderr);
     }
+}
+
+// WR64_AUDIO_MUTE silences whole players or single channels while a run plays,
+// so that what a slider should govern can be found by ear in one race instead of
+// guessed at from a trace. "p1" is sequence player one, "p0c14" is channel 14 of
+// player zero, and the list is comma separated: WR64_AUDIO_MUTE=p1,p0c13,p0c14.
+//
+// It exists because the traces can prove a write lands and still not say what
+// the write is heard as: silencing channels 13 and 14 of the effects player put
+// their applied volume at zero for hundreds of frames without touching the
+// announcer.
+bool muted_player(uint32_t player) {
+    static const char* spec = std::getenv("WR64_AUDIO_MUTE");
+    if (spec == nullptr) return false;
+    char want[8];
+    std::snprintf(want, sizeof(want), "p%u", player);
+    for (const char* at = std::strstr(spec, want); at != nullptr; at = std::strstr(at + 1, want)) {
+        const char after = at[std::strlen(want)];
+        if (after == '\0' || after == ',') return true;   // "p1", not "p1c3"
+    }
+    return false;
+}
+
+bool muted_channel(uint32_t player, uint32_t channel) {
+    static const char* spec = std::getenv("WR64_AUDIO_MUTE");
+    if (spec == nullptr) return false;
+    char want[16];
+    std::snprintf(want, sizeof(want), "p%uc%u", player, channel);
+    const char* at = std::strstr(spec, want);
+    if (at == nullptr) return false;
+    const char after = at[std::strlen(want)];
+    return after == '\0' || after == ',';
 }
 
 void apply(uint8_t* rdram) {
@@ -170,6 +173,7 @@ void apply(uint8_t* rdram) {
 
     const float scale = static_cast<float>(g_volume.load(std::memory_order_relaxed)) / 100.0f;
 
+
     for (uint32_t i = 0; i < kPlayerCount; ++i) {
         const uint32_t player = kSequencePlayers + i * kPlayerStride;
         const uint8_t flags = read_byte(rdram, player + kFlags);
@@ -184,11 +188,8 @@ void apply(uint8_t* rdram) {
                          read_float(rdram, player + kVolume),
                          read_float(rdram, player + kFadeVolumeScale),
                          read_float(rdram, player + kAppliedFadeVolume));
-            // Every channel that is playing, with the instrument it is playing.
-            // This is how the announcer gets found: it is not a player of its
-            // own -- players two and three are never enabled -- so it is
-            // channels of the effects player, and the way to tell which is to
-            // line their arrivals up against the feedback trace's events.
+            // Every channel that is playing, with the instrument it is playing,
+            // which is what a search for one particular sound has to work from.
             if (enabled) {
                 for (uint32_t c = 0; c < kChannelCount; ++c) {
                     const uint32_t channel =
@@ -197,49 +198,26 @@ void apply(uint8_t* rdram) {
                     const uint8_t channel_flags = read_byte(rdram, channel + kFlags);
                     if ((channel_flags & kEnabledBit) == 0) continue;
                     const float applied = read_float(rdram, channel + kChannelApplied);
-                    if (applied <= 0.0f) continue;
-                    std::fprintf(trace, " ch%u:bank%u:inst%d:%.2f", c,
+                    std::fprintf(trace, " ch%u:bank%u:inst%d:vs%.2f:v%.2f:a%.2f", c,
                                  read_byte(rdram, channel + kChannelBankId),
-                                 read_half(rdram, channel + kChannelInstrument), applied);
+                                 read_half(rdram, channel + kChannelInstrument),
+                                 read_float(rdram, channel + kChannelVolumeScale),
+                                 read_float(rdram, channel + kChannelVolume), applied);
                 }
             }
             std::fprintf(trace, "\n");
             std::fflush(trace);
         }
 
-        // The announcer lives on the effects player, so that player is not
-        // skipped: its voice channels are scaled while everything else on it --
-        // the engine, the water, the collisions -- is left alone.
-        if (enabled && seq_id < kFirstMusicSequence) {
-            const float announcer =
-                static_cast<float>(g_announcer.load(std::memory_order_relaxed)) / 100.0f;
-            for (const uint32_t c : kAnnouncerChannels) {
-                const uint32_t channel =
-                    static_cast<uint32_t>(read_word(rdram, player + kChannels + c * 4));
-                if (channel == 0) continue;
-                const uint8_t channel_flags = read_byte(rdram, channel + kFlags);
-                if ((channel_flags & kEnabledBit) == 0) {
-                    g_channel_seen[c] = false;   // it will be set up again when it speaks
-                    continue;
-                }
-                // The same shadowing as the music below: the sequence writes
-                // this field itself, so anything here that this did not write is
-                // the game's own and becomes the base.
-                const float current = read_float(rdram, channel + kChannelVolumeScale);
-                if (!g_channel_seen[c] || current != g_channel_written[c]) {
-                    g_channel_base[c] = current;
-                    g_channel_seen[c] = true;
-                }
-                const float wanted = g_channel_base[c] * announcer;
-                if (current != wanted) {
-                    write_float(rdram, channel + kChannelVolumeScale, wanted);
-                    // Tell the channel its volume needs recomputing, the way the
-                    // sequence's own volume command does.
-                    const uint8_t changes = read_byte(rdram, channel + kChannelChanges);
-                    write_byte(rdram, channel + kChannelChanges,
-                               static_cast<uint8_t>(changes | kChannelVolumeChanged));
-                    g_channel_written[c] = wanted;
-                }
+        if (enabled && muted_player(i)) {
+            // Whole-player mute reaches the effects player too, which the music
+            // scaling below never touches.
+            const float current = read_float(rdram, player + kFadeVolumeScale);
+            if (current != 0.0f) {
+                if (current != g_written[i]) g_base[i] = current;
+                write_float(rdram, player + kFadeVolumeScale, 0.0f);
+                write_byte(rdram, player + kFlags, static_cast<uint8_t>(flags | kRecalculateBit));
+                g_written[i] = 0.0f;
             }
         }
 
@@ -261,7 +239,7 @@ void apply(uint8_t* rdram) {
         if (current != g_written[i]) {
             g_base[i] = current;
         }
-        const float desired = g_base[i] * scale;
+        const float desired = g_base[i] * (muted_player(i) ? 0.0f : scale);
         if (current != desired) {
             write_float(rdram, player + kFadeVolumeScale, desired);
             write_byte(rdram, player + kFlags, static_cast<uint8_t>(flags | kRecalculateBit));
