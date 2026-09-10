@@ -310,15 +310,18 @@ void init() {
         "<recomp-color primary>45</recomp-color> is what the game draws at; higher shows more "
         "without stretching anything. The HUD and the menus are unaffected.",
         45.0, 110.0, 5.0, 0, false, 45.0);
-    // Object draw distance. Not the far plane -- that is already twenty times
-    // further out than anything the game draws -- but the game's own culling,
-    // which drops buoys at 5000 units and is what shows as pop-in.
+    // Draw distance. Not the far plane -- that is already twenty times further
+    // out than anything the game draws -- but the game's own culling, which is
+    // decided per kind of object in that object's own code. One setting over a
+    // list of those limits, which grows as each is found; see
+    // include/wr64/drawdistance.h for what is in the list and what is not.
     graphics.add_enum_option(
-        "object_draw_distance", "Buoy Draw Distance",
-        "How far away the game keeps drawing the buoys. "
-        "<recomp-color primary>Original</recomp-color> is the game's own limit, 5000 units, which is "
-        "under a third of the distance the world itself is drawn to. "
-        "The arrows and signs at the gates have a separate limit that this does not reach.",
+        "object_draw_distance", "Draw Distance",
+        "How far away the game keeps drawing things it culls by distance. "
+        "<recomp-color primary>Original</recomp-color> is the game's own behaviour. "
+        "It reaches the buoys, which the game drops at 5000 units while drawing the world to "
+        "16,192. It does not yet reach the arrows and signs at the gates, which are culled "
+        "separately, or the animated water, which is built around the camera rather than culled.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
             { 1u, "OneAndAHalf", "1.5x" },

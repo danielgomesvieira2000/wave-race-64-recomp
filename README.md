@@ -59,6 +59,11 @@ running natively:
   rate. Physics, camera and timers are untouched.
 - **Field of View**, 45 to 110 degrees. The game draws at 45; higher shows more
   of the world without stretching anything.
+- **Draw Distance**, up to 4x. There is no global draw distance in this game --
+  the far plane is already twenty times further out than anything drawn, and each
+  kind of object is culled by its own code. This is one setting over the limits
+  that have been found; today it reaches the buoys, which the game drops at 5,000
+  units while drawing the world to 16,192.
 - **Controller rumble**, which the game never had: it shipped a year before the
   Rumble Pak and has no rumble code at all, so the port works the feedback out
   from the race itself -- the slap of landing off a wave, buoys taken and missed,
