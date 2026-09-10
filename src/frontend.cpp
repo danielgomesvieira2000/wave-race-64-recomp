@@ -314,10 +314,11 @@ void init() {
     // further out than anything the game draws -- but the game's own culling,
     // which drops buoys at 5000 units and is what shows as pop-in.
     graphics.add_enum_option(
-        "object_draw_distance", "Object Draw Distance",
-        "How far away the game keeps drawing buoys and course markers. "
-        "<recomp-color primary>Original</recomp-color> is the game's own limit, which drops them "
-        "at a fraction of the distance the world is drawn to.",
+        "object_draw_distance", "Buoy Draw Distance",
+        "How far away the game keeps drawing the buoys. "
+        "<recomp-color primary>Original</recomp-color> is the game's own limit, 5000 units, which is "
+        "under a third of the distance the world itself is drawn to. "
+        "The arrows and signs at the gates have a separate limit that this does not reach.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
             { 1u, "OneAndAHalf", "1.5x" },

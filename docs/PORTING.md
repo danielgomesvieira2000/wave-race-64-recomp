@@ -929,6 +929,15 @@ Practical rules this port arrived at:
   built in. A field-of-view setting is then `m[0][0]` and `m[1][1]` divided by
   the ratio wanted, applied to **every** perspective pass of the frame, because
   the sky has a frustum of its own and comes apart from the world otherwise.
+- **A per-frame arena's offsets are not identities.** The trick below works on a
+  *fixed* table: the buoys' matrices come from segment 5 at `0xA1C0` every frame,
+  so that offset greps straight to the function that fills it. The gate markers'
+  matrices come from segment 3, which this game uses as a per-frame arena, and an
+  offset there says only where the allocator landed in that frame on that course.
+  It greps to nothing, and matching it against a trace of another course produced
+  a confident, wrong answer. **Check that an address means the same thing twice
+  before building on it** -- a display list in a static segment, or a texture
+  image address, survives where an arena offset does not.
 - **Finding a game's culling: search the recompiled C for the offset, not the
   threshold.** Draw distance is the game's own decision and a renderer cannot
   undo it, so it has to be found in the game's code -- in a project where the

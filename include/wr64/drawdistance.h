@@ -1,6 +1,11 @@
 #pragma once
 
-// How far away the game keeps drawing its course objects.
+// How far away the game keeps drawing its buoys.
+//
+// Only the buoys. The arrows and chevron signs at the gates are culled too, by
+// different code with a limit of its own, and this does not reach them -- tested
+// by turning this up and watching them vanish at the same place. See
+// docs/GAME-INTERNALS.md, *The gate markers: a known lead*.
 //
 // The far plane is not what limits the view here -- it sits at 16,192 while the
 // courses need a few hundred (see docs/GAME-INTERNALS.md, *The world's

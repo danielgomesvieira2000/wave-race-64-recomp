@@ -430,6 +430,46 @@ coordinate inside seven-word placement records. And the static table at
 Scaling every record in it changes nothing: the value read at `+0xA4` stays 5000.
 Both were checked and both are coincidences.
 
+### The gate markers: a known lead
+
+The buoys are not the only thing culled by distance. The **yellow arrows and the
+chevron signs at the gates** disappear well before the buoys do, and they are
+drawn by different code: raising the buoy limit at struct `+0xA4` moves the buoys
+and leaves the arrows vanishing at exactly the same place.
+
+What is known, and what it cost to learn, so the next attempt starts further on:
+
+- **They are two triangles**, drawn with a matrix from **segment 3**. That was
+  read off one of them in RT64's debugger: `Min matrix segmented address:
+  0x0300F208`, `Triangle count: 2`.
+- **That address is not a handle.** Segment 3 is a per-frame arena, so an offset
+  in it means only where the allocator happened to put that matrix in that frame,
+  on that course. Grepping the recompiled code for `0xF208` finds nothing, and
+  matching the address against a trace of a different course found a display list
+  drawn twice at 400-700 units, which is the player's own craft. The buoys were
+  findable because their matrices come from a **fixed** table, segment 5 at
+  `0xA1C0`, which greps straight to the function that fills it.
+- **A candidate family**, from a spaced 3D trace of a race: nine display lists in
+  three groups of three, four vertices each, never drawn beyond about 1,600 units
+  while the buoys reach 4,500.
+
+  | | |
+  |---|---|
+  | `0x0806EC80`, `0x0806ED00`, `0x0806ED80` | 4 verts each |
+  | `0x0806EE00`, `0x0806EE80`, `0x0806EF00` | 4 verts, texture `0x0806D480` |
+  | `0x0806EF80`, `0x0806F000`, `0x0806F080` | 4 verts, texture `0x0806DC80` |
+
+  The shape and the distances fit. It is **not confirmed** that these are the
+  arrows.
+
+**What would settle it** is a stable identity for one arrow -- its texture image
+address, from `Load operation #0` in the debugger's call view, which survives
+between frames where a segment-3 matrix address does not. With that, find it in a
+trace of the same course, measure its ceiling the way the buoys' 4,500 was
+measured, and grep the recompiled C for whatever structural offset the trace
+shows it being drawn from. That last step is what found the buoy loop in one
+search.
+
 ### Placing a 3D object inside a 2D layout
 
 The game does not give an object its own small viewport. It takes a **full-size
