@@ -815,15 +815,8 @@ Practical rules this port arrived at:
 - **Inset anchors by how far the visible picture's edge lies inside RT64's
   widened frame**, or "anchored to the left edge" means RT64's edge rather than
   the window's, and the element sits off screen.
-- **Widen the scissor while anchoring *or stretching***, and reissue the game's
-  scissor command, or the element is cut off at the frame's old edge. Stretching
-  looked exempt for a long time, because the full-screen overlays that stretch --
-  a race's tint, the pause dim, a menu's background -- are drawn with the game's
-  scissor spanning its whole framebuffer, so nothing clipped them. The wipe
-  between two menus is not: it is drawn with the game's *inset* scissor, and
-  every stretched strip of it was cut straight back to the 4:3 frame. The
-  transition swept across the middle of the picture with the previous screen's
-  pixels standing on either side.
+- **Widen the scissor while anchoring**, and reissue the game's scissor command,
+  or an anchored element is cut off at the frame's old edge.
 - **2D projection groups must carry no interpolation.** The same projection is
   reissued several times per frame with different flags, and RT64 must never
   blend one with another.
