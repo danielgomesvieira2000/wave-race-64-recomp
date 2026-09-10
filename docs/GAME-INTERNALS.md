@@ -430,6 +430,47 @@ coordinate inside seven-word placement records. And the static table at
 Scaling every record in it changes nothing: the value read at `+0xA4` stays 5000.
 Both were checked and both are coincidences.
 
+### The animated water: how far it reaches, and who builds it
+
+The waves are a **fixed patch carried with the camera**, not a surface covering
+the course. Measured over five frames of a race, twenty seconds apart:
+
+| | |
+|---|---|
+| Vertex blocks | **50**, every frame |
+| Vertices | **500**, every frame |
+| Extent | 1,536 by 1,330 world units |
+| Reach from its centre | **922 units**, identical in every frame |
+| Grid | x steps of 32; z steps of 55 to 56 |
+| Vertex arena | segment 3, `0x13D68` to `0x15AA8` -- the same addresses in every frame |
+
+For scale, the buoys are culled at 5,000 and the course scenery reaches 6,000, so
+the animated water is a patch roughly a sixth of the course across. Water beyond
+it is drawn some other way, which is why the sea still meets the horizon.
+
+**The builder is `func_80050204`**, and the call that fills the arena above is at
+`0x80051200`:
+
+```
+0x800511F0  lw    $a1, 0x18B8($a1)     ; the segment 3 base, from 0x801518B8
+0x800511F4  lui   $at, 0x1
+0x800511F8  ori   $at, $at, 0x3D68     ; 0x00013D68, the arena offset
+0x800511FC  or    $a0, $zero, $zero    ; 0
+0x80051200  jal   0x80050204
+0x80051204  addu  $a1, $a1, $at
+```
+
+A second variant at `0x80051218` uses offset `0x170D8` instead, chosen by a test
+on `0x80192420` just above -- most likely the split-screen case, which draws into
+a taller region.
+
+**The vertex budget is what makes this hard.** Five hundred vertices is not a
+number a port can raise by changing a comparison: it is the size of an arena, and
+the RSP has its own limit on a vertex load. Reaching further with the same budget
+means wider spacing -- more area, coarser waves, and waves the wrong size for the
+craft riding them. That is a different change from raising a cull, and it is
+worth being sure it is wanted before it is made.
+
 ### The gate markers: a known lead
 
 The buoys are not the only thing culled by distance. The **yellow arrows and the
