@@ -101,6 +101,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -119,6 +120,12 @@ namespace {
 constexpr uint32_t kScratch = 0x80700000u;
 constexpr uint32_t kScratchSize = 0x40000u;      // 256 KB: 32768 commands
 constexpr uint32_t kMaxCommands = kScratchSize / 8;
+
+// Where a rewritten projection matrix is put, just past the list's own scratch
+// and still inside the megabyte nothing of the game's occupies. A matrix is 64
+// bytes; a frame loads a handful, and the cursor restarts every frame.
+constexpr uint32_t kMatrixScratch = kScratch + kScratchSize;
+constexpr uint32_t kMatrixScratchSize = 0x1000u;   // 64 matrices
 
 // Fast3D opcodes this walk has to understand. Everything else is copied.
 constexpr uint8_t kOpMtx = 0x01;
@@ -169,6 +176,23 @@ constexpr float kAnchorThird = 1.0f / 3.0f;
 
 // The states in which the game is racing: the attract demo, and the race
 // itself, whichever mode it is in.
+// A multiplier read from the environment, for measuring one of these before it
+// is worth a setting. Out-of-range or unparseable values are reported and
+// ignored rather than silently taken.
+float env_scale(const char* name, float fallback) {
+    const char* value = std::getenv(name);
+    if (value == nullptr) return fallback;
+    char* end = nullptr;
+    const float parsed = std::strtof(value, &end);
+    if (end == value || parsed < 0.05f || parsed > 64.0f) {
+        std::fprintf(stderr, "[wr64] %s=%s not usable (0.05 to 64); using %.2f\n",
+                     name, value, fallback);
+        return fallback;
+    }
+    std::fprintf(stderr, "[wr64] %s = %.3f\n", name, parsed);
+    return parsed;
+}
+
 bool racing(uint32_t state) {
     return state == 0x07 || state == 0x28;
 }
@@ -416,6 +440,12 @@ struct Walker {
 
     // Section state: A1's centred perspective sections, and the 2D class in
     // force.
+    // Draw distance and field of view, as multipliers on the world's frustum.
+    // One is the game's own.
+    float far_scale = 1.0f;
+    float fov_scale = 1.0f;
+    uint32_t matrix_cursor = 0;
+
     bool centred = false;
     bool centred_by_viewport = false;   // ... and on_viewport_load is what decided it
     bool seen_ortho = false;
@@ -451,6 +481,21 @@ struct Walker {
 
     int16_t signed_half(uint32_t physical_addr) const {
         return static_cast<int16_t>(half(physical_addr));
+    }
+
+    void write_half(uint32_t physical_addr, uint16_t value) const {
+        *reinterpret_cast<uint16_t*>(rdram + ((physical_addr & 0x00FFFFFFu) ^ 2)) = value;
+    }
+
+    // The inverse of read_matrix: sixteen integer halves then sixteen fraction
+    // halves, row-major, s15.16 throughout.
+    void write_matrix(uint32_t physical_addr, const Mat4& m) const {
+        for (int i = 0; i < 16; ++i) {
+            const int32_t fixed =
+                static_cast<int32_t>(std::lround(double(m.m[i / 4][i % 4]) * 65536.0));
+            write_half(physical_addr + 2 * i, uint16_t(uint32_t(fixed) >> 16));
+            write_half(physical_addr + 32 + 2 * i, uint16_t(uint32_t(fixed) & 0xFFFF));
+        }
     }
 
     // A fixed-point Mtx: sixteen integer halves then sixteen fraction halves,
@@ -558,6 +603,59 @@ struct Walker {
     // perspective one, so it never fired here. The viewport says it directly
     // instead: it is the only thing in the list that states where the game meant
     // the object to be.
+    // The world's frustum, rewritten: a copy of the game's own matrix with its
+    // far plane pushed out, its field of view widened, or both. Returns the
+    // address to load instead, or 0 to leave the game's alone.
+    //
+    // This game builds its projection the way gluPerspective does, so
+    //
+    //     m[2][2] = (f + n) / (n - f)        m[3][2] = 2 f n / (n - f)
+    //
+    // and the two planes come back out as near = m32 / (m22 - 1) and
+    // far = m32 / (m22 + 1). Measured against the projection the menus place
+    // objects with, those read exactly 16 and 4096, which is the check that the
+    // form is right rather than merely plausible.
+    //
+    // Field of view is the other two: m[0][0] and m[1][1] are cot(fovy/2), with
+    // m[0][0] additionally divided by the aspect ratio, so dividing both by the
+    // same number widens the view without changing its shape. RT64's own
+    // widescreen adjustment happens after this and is unaffected.
+    uint32_t rewrite_projection(const Mat4& loaded) {
+        if (far_scale == 1.0f && fov_scale == 1.0f) return 0;
+        Mat4 m = loaded;
+        if (far_scale != 1.0f) {
+            const float m22 = loaded.m[2][2];
+            const float m32 = loaded.m[3][2];
+            if (std::fabs(m22 - 1.0f) < 1e-6f || std::fabs(m22 + 1.0f) < 1e-6f) return 0;
+            const float near_plane = m32 / (m22 - 1.0f);
+            const float far_plane = (m32 / (m22 + 1.0f)) * far_scale;
+            // Reported once, because whether the far plane is anywhere near the
+            // geometry is the whole question and a screenshot cannot answer it.
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                std::fprintf(stderr, "[wr64] frustum: near %.1f far %.1f -> far %.1f"
+                                     " (m00 %.3f m11 %.3f)\n",
+                             near_plane, m32 / (m22 + 1.0f), far_plane,
+                             loaded.m[0][0], loaded.m[1][1]);
+                std::fflush(stderr);
+            }
+            const float d = near_plane - far_plane;
+            if (std::fabs(d) < 1e-6f) return 0;
+            m.m[2][2] = (far_plane + near_plane) / d;
+            m.m[3][2] = 2.0f * far_plane * near_plane / d;
+        }
+        if (fov_scale != 1.0f) {
+            m.m[0][0] /= fov_scale;
+            m.m[1][1] /= fov_scale;
+        }
+        if (matrix_cursor + 64 > kMatrixScratchSize) return 0;
+        const uint32_t address = kMatrixScratch + matrix_cursor;
+        matrix_cursor += 64;
+        write_matrix(address, m);
+        return address;
+    }
+
     void on_viewport_load(uint32_t segmented) {
         if (!menu || noemit) return;
         const bool full_frame = viewport_is_full_frame(segmented);
@@ -1715,6 +1813,10 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     // says; the setting is about the race HUD. Anchoring the race HUD is
     // whether a frame is a race is read from the frame (see RaceTest), not
     // from this state number. WR64_HUD_NO_ANCHORS switches anchoring off.
+    static const float far_scale = env_scale("WR64_FAR", 1.0f);
+    static const float fov_scale = env_scale("WR64_FOV", 1.0f);
+    w.far_scale = far_scale;
+    w.fov_scale = fov_scale;
     static const bool anchors_disabled = std::getenv("WR64_HUD_NO_ANCHORS") != nullptr;
     static const bool sky_interp_off = std::getenv("WR64_NO_SKY_INTERP") != nullptr;
     w.sky_interp = !sky_interp_off;
@@ -1893,6 +1995,20 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 w.seen_ortho = true;
             }
             w.sky_matrix(params);
+
+            // Draw distance and field of view, applied to the world's own
+            // frustum. Only in a race frame, and only to a perspective
+            // projection: a menu lays its 2D out under a perspective projection
+            // too (see GAME-INTERNALS), and widening that would spread the
+            // layout rather than the view.
+            if (projection_load && w.projection_is_perspective && w.race_test.race()) {
+                const uint32_t rewritten = w.rewrite_projection(w.projection_only);
+                if (rewritten != 0) {
+                    w.projection_w1 = rewritten;
+                    w.emit(w0, rewritten);
+                    continue;
+                }
+            }
             w.emit(w0, w1);
             continue;
         }
