@@ -468,8 +468,30 @@ a taller region.
 number a port can raise by changing a comparison: it is the size of an arena, and
 the RSP has its own limit on a vertex load. Reaching further with the same budget
 means wider spacing -- more area, coarser waves, and waves the wrong size for the
-craft riding them. That is a different change from raising a cull, and it is
-worth being sure it is wanted before it is made.
+craft riding them.
+
+**And the spacing is computed, not stored.** Instrumenting the multiply that
+places each vertex -- `0x8005042C`, `mul.s $f10, $f8, $f2` -- gives, in a race:
+
+| | |
+|---|---|
+| `$f2` | **0.2787**, the scale |
+| `$f8`, `$f4` | 192 and 220, the grid coordinates it multiplies |
+
+That 0.2787 was then looked for three ways and found none of them. Deriving its
+address from the `lwc1 $f2, 0x200($v0)` a few hundred instructions later gives
+`0x80227E80`, which reads zero for a whole race. Scanning RDRAM for the grid's
+apparent steps -- 32 and 55 -- finds no adjacent pair anywhere. Scanning for
+0.2787 itself finds only `0x801545C0` and `0x80156000`, which turn out to be two
+**mirrored linear ramps** from 0.2266 to 0.3297 in steps of 0.00147 that merely
+contain neighbouring values; 0.2787 is not in either.
+
+So unlike the buoys' limit, this is not a number sitting in memory waiting to be
+scaled. It is derived per frame, and changing it means intervening inside
+`func_80050204` -- 1,458 lines of recompiled C -- rather than writing a word.
+**That is why the water was left alone**, and it is the honest difference between
+this and the buoy cull: one is a comparison against a stored value, the other is
+generated geometry.
 
 ### The gate markers: a known lead
 
