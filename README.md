@@ -115,8 +115,13 @@ Beyond running natively, the port adds:
 - Audio through the recompiled RSP microcode, with the Sound tab's **Main
   Volume** applied to it.
 
-**Mods.** The Mods tab installs and enables mods, and the launcher has an entry
-for it. The runtime accepts `.nrm` mods carrying recompiled code or a ROM patch.
+**Mods.** The Mods tab installs, enables and reorders mods, and the launcher has
+an entry for it. A mod is a `.nrm` -- a zip with a `mod.json` -- and can carry a
+**texture pack**, recompiled code, or a ROM patch. Texture packs are read
+straight out of the mod file, apply in the order the tab shows, and can be
+switched on and off without restarting. See
+[examples/mods/README.md](examples/mods/README.md), which includes a working
+template.
 
 ### Debug controls
 

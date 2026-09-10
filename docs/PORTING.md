@@ -630,6 +630,21 @@ What ships in the runtime:
 | Content: code | `mod_binary.bin` + `mod_syms.bin`, recompiled live at load |
 | Content: ROM patch | `patch.bps` |
 
+This port registers one: **`rt64.json` means a texture pack**. RT64 has a
+complete replacement system and reads a pack out of a zip without unpacking it,
+so a `.nrm` *is* a pack -- but RT64 has no way to be *told* which packs to load
+by the program embedding it; the only path in is a file dialog in its developer
+UI. `tools/patch_rt64_texturepacks.py` adds `RT64_SetTexturePacks`, which records
+a list and lets `State::updateScreen` apply it on the next frame -- the next
+frame rather than immediately, because a mod can be switched on from another
+thread while the game runs and loading a pack rebuilds the texture cache.
+
+Two things that cost a run each to find: the manifest inside a mod is
+**`mod.json`**, not `manifest.json`, and `enabled_by_default` applies **only the
+first time the game sees a mod id**. After that the state lives in `mods.json`,
+so a mod already installed ignores the field -- which looks exactly like the
+enable callback not firing.
+
 **A port can register content types of its own** with
 `recomp::mods::register_mod_content_type({ content_filename, allow_runtime_toggle,
 on_enabled, on_disabled, on_reordered })`. A mod is then detected as carrying

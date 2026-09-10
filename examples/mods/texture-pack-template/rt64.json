@@ -1,0 +1,12 @@
+{
+    "configuration": {
+        "configurationVersion": 3,
+        "hashVersion": 5,
+        "autoPath": "rt64",
+        "defaultOperation": "stream",
+        "defaultShift": "half"
+    },
+    "textures": [],
+    "operationFilters": [],
+    "shiftFilters": []
+}

@@ -9,6 +9,7 @@
 
 #include "wr64/callbacks.h"
 #include "wr64/inspector.h"
+#include "wr64/mods.h"
 #include "wr64/crash_handler.h"
 #include "wr64/renderer.h"
 #include "wr64/rom.h"
@@ -301,6 +302,10 @@ int run(int argc, char** argv, const char* rom_arg) {
     config.argv = argv;
     config.project_version = recomp::Version{0, 6, 0, ""};
     wr64::inspector::init();
+    // Before recomp::start, which scans the mods folder from inside itself: a
+    // mod's content is detected when it is opened, so a content type registered
+    // afterwards would never match anything already installed.
+    wr64::mods::register_content_types();
     config.rsp_callbacks = wr64::rsp_callbacks();
 #if WR64_WITH_FRONTEND
     // RecompFrontend's renderer draws the game and the menus into the same

@@ -1,0 +1,11 @@
+{
+    "game_id": "wr64",
+    "id": "texture_pack_template",
+    "display_name": "Texture Pack Template",
+    "short_description": "An empty texture pack, to check the plumbing.",
+    "description": "Carries an rt64.json with no replacements in it, so the port detects it as a texture pack, hands it to RT64 and loads it without changing a single pixel. Copy this directory, put your own images and their hashes in rt64.json, and zip it with tools/pack_mod.py.",
+    "version": "1.0.0",
+    "authors": ["Wave Race 64: Recompiled"],
+    "minimum_recomp_version": "0.6.0",
+    "enabled_by_default": true
+}

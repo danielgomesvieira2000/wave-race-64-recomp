@@ -377,6 +377,11 @@ def main():
     import patch_rt64_inspector
     patch_rt64_inspector.main()
 
+    # The texture-pack setter, which mods are loaded through. It anchors on the
+    # inspector hook above, so it has to follow it.
+    import patch_rt64_texturepacks
+    patch_rt64_texturepacks.main()
+
     print("Rebuild to pick it up.")
 
 
