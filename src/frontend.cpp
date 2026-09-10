@@ -23,6 +23,7 @@
 #include <recompui/program_config.h>
 #include <recompui/renderer.h>
 #include <recompinput/players.h>
+#include <recompinput/input_mapping.h>
 
 #include <librecomp/config.hpp>
 #include <librecomp/game.hpp>
@@ -200,6 +201,46 @@ void init() {
     // Font License; the build copies it next to the executable rather than
     // committing a second copy of a binary this repository already has.
     recompui::register_primary_font("LatoLatin-Regular.ttf", "LatoLatin");
+
+    // The keyboard layout this port has always documented, declared as the
+    // frontend's defaults so that the keys in docs/BUILDING.md are the keys a
+    // fresh profile is bound to. RecompFrontend's own defaults are a different
+    // scheme -- WASD and space -- and once input started going through its
+    // profiles, that scheme silently replaced this one.
+    //
+    // Defaults apply to a profile the first time it is created; a keyboard
+    // profile already saved keeps whatever it holds until it is reset in the
+    // controls tab.
+    {
+        using recompinput::GameInput;
+        using recompinput::InputField;
+        const struct { GameInput input; SDL_Scancode key; } keys[] = {
+            { GameInput::X_AXIS_NEG,  SDL_SCANCODE_LEFT },
+            { GameInput::X_AXIS_POS,  SDL_SCANCODE_RIGHT },
+            { GameInput::Y_AXIS_POS,  SDL_SCANCODE_UP },
+            { GameInput::Y_AXIS_NEG,  SDL_SCANCODE_DOWN },
+            { GameInput::A,           SDL_SCANCODE_X },
+            { GameInput::B,           SDL_SCANCODE_C },
+            { GameInput::Z,           SDL_SCANCODE_Z },
+            { GameInput::START,       SDL_SCANCODE_RETURN },
+            { GameInput::L,           SDL_SCANCODE_A },
+            { GameInput::R,           SDL_SCANCODE_S },
+            // The C buttons work the camera, which this game uses constantly,
+            // so they stay under the right hand while the left drives.
+            { GameInput::C_UP,        SDL_SCANCODE_I },
+            { GameInput::C_DOWN,      SDL_SCANCODE_K },
+            { GameInput::C_LEFT,      SDL_SCANCODE_J },
+            { GameInput::C_RIGHT,     SDL_SCANCODE_L },
+            { GameInput::DPAD_UP,     SDL_SCANCODE_T },
+            { GameInput::DPAD_DOWN,   SDL_SCANCODE_G },
+            { GameInput::DPAD_LEFT,   SDL_SCANCODE_F },
+            { GameInput::DPAD_RIGHT,  SDL_SCANCODE_H },
+        };
+        for (const auto& binding : keys) {
+            recompinput::set_default_mapping_for_keyboard(
+                binding.input, { InputField::keyboard(binding.key) });
+        }
+    }
 
     recompui::register_launcher_init_callback(build_launcher);
 

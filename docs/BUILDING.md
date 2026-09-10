@@ -220,7 +220,12 @@ elsewhere), beside the files RT64 keeps there; the first line the port prints
 says where. A file called `portable.txt` next to the executable keeps them next
 to the executable instead.
 
-A gamepad is used if one is attached. On the keyboard: arrow keys are the analog
+A gamepad is used if one is attached, and the keyboard works at the same time --
+neither has to be chosen, and player one always has both. Those bindings are
+defaults and every one is rebindable in the controls tab; a keyboard profile
+saved by an earlier build keeps whatever it holds until it is reset there.
+
+On the keyboard: arrow keys are the analog
 stick, `X` is A, `C` is B, `Z` is Z, `Enter` is Start, `A` and `S` are the
 shoulder buttons, `I`/`J`/`K`/`L` are the C buttons (the camera) and
 `T`/`F`/`G`/`H` are the D-pad.

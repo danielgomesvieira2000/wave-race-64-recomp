@@ -505,6 +505,25 @@ normalized to ±1, which is the range the runtime wants. Call that instead, once
 per player index, and remapping, per-device profiles and the second player all
 start working at once.
 
+**Symptom: the keyboard does nothing while a gamepad works perfectly.** The pad
+is bound, the profiles are assigned, the settings look right, and not one key
+registers. `recompinput::poll_inputs()` is what copies SDL's keyboard state into
+the library each frame, and -- like `update_rumble` -- it is exposed for the port
+to call rather than called by the library itself. Without it `InputState.keys`
+stays null and every keyboard binding reads as unpressed, while the controller
+path keeps working because it asks the player's own SDL handle directly. Nothing
+in the profiles or the settings hints at it. Call `poll_inputs()` once per frame,
+next to `handle_events()`.
+
+**And when input moves onto the frontend's profiles, its default bindings come
+with it.** A port that read SDL scancodes itself had its own keyboard layout, and
+the moment `get_n64_input` takes over, RecompFrontend's defaults replace it
+silently -- a keyboard that works, on keys nobody documented. Declare the port's
+layout with `set_default_mapping_for_keyboard` **before**
+`recompui::config::finalize()`, which is what loads the controls file and creates
+the profiles. Defaults only reach a profile the first time it is created, so
+anyone with a saved profile keeps what they have until they reset it.
+
 **Symptom: rumble does nothing until someone opens the controls tab and assigns a
 pad.** `update_rumble` iterates *assigned players*, and nothing is assigned until
 an assignment has been committed, which by default happens only through the

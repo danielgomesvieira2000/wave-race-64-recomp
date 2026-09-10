@@ -128,6 +128,14 @@ void refresh_players() {
     assigned = connected;
 
     recompinput::players::auto_assign_controllers(connected.data(), connected.size());
+
+    // Both of player one's profiles, because a keyboard that does nothing looks
+    // the same whether it is unbound, unassigned, or simply on other keys.
+    std::fprintf(stderr, "[wr64] player 1 profiles: controller %d, keyboard %d\n",
+                 recompinput::profiles::get_input_profile_for_player(
+                     0, recompinput::InputDevice::Controller),
+                 recompinput::profiles::get_input_profile_for_player(
+                     0, recompinput::InputDevice::Keyboard));
     std::fprintf(stderr, "[wr64] %zu controller%s connected; assigned to %zu player%s\n",
                  connected.size(), connected.size() == 1 ? "" : "s",
                  recompinput::players::get_number_of_assigned_players(),
@@ -150,6 +158,16 @@ void poll_input() {
     // uncatchably, with no stack trace. Keyboard input never does that lookup,
     // which is why only a gamepad triggered it.
     recompinput::handle_events();
+
+    // recompinput::poll_inputs() is what fills its keyboard snapshot from SDL,
+    // and like update_rumble it is exposed for the port to call rather than
+    // called by the library itself. Without it, InputState.keys stays null and
+    // every keyboard binding reads as unpressed -- while a pad keeps working,
+    // because the controller path asks the player's own SDL handle directly.
+    // The result is a dead keyboard beside a perfect gamepad, with nothing in
+    // the settings or the profiles to suggest why.
+    recompinput::poll_inputs();
+
     refresh_primary_controller();
     refresh_players();
 #else
