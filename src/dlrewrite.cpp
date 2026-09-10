@@ -319,7 +319,10 @@ struct Tags {
         by_identity["tex:0x0103fbd8"] = Class::Right;
         by_identity["tex:0x010400d8"] = Class::Right;
         by_identity["tex:0x010405d8"] = Class::Right;
+        by_identity["tex:0x01044f60"] = Class::Auto;
+        by_identity["tex:0x01046910"] = Class::Auto;
         by_identity["tex:0x010515a8"] = Class::Auto;
+        by_identity["tex:0x08024008"] = Class::Stretch;
         by_identity["tex:0x08025c88"] = Class::Stretch;
         by_identity["tex:0x08027748"] = Class::Stretch;
         by_identity["tex:0x08028470"] = Class::Auto;
