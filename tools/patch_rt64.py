@@ -382,6 +382,12 @@ def main():
     import patch_rt64_texturepacks
     patch_rt64_texturepacks.main()
 
+    # Taking RT64's SDL event filter back off when it shuts down. Not a feature
+    # the port adds but a missing half of a pairing upstream, and without it the
+    # process dies every time the game is closed.
+    import patch_rt64_eventfilter
+    patch_rt64_eventfilter.main()
+
     print("Rebuild to pick it up.")
 
 

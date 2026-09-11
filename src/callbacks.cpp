@@ -1272,16 +1272,27 @@ ultramodern::renderer::callbacks_t renderer_callbacks() {
     return callbacks;
 }
 
+// Each step announces itself, because the process has been dying after this
+// point with an access violation at an address in no loaded module, and the
+// first thing worth knowing is which of these it gets past.
 void shutdown_platform() {
+    std::fprintf(stderr, "[wr64] shutting down: controller\n");
+    std::fflush(stderr);
     if (g_controller != nullptr) {
         SDL_GameControllerClose(g_controller);
         g_controller = nullptr;
     }
+    std::fprintf(stderr, "[wr64] shutting down: window\n");
+    std::fflush(stderr);
     if (g_window != nullptr) {
         SDL_DestroyWindow(g_window);
         g_window = nullptr;
     }
+    std::fprintf(stderr, "[wr64] shutting down: SDL\n");
+    std::fflush(stderr);
     SDL_Quit();
+    std::fprintf(stderr, "[wr64] shutting down: done\n");
+    std::fflush(stderr);
 }
 
 }  // namespace wr64

@@ -898,6 +898,64 @@ The port's visual work is done in two places: patches to RT64
 (`src/dlrewrite.cpp`) which inserts RT64's extended GBI commands into the game's
 lists before RT64 sees them. The game's code and data are untouched.
 
+### Whatever hooks SDL has to unhook itself
+
+**Symptom:** the process dies with an access violation every single time the
+game is closed normally, after everything has reported itself shut down, at an
+address in no loaded module.
+
+```
+[wr64] recomp::start returned -- runtime shut down
+[wr64] shutting down: controller
+[wr64] shutting down: window
+[wr64] ==== CRASH ====
+[wr64] ACCESS_VIOLATION (0xC0000005) at 0000019704441630
+[wr64] while executing address 0x19704441630
+```
+
+`RT64::ApplicationWindow::setup` chains itself into SDL's event filter, keeping
+the previous one to forward to. Its destructor clears `HookedApplicationWindow`
+and unhooks the Win32 message hook, and never removes that filter. SDL therefore
+goes on holding a pointer to the destroyed object, and the next event runs
+`appWindow->listener->sdlEventFilter(event)` -- `listener` read out of freed
+memory, called virtually, so the jump lands wherever the dead object's vtable
+pointer now points.
+
+The event is unavoidable: **`SDL_DestroyWindow` pumps the window's messages**,
+which is why this is exactly at shutdown and perfectly reproducible.
+`tools/patch_rt64_eventfilter.py` supplies the missing half of the pairing, and
+restores the stored filter rather than clearing, because RT64 chained onto
+whatever was installed before it.
+
+The general form is worth stating, because SDL has several of these and none of
+them are reference counted: **an event filter, an event watch, a hint callback or
+a log function outlives the object that installed it.** Any of them registered
+with a `this` pointer has to be removed in that object's destructor, and the last
+thing to run in a process is exactly when a missed one goes off.
+
+### A crash with no stack is a crash with no unwind data
+
+**Symptom:** the crash report names an address and nothing else; the backtrace is
+four frames of `ntdll` and then the bad address, with no caller under it.
+
+`CaptureStackBackTrace` and every other unwinder need unwind data for each frame,
+and a jump into freed memory has none, so the walk stops at exactly the frame
+that would say who jumped. The information is still there: **a call pushes its
+return address**, so it is sitting at the top of the faulting stack with the
+frames above it intact. Take `Rsp` from the exception's `ContextRecord` and scan
+upward for values that `GetModuleHandleEx` resolves to a loaded module. In this
+case that named `RT64::ApplicationWindow::sdlEventFilter + 0x16` on the first
+hit, with `SDL_DestroyWindow` two frames later, which is the whole diagnosis.
+
+Two traps either side of it. **Call `SymInitialize` exactly once per process**:
+it fails when the handle is already initialised, so a second site with its own
+"have I done this" flag concludes it has no symbols and silently prints bare
+addresses for the rest of the run -- which is what this report did on its first
+attempt, hiding the answer it had already collected. And **print the module for
+every frame whether or not the symbol resolves**: most frames in a shutdown crash
+are in code the project did not write, and `(no symbol)` does not distinguish a
+graphics driver from SDL from freed memory, which is the distinction that matters.
+
 ### The display-list rewriter
 
 The technique generalises to any RT64-based port whose game predates the extended
@@ -1289,6 +1347,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Vectored exception handler + dbghelp** (`src/crash_handler.cpp`) | Turns "it exits" into `SysMain_GfxFullSync + 0xF5 at funcs_13.c:7873`. The recompiled code is linked into the executable, so without symbol resolution every crash reports the same unhelpful module. |
 | **Lookup-miss hook** (`tools/patch_librecomp.py`) | A failed lookup prints only the address, then asserts and exits -- and an exit is not an exception, so the crash handler never sees it. The hook reports the *calling* function, source line and thread. It immediately contradicted a claim this project had made two commits earlier. |
 | **Function-entry instrumentation** (`tools/instrument_funcs.py`) | Inserts a one-shot `printf` at named recompiled functions, or with `NAME@0xADDR` prints an RDRAM word on every call. Order answers "did it run"; a watched value answers "and did it stay valid". Safe only because re-running the recompiler erases the edits. |
+| **Stack scan on a crash** | The faulting thread, a stack, and the module behind every frame -- plus, when the fault is a jump into freed memory, the return addresses read off the stack, because nothing can unwind through a frame with no unwind data. It named a dangling SDL event filter in RT64 on the first hit. Two traps: `SymInitialize` must be called once per process, and the module must be printed whether or not the symbol resolves. See §7. |
 | **Hang watchdog** | A microcode that spins forever faults nothing, prints nothing and returns nothing. After a deadline, a persistent thread suspends the stuck thread, samples its instruction pointer repeatedly and resolves the distinct addresses to source lines. Sample repeatedly, not once: with everything inlined, one sample usually names a helper rather than the loop. (A thread *per call* here was real overhead on the thread that has to keep pace with the game.) |
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
 | **Spaced 3D frames** (`WR64_3D_TRACE_EVERY`) | The same trace with its frames spread over the run rather than consecutive. Consecutive frames answer what the renderer can pair between them; spaced frames answer whether an object is submitted at all from a distance, which is the question behind every report of things popping in. Diffing the display lists called in each frame separates "the game never submitted it" from "something downstream dropped it", and the modelview translation logged before each call gives the object's world position, so a culled set can be plotted rather than guessed at. |

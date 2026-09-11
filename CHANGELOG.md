@@ -34,6 +34,16 @@ notice changes.
   time or 4096. The pitch stops drifting with it, and so does the gap in the
   sound at every entry to and exit from a race, because the device no longer has
   to be reopened when the game changes rate.
+- **Closing the game no longer crashes the process.** It had been dying with an
+  access violation on every normal exit, after everything had reported itself
+  shut down. RT64 chains itself into SDL's event filter and never takes itself
+  back off, so SDL still held a pointer to the destroyed object and the messages
+  `SDL_DestroyWindow` pumps made a virtual call through freed memory.
+  `tools/patch_rt64_eventfilter.py` supplies the missing half.
+- The crash report now carries the faulting thread, a stack, and the module
+  behind every frame -- and, when the fault is a jump into freed memory that
+  nothing can unwind through, the return addresses recovered by scanning the
+  stack. That is what identified the above.
 - `WR64_AUDIO_STATS` and `WR64_AUDIO_DUMP` measure the audio path: how much
   silence the output device had to be given because nothing was queued in
   time, and what the samples sound like before SDL ever sees them. Between

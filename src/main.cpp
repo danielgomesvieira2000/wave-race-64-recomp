@@ -350,6 +350,8 @@ int run(int argc, char** argv, const char* rom_arg) {
     std::fflush(stderr);
 
     wr64::shutdown_platform();
+    std::fprintf(stderr, "[wr64] leaving main; anything after this is the C runtime tearing the process down\n");
+    std::fflush(stderr);
     return 0;
 }
 

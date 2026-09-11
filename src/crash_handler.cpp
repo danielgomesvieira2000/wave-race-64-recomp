@@ -35,6 +35,21 @@
 
 namespace {
 
+// Once per process, shared by every site that resolves an address. Kept in one
+// place because SymInitialize fails when the handle is already initialised, so a
+// second site with its own flag concludes it has no symbols and prints bare
+// addresses for the rest of the run.
+bool ensure_symbols() {
+    static const bool ready = [] {
+        SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+        return SymInitialize(GetCurrentProcess(), nullptr, TRUE) != FALSE;
+    }();
+    return ready;
+}
+
+// Defined below, and used by the handler above it.
+void describe_one_address(const char* label, void* address);
+
 const char* exception_name(DWORD code) {
     switch (code) {
         case EXCEPTION_ACCESS_VIOLATION:      return "ACCESS_VIOLATION";
@@ -94,11 +109,7 @@ LONG WINAPI on_exception(EXCEPTION_POINTERS* info) {
     // as well as the harness. Resolving the symbol names what actually faulted,
     // which is the difference between a usable report and a hex address.
     HANDLE process = GetCurrentProcess();
-    static bool symbols_ready = false;
-    if (!symbols_ready) {
-        SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
-        symbols_ready = SymInitialize(process, nullptr, TRUE) != FALSE;
-    }
+    const bool symbols_ready = ensure_symbols();
 
     if (symbols_ready) {
         alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
@@ -121,6 +132,77 @@ LONG WINAPI on_exception(EXCEPTION_POINTERS* info) {
         }
     }
 
+    // Which thread, and how it got there. Without these the report is an
+    // address and a guess: a fault at an address in no loaded module means
+    // something jumped through a pointer into freed memory, and the only
+    // thing that says whose pointer it was is the stack underneath it.
+    std::fprintf(stderr, "[wr64] on thread %lu", GetCurrentThreadId());
+    PWSTR description = nullptr;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &description)) &&
+        description != nullptr) {
+        char name[128] = {};
+        WideCharToMultiByte(CP_UTF8, 0, description, -1, name,
+                            static_cast<int>(sizeof(name)) - 1, nullptr, nullptr);
+        if (name[0] != 0) {
+            std::fprintf(stderr, " (%s)", name);
+        }
+        LocalFree(description);
+    }
+    std::fprintf(stderr, "\n");
+
+    std::fprintf(stderr, "[wr64] stack:\n");
+    void* frames[48] = {};
+    const USHORT captured = CaptureStackBackTrace(0, 48, frames, nullptr);
+    for (USHORT i = 0; i < captured; ++i) {
+        describe_one_address("  ", frames[i]);
+    }
+
+    // That walk ends at the faulting frame and can go no further: unwinding
+    // needs unwind data, and a jump into freed memory has none, so the caller --
+    // the only thing that says whose dangling pointer this was -- is invisible to
+    // it. It is not gone, though. A call pushes its return address, so it is
+    // sitting at the top of the stack, with the frames above it intact. Scanning
+    // for values that point into a loaded module recovers the path in.
+    if (info->ContextRecord != nullptr) {
+        const CONTEXT* context = info->ContextRecord;
+        std::fprintf(stderr, "[wr64] rip %p, rsp %p\n",
+                     reinterpret_cast<void*>(static_cast<uintptr_t>(context->Rip)),
+                     reinterpret_cast<void*>(static_cast<uintptr_t>(context->Rsp)));
+
+        const uintptr_t* stack = reinterpret_cast<const uintptr_t*>(context->Rsp);
+        MEMORY_BASIC_INFORMATION region{};
+        const bool readable =
+            VirtualQuery(stack, &region, sizeof(region)) == sizeof(region) &&
+            region.State == MEM_COMMIT &&
+            (region.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ |
+                               PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY |
+                               PAGE_EXECUTE_WRITECOPY)) != 0;
+        if (readable) {
+            const uintptr_t end =
+                reinterpret_cast<uintptr_t>(region.BaseAddress) + region.RegionSize;
+            std::fprintf(stderr, "[wr64] return addresses still on the stack:\n");
+            int shown = 0;
+            for (int i = 0; i < 512 && shown < 12; ++i) {
+                const uintptr_t slot = reinterpret_cast<uintptr_t>(stack + i);
+                if (slot + sizeof(uintptr_t) > end) {
+                    break;
+                }
+                const uintptr_t value = stack[i];
+                if (value < 0x10000) {
+                    continue;
+                }
+                HMODULE owner = nullptr;
+                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                       reinterpret_cast<LPCSTR>(value), &owner) &&
+                    owner != nullptr) {
+                    describe_one_address("  ", reinterpret_cast<void*>(value));
+                    ++shown;
+                }
+            }
+        }
+    }
+
     std::fprintf(stderr, "[wr64] ================\n");
     std::fflush(stderr);
 
@@ -132,37 +214,59 @@ LONG WINAPI on_exception(EXCEPTION_POINTERS* info) {
 // Shared by the crash report, the lookup-miss report and the hang watchdog.
 static void describe_address(const char* label, void* address) {
     HANDLE process = GetCurrentProcess();
-    static bool symbols_ready = false;
-    if (!symbols_ready) {
-        SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
-        symbols_ready = SymInitialize(process, nullptr, TRUE) != FALSE;
-    }
-    if (!symbols_ready) {
-        std::fprintf(stderr, "[wr64] %s %p\n", label, address);
-        return;
-    }
+    const bool symbols_ready = ensure_symbols();
 
     alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
     SYMBOL_INFO* symbol = reinterpret_cast<SYMBOL_INFO*>(buffer);
     symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
     symbol->MaxNameLen = MAX_SYM_NAME;
 
+    // The module first, always. Most frames in a shutdown crash are in code this
+    // project did not write and has no symbols for, and a bare "(no symbol)" does
+    // not distinguish a graphics driver from SDL from freed memory -- which is
+    // the distinction the whole report exists to make.
+    char module_name[MAX_PATH] = {};
+    HMODULE module = nullptr;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           static_cast<LPCSTR>(address), &module) && module != nullptr) {
+        char path[MAX_PATH] = {};
+        if (GetModuleFileNameA(module, path, sizeof(path)) != 0) {
+            const char* slash = std::strrchr(path, '\\');
+            std::snprintf(module_name, sizeof(module_name), "%s+0x%llX",
+                          slash != nullptr ? slash + 1 : path,
+                          static_cast<unsigned long long>(
+                              reinterpret_cast<uintptr_t>(address) -
+                              reinterpret_cast<uintptr_t>(module)));
+        }
+    }
+    else {
+        std::snprintf(module_name, sizeof(module_name), "no module -- freed or generated code");
+    }
+
     DWORD64 displacement = 0;
-    if (SymFromAddr(process, reinterpret_cast<DWORD64>(address), &displacement, symbol)) {
-        std::fprintf(stderr, "[wr64] %s %s + 0x%llX\n", label, symbol->Name,
-                     static_cast<unsigned long long>(displacement));
+    if (symbols_ready &&
+        SymFromAddr(process, reinterpret_cast<DWORD64>(address), &displacement, symbol)) {
+        std::fprintf(stderr, "[wr64] %s %s + 0x%llX  [%s]\n", label, symbol->Name,
+                     static_cast<unsigned long long>(displacement), module_name);
     } else {
-        std::fprintf(stderr, "[wr64] %s %p (no symbol)\n", label, address);
+        std::fprintf(stderr, "[wr64] %s %p  [%s]\n", label, address, module_name);
     }
 
     IMAGEHLP_LINE64 line = {};
     line.SizeOfStruct = sizeof(line);
     DWORD line_displacement = 0;
-    if (SymGetLineFromAddr64(process, reinterpret_cast<DWORD64>(address),
-                             &line_displacement, &line)) {
+    if (symbols_ready && SymGetLineFromAddr64(process, reinterpret_cast<DWORD64>(address),
+                                              &line_displacement, &line)) {
         std::fprintf(stderr, "[wr64]     at %s:%lu\n", line.FileName, line.LineNumber);
     }
 }
+
+namespace {
+void describe_one_address(const char* label, void* address) {
+    describe_address(label, address);
+}
+}  // namespace
 
 namespace wr64 {
 
