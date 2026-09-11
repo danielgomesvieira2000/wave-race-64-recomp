@@ -8,6 +8,22 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## [0.8.1](docs/releases/0.8.1.md) — Draw Distance marked experimental
+
+- **Draw Distance is marked experimental.** Anything above Original makes the
+  buoys flicker and slide as they come into view: the game is being shown more of
+  them than it was built to draw, and what decides which ones get drawn has not
+  been found yet. It happens at every setting above Original, so it is not a
+  matter of distance. Original is unaffected -- at that setting nothing is
+  written to the game's memory at all.
+- The limit is now written **once per frame on the game's own thread**, where it
+  is read, rather than from the graphics thread once per display list. That race
+  was real and is fixed; it was not the cause of the flicker.
+- `WR64_DRAW_DISTANCE_TRACE=1` records the limit every frame, so the next look at
+  this starts from data.
+- **Eleven more 2D elements tagged**, bringing the port's built-in table to
+  forty-three entries. Two of them reverse earlier decisions.
+
 ## [0.8.0](docs/releases/0.8.0.md) — clean audio, and the wipe
 
 - **Draw Distance** in the Graphics tab, up to 4x. There is no global draw

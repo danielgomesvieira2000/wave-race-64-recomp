@@ -316,7 +316,12 @@ void init() {
     // list of those limits, which grows as each is found; see
     // include/wr64/drawdistance.h for what is in the list and what is not.
     graphics.add_enum_option(
-        "object_draw_distance", "Draw Distance",
+        "object_draw_distance", "Draw Distance (experimental)",
+        "<recomp-color primary>Experimental.</recomp-color> Anything above Original makes the "
+        "buoys flicker and slide as they come into view -- the game is being shown more of them "
+        "than it was built to draw, and what decides which ones get drawn has not been found "
+        "yet. Original is unaffected: at that setting nothing is written to the game's memory "
+        "at all.<br /><br />"
         "How far away the game keeps drawing things it culls by distance. "
         "<recomp-color primary>Original</recomp-color> is the game's own behaviour. "
         "It reaches the buoys, which the game drops between 2500 and 5000 units depending on "

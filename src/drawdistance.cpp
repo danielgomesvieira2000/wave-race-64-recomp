@@ -4,6 +4,8 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace wr64::drawdistance {
 namespace {
@@ -40,6 +42,21 @@ Limit g_limits[] = {
 
 constexpr double kMaxMultiplier = 4.0;
 std::atomic<double> g_multiplier{ 1.0 };
+
+// Every frame, what was found at the limit and what was written over it.
+//
+// "It flickers" has two completely different causes and they are invisible from
+// outside: a limit that changes between frames, so the same buoy is kept on one
+// and dropped on the next, or a limit that is perfectly stable while something
+// else decides which buoys get drawn. Reasoning about which cost two wrong fixes,
+// so this simply prints it.
+bool trace_wanted() {
+    static const bool on = [] {
+        const char* value = std::getenv("WR64_DRAW_DISTANCE_TRACE");
+        return value != nullptr && value[0] != 0 && std::strcmp(value, "0") != 0;
+    }();
+    return on;
+}
 
 int32_t* field(uint8_t* rdram, uint32_t address, uint32_t offset) {
     return reinterpret_cast<int32_t*>(rdram + ((address & 0x00FFFFFFu) + offset));
@@ -89,8 +106,29 @@ void apply(uint8_t* rdram) {
         }
         if (limit.original <= 0) continue;
 
+        const int32_t found = *value;
         limit.written = static_cast<int32_t>(limit.original * multiplier);
         *value = limit.written;
+
+        if (trace_wanted()) {
+            static uint64_t frame = 0;
+            static int32_t last_found = -1;
+            static int32_t last_written = -1;
+            ++frame;
+            // Printed when anything moves, and once every hundred frames
+            // regardless, so a stable limit is visible as a stable limit rather
+            // than as silence.
+            if (found != last_found || limit.written != last_written || frame % 100 == 0) {
+                std::fprintf(stderr, "[wr64-dd] frame %llu: %s struct 0x%08X,"
+                                     " found %d, original %d, wrote %d%s\n",
+                             static_cast<unsigned long long>(frame), limit.what, address,
+                             found, limit.original, limit.written,
+                             found != last_found ? "   <- the game changed it" : "");
+                std::fflush(stderr);
+                last_found = found;
+                last_written = limit.written;
+            }
+        }
     }
 }
 

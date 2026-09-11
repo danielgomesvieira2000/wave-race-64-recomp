@@ -314,6 +314,7 @@ struct Tags {
         // Tagged in the inspector and promoted here so a release carries them.
         // Everything between these two markers is rewritten by that script;
         // hand-written entries go above the first marker, with their reasons.
+        by_identity["tex:0x01005748"] = Class::Stretch;
         by_identity["tex:0x0100fab0"] = Class::Spill;
         by_identity["tex:0x010331d0"] = Class::Right;
         by_identity["tex:0x01033cb8"] = Class::Auto;
@@ -322,6 +323,10 @@ struct Tags {
         by_identity["tex:0x01034258"] = Class::Auto;
         by_identity["tex:0x01034438"] = Class::Auto;
         by_identity["tex:0x01034618"] = Class::Auto;
+        by_identity["tex:0x010347f8"] = Class::Auto;
+        by_identity["tex:0x010349d8"] = Class::Auto;
+        by_identity["tex:0x01034bb8"] = Class::Auto;
+        by_identity["tex:0x01034d98"] = Class::Auto;
         by_identity["tex:0x01035338"] = Class::Auto;
         by_identity["tex:0x010358d8"] = Class::Auto;
         by_identity["tex:0x010369b8"] = Class::Auto;
@@ -339,11 +344,16 @@ struct Tags {
         by_identity["tex:0x01044f60"] = Class::Auto;
         by_identity["tex:0x01046910"] = Class::Spill;
         by_identity["tex:0x010515a8"] = Class::Auto;
+        by_identity["tex:0x08004400"] = Class::Auto;
         by_identity["tex:0x08004c00"] = Class::Spill;
-        by_identity["tex:0x08024008"] = Class::Stretch;
+        by_identity["tex:0x08024008"] = Class::Auto;
+        by_identity["tex:0x08024e10"] = Class::Auto;
         by_identity["tex:0x08025c88"] = Class::Stretch;
+        by_identity["tex:0x080267f0"] = Class::Auto;
         by_identity["tex:0x08027748"] = Class::Stretch;
-        by_identity["tex:0x08028470"] = Class::Auto;
+        by_identity["tex:0x08028470"] = Class::Spill;
+        by_identity["tex:0x0802a7f0"] = Class::Spill;
+        by_identity["tex:0x0802c0f0"] = Class::Spill;
         // ---- end promoted ----
     }
 
@@ -1992,8 +2002,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
     const uint32_t state = wr64::current_game_state();
     const auto& config = ultramodern::renderer::get_graphics_config();
-
-    wr64::drawdistance::apply(rdram);
 
 
 

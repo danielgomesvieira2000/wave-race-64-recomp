@@ -45,6 +45,7 @@
 
 #include <ultramodern/ultramodern.hpp>
 
+#include "wr64/drawdistance.h"
 #include "wr64/haptics.h"
 #include "wr64/music.h"
 
@@ -109,6 +110,18 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     // The Music Volume setting, pushed into the game's sequence players. Same
     // thread and same moment as the game's own audio commands.
     wr64::music::apply(rdram);
+
+    // Draw Distance, for the same reason and then one of its own. The limit it
+    // raises is read by the game's culling code on this thread, and it used to be
+    // written from the graphics thread once per display list -- so whether a
+    // frame's cull saw the raised limit or the game's own depended on which
+    // thread got there first. Buoys near the boundary were kept on one frame and
+    // dropped on the next, and RT64, pairing each object with the previous
+    // frame's to interpolate, then had one appearing and disappearing: it either
+    // found no pair or found the wrong one, and slid the buoy in from wherever
+    // that other transform had been. Written here it is written once per frame,
+    // on the thread that reads it, always before the next cull.
+    wr64::drawdistance::apply(rdram);
 
     using clock = std::chrono::steady_clock;
     static clock::time_point window_start = clock::now();
