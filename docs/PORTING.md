@@ -993,13 +993,40 @@ because each looks convincing until it is measured:
 - **Viewport width.** Every viewport on these screens is 320 wide. Only the
   centre differs.
 
-What has not been tried: identifying the curtain by its viewport's address
-(`0x800DA8F0` is a fixed RDRAM address, and this project already identifies 2D
-elements by address in the HUD tag table), or by the geometry itself -- flat
-z = 0 quads spanning the full width are a signature nothing else on these screens
-has. Either would need the sweep's range widened as well as the slab, since the
-animation is in the viewport: on a wider frame the centre has to travel further
-and the viewport has to cover more.
+**Finding it is solved. Applying anything to it is not.**
+
+The watercraft on the rider-select screen use the **same** `3.371 / 3.371`
+projection as the curtain, so no test on the projection can separate them. Their
+viewports differ -- `translate 59, 74` for a craft against `160, 120` for the
+curtain -- but that difference is **invisible where the rewriter runs**: the
+curtain is drawn from a called display list which loads its own frame-wide
+viewport *inside itself*, and the rewriter emits a call and lets RT64 walk in. At
+the call site the viewport still in force is the previous group's. This is why
+the frame debugger and the port's own trace disagree about the curtain's
+viewport, and chasing that disagreement is what finally explained it; four
+attempts were spent refining a test applied to state that is, for this element,
+systematically one group out of date.
+
+What works is looking inside: walk the called list for its viewport load and ask
+whether *that* covers the frame. Wrapped around a call whose projection is
+square, it fires on exactly the wipe's states and leaves every craft alone --
+verified by a per-state counter, `0x0B`, `0x1E` and `0x1F` and nothing else.
+
+What does not work, measured:
+
+- **`G_EX_ASPECT_STRETCH` on the group.** Reaches the curtain -- the counter
+  proves the section opens -- and changes nothing on screen.
+- **Cancelling the menu's viewport centring.** Leaves it boxed *and* shifts it
+  down. `align_viewport` re-emits the last viewport the rewriter saw, which here
+  is the underlying screen's (`translate 59, 74`, hence the vertical shift), and
+  the `G_EX_ORIGIN_NONE` alignment then stays in force for the viewport the
+  called list loads. The result is a pass that is unpinned rather than widened:
+  still 320 wide, no longer centred.
+
+So the open question is not how to identify the curtain but **what makes RT64
+widen a full-frame perspective pass**, given that the port deliberately centres
+menu passes to stop 3D in menus from spreading. Answering that is a question
+about RT64's own frame-covering test, not about the rewriter.
 
 One trap for whoever picks this up. A stretch class in force during these frames
 is **not necessarily one you set** -- the 2D classifier legitimately assigns
