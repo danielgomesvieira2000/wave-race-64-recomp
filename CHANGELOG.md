@@ -19,6 +19,10 @@ notice changes.
   from a handful to the whole course.
 - `WR64_3D_TRACE_EVERY` spaces the 3D trace's frames over a run instead of taking
   them consecutively, which is what a question about distance needs.
+- `WR64_AUDIO_STATS` and `WR64_AUDIO_DUMP` measure the audio path: how much
+  silence the output device had to be given because nothing was queued in
+  time, and what the samples sound like before SDL ever sees them. Between
+  them they say which side of `SDL_QueueAudio` a crackle is on.
 - `docs/GAME-INTERNALS.md` gains the world's frustum, the buoy cull and where its
   limit lives, the course arrows (which turn out **not** to be distance-culled at
   all -- they are navigational markers chosen by where the player is), and the

@@ -33,6 +33,7 @@
 #include <ultramodern/threads.hpp>
 #include <librecomp/rsp.hpp>
 
+#include "wr64/audiodiag.h"
 #include "wr64/crash_handler.h"
 #if WR64_WITH_FRONTEND
 #   include "wr64/frontend.h"
@@ -498,6 +499,29 @@ bool open_audio_device() {
     std::fprintf(stderr, "[wr64] audio device open at %d Hz, %d channels\n",
                  have.freq, have.channels);
     std::fflush(stderr);
+
+    // `have` is not the hardware's spec. With SDL_AUDIO_ALLOW_ANY_CHANGE unset
+    // SDL builds a converter and hands back what was asked for, so the line above
+    // says nothing about what the machine is actually running at -- and whether
+    // SDL is resampling, and across what ratio, is one of the things being
+    // measured. SDL_GetDefaultAudioInfo answers it without opening a second
+    // device. Only asked for when the statistics are on.
+    if (wr64::audiodiag::stats_enabled()) {
+        SDL_AudioSpec device_spec{};
+        char* device_name = nullptr;
+        const bool known = SDL_GetDefaultAudioInfo(&device_name, &device_spec, 0) == 0;
+        if (device_name != nullptr) {
+            SDL_free(device_name);
+        }
+        wr64::audiodiag::device_opened(static_cast<uint32_t>(have.freq),
+                                       static_cast<uint32_t>(have.samples),
+                                       known ? static_cast<uint32_t>(device_spec.freq) : 0u,
+                                       known ? static_cast<uint32_t>(device_spec.samples) : 0u);
+    }
+    else {
+        wr64::audiodiag::device_opened(static_cast<uint32_t>(have.freq),
+                                       static_cast<uint32_t>(have.samples), 0u, 0u);
+    }
     return true;
 }
 
@@ -559,6 +583,14 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
         }
     }
 
+    // Measured before the buffer goes in, so it is the trough: what the device
+    // had left to play at the moment the game got round to making more. See
+    // include/wr64/audiodiag.h. Both calls are no-ops unless a WR64_AUDIO_*
+    // variable is set.
+    wr64::audiodiag::queued(
+        static_cast<uint32_t>(SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame),
+        unswapped.data(), sample_count);
+
     SDL_QueueAudio(g_audio_device, unswapped.data(),
                    static_cast<Uint32>(sample_count * sizeof(int16_t)));
 
@@ -587,7 +619,11 @@ size_t get_frames_remaining() {
         // buffer that will never empty.
         return 0;
     }
-    return SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame;
+    const size_t frames = SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame;
+    // The game's own view of the queue, and the moment it decides how much more
+    // to make. No-op unless WR64_AUDIO_STATS is set.
+    wr64::audiodiag::polled(static_cast<uint32_t>(frames));
+    return frames;
 }
 
 void set_frequency(uint32_t frequency) {
