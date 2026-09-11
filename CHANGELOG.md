@@ -8,7 +8,7 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [0.8.0](docs/releases/0.8.0.md) — clean audio, and the wipe
 
 - **Draw Distance** in the Graphics tab, up to 4x. There is no global draw
   distance in this game -- the far plane is already twenty times further out than
