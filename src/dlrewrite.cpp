@@ -240,20 +240,32 @@ struct RaceTest {
     bool race() const { return world_first && inset_scissor; }
 };
 
-enum class Class { Auto, Left, Right, Stretch };
+// What the rewriter does with a 2D element on a widened frame.
+//
+// The first four are about placement: keep it where it is, pin it to an edge, or
+// widen it with the frame. Spill is about clipping instead, and is the only one
+// that changes nothing about where the element is drawn or how big it is -- it
+// lifts the game's 4:3 scissor so the element is allowed to continue past the
+// edge of the old frame. The sun over the race is the case it exists for: the
+// game draws it as a 48x48 square at x 0..48, running deliberately off the left
+// of its own screen, and on a widened frame it met the 4:3 boundary and stopped
+// dead instead of carrying on into the picture that is now there.
+enum class Class { Auto, Left, Right, Stretch, Spill };
 
 const char* class_name(Class c) {
     switch (c) {
         case Class::Left:    return "left";
         case Class::Right:   return "right";
         case Class::Stretch: return "stretch";
+        case Class::Spill:   return "spill";
         default:             return "center";
     }
 }
 
 // The tag table: hud.json in the settings folder. Four lists of identities,
 // "tex:0x01004A20" for a texture and "dl:0x0106F8A0" for a static list, as
-// the trace prints them, under "left", "right", "center" and "stretch".
+// the trace prints them, under "left", "right", "center", "stretch" and
+// "spill".
 struct Tags {
     std::unordered_map<std::string, Class> by_identity;
     bool loaded = false;
@@ -302,6 +314,7 @@ struct Tags {
         // Tagged in the inspector and promoted here so a release carries them.
         // Everything between these two markers is rewritten by that script;
         // hand-written entries go above the first marker, with their reasons.
+        by_identity["tex:0x0100fab0"] = Class::Spill;
         by_identity["tex:0x010331d0"] = Class::Right;
         by_identity["tex:0x01033cb8"] = Class::Auto;
         by_identity["tex:0x01033e98"] = Class::Auto;
@@ -324,8 +337,9 @@ struct Tags {
         by_identity["tex:0x010400d8"] = Class::Right;
         by_identity["tex:0x010405d8"] = Class::Right;
         by_identity["tex:0x01044f60"] = Class::Auto;
-        by_identity["tex:0x01046910"] = Class::Auto;
+        by_identity["tex:0x01046910"] = Class::Spill;
         by_identity["tex:0x010515a8"] = Class::Auto;
+        by_identity["tex:0x08004c00"] = Class::Spill;
         by_identity["tex:0x08024008"] = Class::Stretch;
         by_identity["tex:0x08025c88"] = Class::Stretch;
         by_identity["tex:0x08027748"] = Class::Stretch;
@@ -365,6 +379,7 @@ struct Tags {
         const std::pair<const char*, Class> lists[] = {
             { "left", Class::Left }, { "right", Class::Right },
             { "center", Class::Auto }, { "stretch", Class::Stretch },
+            { "spill", Class::Spill },
         };
         int count = 0;
         for (const auto& [key, cls] : lists) {
@@ -1410,7 +1425,11 @@ struct Walker {
     void set_rect_class(Class next, const Extent& e = Extent{}) {
         if (next == rect_cls) return;
         (void)e;
-        widen_scissor(next == Class::Left || next == Class::Right);
+        // Spill is here for the scissor and nothing else: it leaves the
+        // element's alignment and aspect at their defaults below, and only stops
+        // the game's 4:3 scissor cutting it off.
+        widen_scissor(next == Class::Left || next == Class::Right ||
+                      next == Class::Spill);
         if (rect_cls == Class::Stretch) {
             if (GfxCommand* cmd = reserve(1)) gEXSetRectAspect(cmd, G_EX_ASPECT_AUTO);
         }

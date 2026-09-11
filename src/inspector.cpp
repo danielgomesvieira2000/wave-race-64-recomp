@@ -72,6 +72,7 @@ const char* class_name(int cls) {
         case kLeft:    return "left";
         case kRight:   return "right";
         case kStretch: return "stretch";
+        case kSpill:   return "spill";
         default:       return "center";
     }
 }
@@ -100,7 +101,7 @@ void save_overrides(std::string& status) {
     }
     if (!doc.is_object()) doc = nlohmann::json::object();
 
-    const char* lists[] = { "center", "left", "right", "stretch" };
+    const char* lists[] = { "center", "left", "right", "stretch", "spill" };
     for (const char* list : lists) {
         if (!doc.contains(list) || !doc[list].is_array()) doc[list] = nlohmann::json::array();
     }
@@ -280,7 +281,7 @@ void draw_panel() {
             // given. Choosing another overrides this identity from the next
             // frame; "as classified" takes the override away again.
             ImGui::TableNextColumn();
-            const char* items[] = { "center", "left", "right", "stretch" };
+            const char* items[] = { "center", "left", "right", "stretch", "spill" };
             int selected = overridden ? current + 1 : 0;
             const char* preview = overridden ? items[current] : class_name(e.given_class);
             ImGui::SetNextItemWidth(-FLT_MIN);
@@ -290,7 +291,10 @@ void draw_panel() {
                     g_overrides.erase(e.identity);
                     g_any_overrides.store(!g_overrides.empty(), std::memory_order_relaxed);
                 }
-                for (int c = 0; c < 4; ++c) {
+                // Counted from the array rather than written out: the two got out
+                // of step the moment a fifth class was added, and a class missing
+                // from this list is invisible rather than broken.
+                for (int c = 0; c < int(sizeof(items) / sizeof(items[0])); ++c) {
                     if (ImGui::Selectable(items[c], selected == c + 1)) {
                         std::lock_guard<std::mutex> lock(g_mutex);
                         g_overrides[e.identity] = c;

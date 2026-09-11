@@ -33,7 +33,10 @@ namespace wr64::inspector {
 // The classes the rewriter can give an element, in the order the panel offers
 // them. Kept as a plain int across this interface so that dlrewrite.cpp's own
 // enum stays private to it.
-enum Class : int { kAuto = 0, kLeft = 1, kRight = 2, kStretch = 3 };
+// Matches dlrewrite's Class, in the order the dropdown lists them. kSpill
+// changes nothing about where an element is drawn -- it only lifts the 4:3
+// scissor so the element may continue past the old frame's edge.
+enum Class : int { kAuto = 0, kLeft = 1, kRight = 2, kStretch = 3, kSpill = 4 };
 
 // Whether the inspector is running at all. Everything below is a no-op when it
 // is not, so the calls can sit in the classifier unconditionally.

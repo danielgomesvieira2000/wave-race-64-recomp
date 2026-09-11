@@ -62,6 +62,7 @@ CLASSES = {
     "left": "Class::Left",
     "right": "Class::Right",
     "stretch": "Class::Stretch",
+    "spill": "Class::Spill",
 }
 BY_EXPRESSION = {v: k for k, v in CLASSES.items()}
 
