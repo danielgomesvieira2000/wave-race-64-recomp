@@ -188,7 +188,8 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
                              src/testdrive.cpp src/display.cpp src/dlrewrite.cpp
                              src/haptics.cpp src/music.cpp
                              src/inspector.cpp src/mods.cpp
-                             src/drawdistance.cpp src/audiodiag.cpp)
+                             src/drawdistance.cpp src/audiodiag.cpp
+                             src/resample.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()

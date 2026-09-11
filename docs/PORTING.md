@@ -799,6 +799,62 @@ place. `SDL_GetDefaultAudioInfo` (SDL 2.24+) answers it without opening a second
 device. Here the default device runs at 48000 while the game asks for 32000 in
 the menus and 26900 in a race, so everything is resampled, always.
 
+### Do the resampling yourself
+
+**Symptom:** audio that is not crackling and still is not clean -- a rasp or
+fizz on anything bright, present at all times, surviving every fix to the queue.
+
+The game asks for rates no sound card runs (26900 in a race here, 32000 in the
+menus), so something resamples. SDL will, and it loses continuity at every
+boundary of the block it is fed. Driving `SDL2.dll` directly with a sine, where
+a sine in must be a sine out and everything else in the output is the
+converter's:
+
+| 26900 -> 48000 Hz | 1 kHz | 8 kHz |
+|---|---|---|
+| SDL, fed in 448-frame blocks | 32.6 dB | **14.4 dB** |
+| SDL, fed in one single call | 63.6 dB | 43.4 dB |
+| the port's own resampler, any block size | 64.9 dB | **91.0 dB** |
+
+The middle row is what proves it is the boundaries and not the filter: same
+converter, same ratio, same signal. Sweeping the block size confirms it -- at
+32000 -> 48000 the figure rises **2.7 dB per doubling** (27.1, 29.9, 32.6, 35.1),
+which is the signature of a fixed quantity of damage at each boundary repeated at
+the block rate. `SDL_HINT_AUDIO_RESAMPLING_MODE` changes nothing: fast, medium
+and best all measure 14.4.
+
+**The block is the device period**, which is also what decides whether the queue
+can be kept ahead of the card (previous section). Leaving the conversion to SDL
+therefore sets the crackle against the dirt: short periods for one, long for the
+other, and 23 dB at the best setting available.
+
+So convert in the port, and open the device at whatever rate it reports so SDL
+has nothing left to resample. `src/resample.cpp` is 64 taps of windowed sinc,
+Kaiser at beta 8.6, cutoff at 0.455 of the source rate, evaluated at arbitrary
+fractional positions from a table of 256 points per source sample and normalised
+by the sum of its own weights. It keeps its filter state across buffers, so there
+are no block boundaries at all: measured at 91.0 dB fed in blocks of 64, 256,
+448, 1024 and 4096, identical to the decimal in every case. About ten million
+multiply-adds a second at 48000 stereo.
+
+Three things fall out of owning it:
+
+- **The output frequency stops drifting.** SDL's stream produces a whole number
+  of output frames per call, and the rounding shifts the pitch: 26900 -> 48000
+  measured +0.07 %, which is also what makes a fixed-frequency probe miss the
+  tone and report nonsense. The port's converter measures 0.000 %.
+- **The device never has to be reopened.** It runs at the hardware's rate
+  whatever the game asks for, so the gap the reopen used to leave in the sound at
+  every entry to and exit from a race is gone with it.
+- **The queue is now in device frames** and the game must be answered in its own.
+  At 26900 against a 48000 device those differ by 1.78, and the game paces its
+  entire audio thread off that number.
+
+Watch the floor when measuring this: quantising a test sine to 16 bits leaves a
+periodic error that reads as distortion. A 1 kHz tone measured 63.0 dB through no
+resampling at all, which is why the 1 kHz column above tops out near 65 rather
+than near 96.
+
 ### Give the microcode a private copy of its command list
 
 **Symptom:** a click every ~30 seconds; occasional "audio frame dropped".

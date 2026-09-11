@@ -36,6 +36,7 @@
 
 #include "wr64/audiodiag.h"
 #include "wr64/crash_handler.h"
+#include "wr64/resample.h"
 #if WR64_WITH_FRONTEND
 #   include "wr64/frontend.h"
 #   include <recompinput/input_events.h>
@@ -430,7 +431,15 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
 // between and a second place for the sample count to drift.
 
 SDL_AudioDeviceID g_audio_device = 0;
+
+// The game's rate, and the device's. They used to be the same number: the device
+// was reopened at whatever the game asked for and SDL resampled to the hardware.
+// It does that badly (see include/wr64/resample.h), so the device is opened at
+// the rate the hardware actually runs and the port converts. They are now two
+// different things and nothing may conflate them -- the SDL queue is measured in
+// device frames, everything the game is told is in its own.
 uint32_t g_audio_frequency = 32000;
+uint32_t g_device_frequency = 0;
 
 // The Sound tab's Main Volume, as a percentage.
 //
@@ -506,8 +515,30 @@ int device_period_frames() {
     return value;
 }
 
-// The headroom in frames at the rate now open, worked out once per device open.
+// The headroom, in the game's own frames, since that is the unit it is
+// subtracted in. Worked out whenever either rate changes.
 uint32_t g_queue_headroom_frames = 0;
+
+// Whether the port converts the rate itself. Off hands the job back to SDL and
+// reopens the device at the game's rate, which is what this used to do and is
+// kept for comparing the two.
+bool resample_in_port() {
+    static const bool on = std::getenv("WR64_AUDIO_NO_RESAMPLE") == nullptr;
+    return on;
+}
+
+// The rate to open the device at. SDL_GetDefaultAudioInfo asks the machine
+// rather than guessing; 48000 is the fallback, and the open below allows SDL to
+// answer with something else again.
+uint32_t preferred_device_rate() {
+    SDL_AudioSpec spec{};
+    char* name = nullptr;
+    const bool known = SDL_GetDefaultAudioInfo(&name, &spec, 0) == 0;
+    if (name != nullptr) {
+        SDL_free(name);
+    }
+    return (known && spec.freq > 0) ? static_cast<uint32_t>(spec.freq) : 48000u;
+}
 
 void close_audio_device() {
     if (g_audio_device != 0) {
@@ -533,8 +564,14 @@ bool open_audio_device() {
         return false;
     }
 
+    // The device is opened at the hardware's own rate when the port is doing the
+    // conversion, so SDL has no resampling left to do; the frequency change is
+    // allowed so that a machine which disagrees gets to say so, and the port
+    // converts to whatever comes back.
+    const bool own_conversion = resample_in_port();
+
     SDL_AudioSpec want{};
-    want.freq = static_cast<int>(g_audio_frequency);
+    want.freq = static_cast<int>(own_conversion ? preferred_device_rate() : g_audio_frequency);
     want.format = AUDIO_S16SYS;
     want.channels = kAudioChannels;
     // What SDL takes in one pull, and so the depth the queue has to stay above at
@@ -543,44 +580,33 @@ bool open_audio_device() {
     want.callback = nullptr;  // queue-driven
 
     SDL_AudioSpec have{};
-    g_audio_device = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    g_audio_device = SDL_OpenAudioDevice(
+        nullptr, 0, &want, &have, own_conversion ? SDL_AUDIO_ALLOW_FREQUENCY_CHANGE : 0);
     if (g_audio_device == 0) {
         std::fprintf(stderr, "[wr64] SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
         return false;
     }
 
-    g_queue_headroom_frames =
-        static_cast<uint32_t>(uint64_t(have.freq) * queue_headroom_ms() / 1000u);
+    g_device_frequency = static_cast<uint32_t>(have.freq);
+    g_queue_headroom_frames = static_cast<uint32_t>(
+        uint64_t(g_audio_frequency) * queue_headroom_ms() / 1000u);
 
     SDL_PauseAudioDevice(g_audio_device, 0);
     std::fprintf(stderr, "[wr64] audio device open at %d Hz, %d channels,"
-                         " %d-frame period, holding %u frames (%u ms) in hand\n",
+                         " %d-frame period, holding %u of the game's frames (%u ms) in hand\n",
                  have.freq, have.channels, have.samples,
                  g_queue_headroom_frames, queue_headroom_ms());
     std::fflush(stderr);
 
-    // `have` is not the hardware's spec. With SDL_AUDIO_ALLOW_ANY_CHANGE unset
-    // SDL builds a converter and hands back what was asked for, so the line above
-    // says nothing about what the machine is actually running at -- and whether
-    // SDL is resampling, and across what ratio, is one of the things being
-    // measured. SDL_GetDefaultAudioInfo answers it without opening a second
-    // device. Only asked for when the statistics are on.
-    if (wr64::audiodiag::stats_enabled()) {
-        SDL_AudioSpec device_spec{};
-        char* device_name = nullptr;
-        const bool known = SDL_GetDefaultAudioInfo(&device_name, &device_spec, 0) == 0;
-        if (device_name != nullptr) {
-            SDL_free(device_name);
-        }
-        wr64::audiodiag::device_opened(static_cast<uint32_t>(have.freq),
-                                       static_cast<uint32_t>(have.samples),
-                                       known ? static_cast<uint32_t>(device_spec.freq) : 0u,
-                                       known ? static_cast<uint32_t>(device_spec.samples) : 0u);
-    }
-    else {
-        wr64::audiodiag::device_opened(static_cast<uint32_t>(have.freq),
-                                       static_cast<uint32_t>(have.samples), 0u, 0u);
-    }
+    wr64::resample::configure(g_audio_frequency, g_device_frequency);
+
+    // The statistics are kept in device frames at the device's rate, because the
+    // queue holds converted audio and the arithmetic that matters -- what the
+    // device wanted against what it got -- is the device's.
+    wr64::audiodiag::device_opened(g_device_frequency,
+                                   static_cast<uint32_t>(have.samples),
+                                   own_conversion ? g_device_frequency : preferred_device_rate(),
+                                   0u);
     return true;
 }
 
@@ -642,16 +668,23 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
         }
     }
 
+    // The rate conversion, which keeps its filter state across calls so that the
+    // boundaries between buffers leave no mark at all. A pass-through when the
+    // device happens to run at the game's rate. See include/wr64/resample.h.
+    static std::vector<int16_t> converted;
+    wr64::resample::process(unswapped.data(), sample_count, converted);
+
     // Measured before the buffer goes in, so it is the trough: what the device
     // had left to play at the moment the game got round to making more. See
     // include/wr64/audiodiag.h. Both calls are no-ops unless a WR64_AUDIO_*
-    // variable is set.
+    // variable is set, and what is dumped is now the finished article -- after
+    // the conversion, exactly what the sound card receives.
     wr64::audiodiag::queued(
         static_cast<uint32_t>(SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame),
-        unswapped.data(), sample_count);
+        converted.data(), converted.size());
 
-    SDL_QueueAudio(g_audio_device, unswapped.data(),
-                   static_cast<Uint32>(sample_count * sizeof(int16_t)));
+    SDL_QueueAudio(g_audio_device, converted.data(),
+                   static_cast<Uint32>(converted.size() * sizeof(int16_t)));
 
     // A silent port and a working one queue samples equally often, so the
     // count alone proves nothing; the amplitude is what separates the microcode
@@ -678,15 +711,22 @@ size_t get_frames_remaining() {
         // buffer that will never empty.
         return 0;
     }
-    const size_t frames = SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame;
-    // The real depth goes to the diagnostics, because that is what is being
-    // measured. No-op unless WR64_AUDIO_STATS is set.
-    wr64::audiodiag::polled(static_cast<uint32_t>(frames));
+    const size_t device_frames = SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame;
+    // The real depth, in device frames, goes to the diagnostics: that is the unit
+    // the queue is in and the unit the device consumes in. No-op unless
+    // WR64_AUDIO_STATS is set.
+    wr64::audiodiag::polled(static_cast<uint32_t>(device_frames));
 
-    // The game gets a smaller number, makes up the difference, and the queue
-    // settles that much deeper. See kQueueHeadroomMs: this one subtraction is the
-    // whole mechanism, and it works only because the game sizes every buffer from
-    // the answer to this call.
+    // The game is answered in its own frames. Getting this wrong is not subtle --
+    // at 26900 against a 48000 device the two differ by a factor of 1.78, and the
+    // game paces its whole audio thread off this number.
+    const size_t frames =
+        static_cast<size_t>(wr64::resample::to_source_frames(uint64_t(device_frames)));
+
+    // And it gets a smaller number still, so it makes up the difference and the
+    // queue settles that much deeper. See kQueueHeadroomMs: this one subtraction
+    // is the whole mechanism, and it works only because the game sizes every
+    // buffer from the answer to this call.
     return frames > g_queue_headroom_frames ? frames - g_queue_headroom_frames : 0;
 }
 
@@ -695,6 +735,18 @@ void set_frequency(uint32_t frequency) {
         return;
     }
     g_audio_frequency = frequency;
+
+    // With the port doing the conversion the device never has to be reopened --
+    // it runs at the hardware's rate whatever the game asks for, and only the
+    // conversion changes. That also removes the gap the reopen used to leave in
+    // the sound every time the game moved between 32000 and 26900, which is at
+    // every transition into and out of a race.
+    if (g_audio_device != 0 && resample_in_port()) {
+        g_queue_headroom_frames = static_cast<uint32_t>(
+            uint64_t(g_audio_frequency) * queue_headroom_ms() / 1000u);
+        wr64::resample::configure(g_audio_frequency, g_device_frequency);
+        return;
+    }
     open_audio_device();
 }
 

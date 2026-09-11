@@ -26,6 +26,14 @@ notice changes.
   in the sound twenty-six times a second. The port now holds 30 ms in hand and
   asks the device for 256 frames at a time instead of 1024. The samples
   themselves were never at fault: a dump of the same run is clean.
+- **The port resamples its own audio now**, and the output device is opened at
+  the rate the machine actually runs rather than at the rate the game asks for.
+  SDL was doing the conversion and losing continuity at every block boundary --
+  measured at 14.4 dB of signal to everything-else on an 8 kHz tone, against 91.0
+  for the replacement, which measures the same whether it is fed 64 frames at a
+  time or 4096. The pitch stops drifting with it, and so does the gap in the
+  sound at every entry to and exit from a race, because the device no longer has
+  to be reopened when the game changes rate.
 - `WR64_AUDIO_STATS` and `WR64_AUDIO_DUMP` measure the audio path: how much
   silence the output device had to be given because nothing was queued in
   time, and what the samples sound like before SDL ever sees them. Between
