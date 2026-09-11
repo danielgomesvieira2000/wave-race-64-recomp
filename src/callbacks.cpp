@@ -487,11 +487,18 @@ constexpr int kBytesPerFrame = kAudioChannels * static_cast<int>(sizeof(int16_t)
 //
 // So the port under-reports the depth by a fixed amount, the game makes that
 // much more, and the queue settles that much deeper. The cost is latency equal
-// to the headroom, which is why the period is cut at the same time: a shorter
-// period needs less headroom to cover it, and a game that takes no timing from
-// its own sound can afford the tens of milliseconds either way.
+// to the headroom, and a game that takes no timing from its own sound can afford
+// tens of milliseconds of it.
+//
+// The period only has to be comfortably under the headroom, and is otherwise as
+// large as that allows: each one is a wakeup of the audio thread, and this port
+// runs on machines that are already not keeping pace with the game. It was
+// briefly 256 for a reason that no longer holds -- while SDL was doing the
+// resampling, the period was also the block its converter was fed in, and a
+// shorter block was cleaner. The port converts now (see wr64/resample.h), so
+// nothing about quality depends on this number any more.
 constexpr uint32_t kQueueHeadroomMs = 30;
-constexpr int kDevicePeriodFrames = 256;
+constexpr int kDevicePeriodFrames = 512;
 
 // Both are overridable, because the next question about either is always "and at
 // a different value?", and rebuilding to ask it is a poor trade.

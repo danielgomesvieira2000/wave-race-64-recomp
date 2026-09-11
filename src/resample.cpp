@@ -2,9 +2,11 @@
 
 #include "wr64/resample.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace wr64::resample {
 namespace {
@@ -32,7 +34,7 @@ constexpr double kKaiserBeta = 8.6;
 constexpr double kPi = 3.14159265358979323846;
 
 std::vector<float> g_table;      // the windowed sinc, at kTableResolution per sample
-std::vector<int16_t> g_pending;  // source frames still needed, interleaved
+std::vector<float> g_pending;    // source frames still needed, interleaved
 double g_pos = 0.0;              // where the next output sits, in g_pending frames
 double g_step = 1.0;             // source frames per destination frame
 double g_half = kHalfTaps;       // half the kernel, in source frames
@@ -57,7 +59,10 @@ double bessel_i0(double x) {
 }
 
 void build_table(double cutoff_per_source_sample) {
-    const int points = static_cast<int>(std::ceil(g_half * kTableResolution)) + 2;
+    // Eight guard points past the end, all zero, so the inner loop can step off
+    // the tail of the kernel by a sample or two without a bounds check. The
+    // alternative is a compare and a branch on every tap.
+    const int points = static_cast<int>(std::ceil(g_half * kTableResolution)) + 8;
     g_table.assign(static_cast<size_t>(points), 0.0f);
 
     const double denominator = bessel_i0(kKaiserBeta);
@@ -78,10 +83,48 @@ void build_table(double cutoff_per_source_sample) {
     }
 }
 
-int16_t clamp_to_sample(double value) {
-    if (value > 32767.0) return 32767;
-    if (value < -32768.0) return -32768;
-    return static_cast<int16_t>(value < 0.0 ? value - 0.5 : value + 0.5);
+int16_t clamp_to_sample(float value) {
+    if (value > 32767.0f) return 32767;
+    if (value < -32768.0f) return -32768;
+    return static_cast<int16_t>(value < 0.0f ? value - 0.5f : value + 0.5f);
+}
+
+// Whether to report what the conversion costs. The same switch as the rest of
+// the audio statistics, read here rather than called for: this file has no other
+// dependency in the project and is worth keeping that way, since it is the part
+// most likely to be lifted into another port.
+bool stats_wanted() {
+    static const bool on = [] {
+        const char* value = std::getenv("WR64_AUDIO_STATS");
+        return value != nullptr && value[0] != 0 && std::strcmp(value, "0") != 0;
+    }();
+    return on;
+}
+
+// What the conversion costs, reported with the rest of the audio statistics.
+// It runs on the thread that has to keep pace with the game, on machines that
+// are not always keeping pace as it is, so the figure is worth having in front of
+// anyone changing the tap count.
+std::chrono::steady_clock::duration g_spent{};
+uint64_t g_produced = 0;
+std::chrono::steady_clock::time_point g_reported = std::chrono::steady_clock::now();
+
+void note_cost(std::chrono::steady_clock::duration spent, uint64_t frames,
+               std::chrono::steady_clock::time_point now) {
+    g_spent += spent;
+    g_produced += frames;
+    if (now - g_reported < std::chrono::seconds(4)) {
+        return;
+    }
+    const double window = std::chrono::duration<double>(now - g_reported).count();
+    const double used = std::chrono::duration<double>(g_spent).count();
+    std::fprintf(stderr, "[wr64-audio] conversion: %.2f%% of one core"
+                         " (%.0f frames a second)\n",
+                 100.0 * used / window, double(g_produced) / window);
+    std::fflush(stderr);
+    g_reported = now;
+    g_spent = {};
+    g_produced = 0;
 }
 
 }  // namespace
@@ -114,7 +157,7 @@ void configure(uint32_t src_rate, uint32_t dst_rate) {
     // has its full context and the conversion begins in a defined state rather
     // than with whatever the first buffer's edge implies.
     const size_t lead = static_cast<size_t>(std::ceil(g_half)) + 1;
-    g_pending.assign(lead * 2, int16_t{ 0 });
+    g_pending.assign(lead * 2, 0.0f);
     g_pos = double(lead);
 
     std::fprintf(stderr, "[wr64] resampling %u -> %u Hz in the port"
@@ -129,42 +172,75 @@ void process(const int16_t* in, size_t sample_count, std::vector<int16_t>& out) 
         return;
     }
 
-    g_pending.insert(g_pending.end(), in, in + sample_count);
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+
+    g_pending.reserve(g_pending.size() + sample_count);
+    for (size_t i = 0; i < sample_count; ++i) {
+        g_pending.push_back(static_cast<float>(in[i]));
+    }
     const size_t frames = g_pending.size() / 2;
 
     out.clear();
     out.reserve(static_cast<size_t>(double(sample_count) / g_step) + 4);
+
+    const float* const history = g_pending.data();
+    const float* const table = g_table.data();
 
     // An output can be produced while the kernel's right-hand side is covered by
     // frames that have actually arrived. Everything else waits for the next
     // buffer, which is what makes this continuous across calls.
     const double limit = double(frames) - g_half - 1.0;
     while (g_pos < limit) {
+        // The distance from the output's position to each tap changes by exactly
+        // one source sample per tap, so the table index changes by exactly
+        // kTableResolution -- an integer add -- and the fractional position
+        // inside a table cell is the same for every tap on a side. That is the
+        // whole trick: no absolute value, no multiply and no conversion inside
+        // the loop, where a first attempt at this had all three and cost seven
+        // per cent of a core.
+        const long centre = static_cast<long>(g_pos);
+        const double fraction = g_pos - double(centre);
         const long first = static_cast<long>(std::ceil(g_pos - g_half));
-        const long last = static_cast<long>(std::floor(g_pos + g_half));
+        const long last = static_cast<long>(g_pos + g_half);
 
-        double left = 0.0, right = 0.0, weight_sum = 0.0;
-        for (long i = first; i <= last; ++i) {
-            if (i < 0 || static_cast<size_t>(i) >= frames) {
-                continue;
+        float left = 0.0f, right = 0.0f, weight_sum = 0.0f;
+
+        // Taps at and before the output's position, walking away from it.
+        {
+            const double exact = fraction * kTableResolution;
+            size_t index = static_cast<size_t>(exact);
+            const float within = static_cast<float>(exact - double(index));
+            for (long i = centre; i >= first; --i, index += kTableResolution) {
+                const float a = table[index];
+                const float weight = a + within * (table[index + 1] - a);
+                const float* const frame = history + static_cast<size_t>(i) * 2;
+                left += weight * frame[0];
+                right += weight * frame[1];
+                weight_sum += weight;
             }
-            const double distance = std::fabs(g_pos - double(i)) * kTableResolution;
-            const size_t index = static_cast<size_t>(distance);
-            if (index + 1 >= g_table.size()) {
-                continue;
-            }
-            const double fraction = distance - double(index);
-            const double weight = g_table[index] + (g_table[index + 1] - g_table[index]) * fraction;
-            left += weight * g_pending[static_cast<size_t>(i) * 2 + 0];
-            right += weight * g_pending[static_cast<size_t>(i) * 2 + 1];
-            weight_sum += weight;
         }
+        // And the taps after it.
+        {
+            const double exact = (1.0 - fraction) * kTableResolution;
+            size_t index = static_cast<size_t>(exact);
+            const float within = static_cast<float>(exact - double(index));
+            for (long i = centre + 1; i <= last; ++i, index += kTableResolution) {
+                const float a = table[index];
+                const float weight = a + within * (table[index + 1] - a);
+                const float* const frame = history + static_cast<size_t>(i) * 2;
+                left += weight * frame[0];
+                right += weight * frame[1];
+                weight_sum += weight;
+            }
+        }
+
         // Normalising by the weights the kernel actually landed on flattens the
         // gain, which otherwise ripples by a fraction of a decibel with the
         // fractional position.
-        if (weight_sum > 1e-9) {
-            left /= weight_sum;
-            right /= weight_sum;
+        if (weight_sum > 1e-9f) {
+            const float scale = 1.0f / weight_sum;
+            left *= scale;
+            right *= scale;
         }
         out.push_back(clamp_to_sample(left));
         out.push_back(clamp_to_sample(right));
@@ -176,6 +252,11 @@ void process(const int16_t* in, size_t sample_count, std::vector<int16_t>& out) 
     if (spent > 0) {
         g_pending.erase(g_pending.begin(), g_pending.begin() + spent * 2);
         g_pos -= double(spent);
+    }
+
+    if (stats_wanted()) {
+        const std::chrono::steady_clock::time_point finished = std::chrono::steady_clock::now();
+        note_cost(finished - started, out.size() / 2, finished);
     }
 }
 
