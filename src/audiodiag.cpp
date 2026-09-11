@@ -122,15 +122,18 @@ void report(clock::time_point now) {
 
 // -------------------------------------------------------------- the dump ----
 //
-// A canonical 44-byte RIFF header followed by the samples. The two length fields
-// are rewritten every few seconds rather than only at the end, because this file
-// is most wanted from a run that ended in a crash or was killed, and a header
-// left saying zero is a file nothing will open.
+// A canonical 44-byte RIFF header followed by the samples, with the two length
+// fields kept true after every buffer rather than written once at the end. There
+// is no shutdown hook to close the file from, and the runs worth dumping are the
+// ones that end badly.
 
 std::FILE* g_wav = nullptr;
 uint64_t g_wav_bytes = 0;
-clock::time_point g_wav_sized = clock::now();
 int g_wav_index = 0;
+// The rate of the file that is open, which is not the rate the device is now
+// running at: a device reopen sets the new rate first and then closes the old
+// file, and stamping that file with the new rate makes it play back wrong.
+uint32_t g_wav_rate = 0;
 
 void put32(unsigned char* p, uint32_t v) {
     p[0] = static_cast<unsigned char>(v);
@@ -166,11 +169,12 @@ void write_wav_header(uint32_t rate, uint64_t data_bytes) {
 
 void open_wav(uint32_t rate) {
     if (g_wav != nullptr) {
-        write_wav_header(g_rate, g_wav_bytes);
+        write_wav_header(g_wav_rate, g_wav_bytes);
         std::fclose(g_wav);
         g_wav = nullptr;
     }
     g_wav_bytes = 0;
+    g_wav_rate = rate;
 
     char name[64];
     std::snprintf(name, sizeof(name), "wr64-audio-%d-%uHz.wav", ++g_wav_index, rate);
@@ -182,23 +186,22 @@ void open_wav(uint32_t rate) {
         return;
     }
     write_wav_header(rate, 0);
-    g_wav_sized = clock::now();
     std::fprintf(stderr, "[wr64-audio] dumping what is handed to SDL to %s\n", path.c_str());
     std::fflush(stderr);
 }
 
-void write_wav(const int16_t* data, size_t sample_count, clock::time_point now) {
+void write_wav(const int16_t* data, size_t sample_count) {
     if (g_wav == nullptr) {
         return;
     }
     const size_t bytes = sample_count * sizeof(int16_t);
     std::fwrite(data, 1, bytes, g_wav);
     g_wav_bytes += bytes;
-    if (now - g_wav_sized >= std::chrono::seconds(5)) {
-        g_wav_sized = now;
-        write_wav_header(g_rate, g_wav_bytes);
-        std::fflush(g_wav);
-    }
+    // Rewritten after every buffer rather than on a timer. There is no shutdown
+    // hook to close this file from, and the runs worth dumping are the ones that
+    // end badly, so the two length fields have to be true at every moment. It is
+    // a 44-byte write sixty times a second on a file that is already open.
+    write_wav_header(g_wav_rate, g_wav_bytes);
 }
 
 }  // namespace
@@ -266,7 +269,7 @@ void queued(uint32_t queue_frames, const int16_t* data, size_t sample_count) {
     std::lock_guard<std::mutex> guard(g_lock);
 
     if (dump_enabled()) {
-        write_wav(data, sample_count, now);
+        write_wav(data, sample_count);
     }
     if (!stats_enabled()) {
         return;
