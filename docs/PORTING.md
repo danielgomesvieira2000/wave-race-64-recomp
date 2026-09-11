@@ -956,6 +956,56 @@ every frame whether or not the symbol resolves**: most frames in a shutdown cras
 are in code the project did not write, and `(no symbol)` does not distinguish a
 graphics driver from SDL from freed memory, which is the distinction that matters.
 
+### The transition curtain, and why it is still 4:3
+
+**Symptom:** the wipe between the select screens stays boxed in the middle 4:3
+while every rectangle around it is placed correctly.
+
+Measured in RT64's frame debugger and with `WR64_HUD_TRACE`, so the numbers below
+are read rather than inferred.
+
+| | |
+|---|---|
+| Geometry | 8 quads, 16 triangles, every vertex at x = 0 or x = 3200, y stepping by -320 from 0 to -2560, **z = 0 throughout** |
+| Width | 3200 = 320 x 10 -- **exactly the game's 4:3 screen** |
+| Projection | perspective, `[0][0] = [1][1] = 3.371` -- built at an aspect of **one** |
+| View | identity |
+| Viewport | `0x800DA8F0`, half-width 160 (full width), **centre 226 rather than 160** |
+| Scissor | 0 0 1280 960 -- the 4:3 framebuffer at 4x |
+| States | `0x0A` and `0x0B`, between rider-select and course-overview |
+
+**The wipe is animated by sliding the viewport**, not by moving the geometry: the
+curtain is a fixed 3200-unit slab and the viewport's centre travels across the
+screen. That is why nothing in the rectangle machinery has ever reached it -- the
+group contains no rectangles at all -- and why it is not a projection problem
+either.
+
+Three discriminators were tried and all three are wrong, which is worth recording
+because each looks convincing until it is measured:
+
+- **Aspect.** `[0][0] == [1][1]` does separate screen-space geometry from a 3D
+  view in general -- the craft on the rider-select screen frame a real 4:3
+  frustum at `1.611 / 2.148`. But the *models* on that screen are drawn under the
+  same square `3.371 / 3.371` projection as the curtain, so stretching on aspect
+  alone sends them across the frame while their boxes stay put.
+- **A full-frame viewport.** The curtain's viewport is deliberately off-centre
+  for most of the sweep, so this test rejects exactly the frames that matter.
+- **Viewport width.** Every viewport on these screens is 320 wide. Only the
+  centre differs.
+
+What has not been tried: identifying the curtain by its viewport's address
+(`0x800DA8F0` is a fixed RDRAM address, and this project already identifies 2D
+elements by address in the HUD tag table), or by the geometry itself -- flat
+z = 0 quads spanning the full width are a signature nothing else on these screens
+has. Either would need the sweep's range widened as well as the slab, since the
+animation is in the viewport: on a wider frame the centre has to travel further
+and the viewport has to cover more.
+
+One trap for whoever picks this up. A stretch class in force during these frames
+is **not necessarily one you set** -- the 2D classifier legitimately assigns
+`Class::Stretch` to full-frame rectangles on the same frames. Code that takes a
+stretch back off by testing `cls == Class::Stretch` will strip those too.
+
 ### The display-list rewriter
 
 The technique generalises to any RT64-based port whose game predates the extended
