@@ -127,10 +127,6 @@ If something sits in the wrong place, that window is how to say which thing.
 
 ## Known issues
 
-- The **wipe between the rider-select and course-overview screens** is still
-  boxed in the middle 4:3. It is understood -- two triangle calls in one
-  perspective group, with no rectangles in it, which is why rectangle attributes
-  never touched it -- and written up in [docs/PORTING.md](docs/PORTING.md).
 - **Windows** is what this project builds and tests today. A fork carries native
   macOS support; wider platform coverage is intended.
 

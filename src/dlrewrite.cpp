@@ -452,6 +452,24 @@ struct Walker {
     Mat4 projection = Mat4::identity();         // everything on the projection stack
     Mat4 projection_only = Mat4::identity();    // the projection without the camera
     bool projection_is_perspective = false;
+
+    // Screen-space perspective sections released to the widened frame this
+    // list, for the per-frame report, and the switch that turns the treatment
+    // off. The switch is here for the same reason the other bisect switches are:
+    // whether a change is an improvement is a question only a side-by-side
+    // answers.
+    uint32_t released_sections = 0;
+    bool no_curtain = false;
+
+    // Whether this walk has a screen-space section open. Deliberately separate
+    // from `cls`: the 2D classifier assigns Class::Stretch to full-frame
+    // rectangles on these same frames, and keying off that class would tangle
+    // the two.
+    bool curtain_open = false;
+
+    // Whether the origin was on when the section opened, so it can be put back
+    // exactly as it was: the screens on either side of the wipe still want it.
+    bool curtain_took_origin_off = false;
     Mat4 modelview[16];
     int modelview_depth = 0;
     uint32_t texture = 0;
@@ -526,6 +544,34 @@ struct Walker {
             r.m[i / 4][i % 4] = static_cast<float>(static_cast<int32_t>(full)) / 65536.0f;
         }
         return r;
+    }
+
+    // Screen-space geometry laid out under a perspective projection, told apart
+    // from an actual 3D view by the aspect ratio the game built the projection
+    // with. `guPerspective` divides the horizontal term by the aspect, so a view
+    // meant for a 4:3 screen has [0][0] = [1][1] / 1.333. These are equal, which
+    // means an aspect of exactly one -- nobody frames a camera that way, and it
+    // is what you get when the matrix exists to put flat geometry on the screen
+    // rather than to look at a world.
+    //
+    // The transition curtain is the case this was written for: eight bands of
+    // 3200 x 320 units at z = 0, under [0][0] = [1][1] = 3.370880, with an
+    // identity view. 3200 is 320 x 10 -- exactly the width of the game's 4:3
+    // screen, which is why it leaves bars on a wider one and why widening the
+    // scissor alone would not have helped: there is no more curtain to reveal.
+    static bool square_aspect(const Mat4& p) {
+        const float x = std::fabs(p.m[0][0]);
+        const float y = std::fabs(p.m[1][1]);
+        if (x < 1e-6f || y < 1e-6f) return false;
+        return std::fabs(x - y) < 1e-3f * y;
+    }
+
+    // Whether what is in force right now is screen-space geometry: built at an
+    // aspect of one, and owning the whole frame. Both halves, whenever asked.
+    bool screen_space_section() const {
+        return !no_curtain && have_projection && projection_is_perspective &&
+               square_aspect(projection_only) && have_viewport &&
+               viewport_is_full_frame(viewport_w1);
     }
 
     static bool perspective(const Mat4& p) {
@@ -677,6 +723,7 @@ struct Walker {
     void on_viewport_load(uint32_t segmented) {
         if (!menu || noemit) return;
         const bool full_frame = viewport_is_full_frame(segmented);
+
         if (!full_frame && !centred) {
             viewport_align(G_EX_ORIGIN_CENTER, origin_cancel(G_EX_ORIGIN_CENTER));
             centred = true;
@@ -687,6 +734,96 @@ struct Walker {
             viewport_align(G_EX_ORIGIN_NONE, 0);
             centred = false;
             centred_by_viewport = false;
+        }
+
+    }
+
+    // Whether a called list loads a viewport of its own that covers the whole
+    // frame, centred.
+    //
+    // The rewriter emits a call and lets RT64 walk into it, so a viewport the
+    // called list loads is invisible at the call site: what is in force there is
+    // whatever the previous group left behind. This game draws its transition
+    // curtain from such a list and loads its own centred, frame-wide viewport
+    // inside it -- which is why the debugger shows that viewport on the curtain's
+    // draw while the rewriter, asked at the call, sees the stale off-centre one
+    // belonging to the screen underneath, and rejects it. Every test made at the
+    // call site was reading state that is, for this element, systematically one
+    // group out of date.
+    //
+    // So this looks. It walks the called list for a viewport load and answers
+    // whether that viewport covers the frame, following nested calls and
+    // branches the same way the rest of the walker does.
+    bool list_loads_full_frame_viewport(uint32_t addr, int depth) {
+        if (depth > 4) return false;
+        for (uint32_t steps = 0; steps < 8192; ++steps) {
+            const uint32_t* c = words(addr);
+            if (c == nullptr) return false;
+            const uint32_t w0 = c[0];
+            const uint32_t w1 = c[1];
+            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
+            addr += 8;
+
+            if (op == kOpEndDisplayList) return false;
+            if (op == kOpMoveMem && ((w0 >> 16) & 0xFF) == kMoveMemViewport) {
+                return viewport_is_full_frame(w1);
+            }
+            if (op == kOpDisplayList) {
+                const bool branch = ((w0 >> 16) & 0xFF) != 0;
+                if (branch) {
+                    addr = physical(w1);
+                    continue;
+                }
+                if (list_loads_full_frame_viewport(physical(w1), depth + 1)) return true;
+            }
+        }
+        return false;
+    }
+
+    // Opens or closes a screen-space section.
+    //
+    // Asked at each vertex load rather than at a projection or viewport load,
+    // and that is the whole of what took four attempts to get right. The two
+    // facts that define such a section -- a projection built at an aspect of one
+    // and a viewport that still covers the whole frame -- arrive as separate
+    // commands, in either order, and the order differs between the two phases of
+    // the wipe. Deciding at either load therefore asks the question while half
+    // the answer is the previous group's. At a vertex load both are final for
+    // the geometry about to be drawn, and there is nothing left to reason about.
+    //
+    // A 2D class in force means the classifier is placing this, and it is left
+    // alone.
+    void curtain(bool want) {
+        if (want == curtain_open) return;
+        if (want && cls != Class::Auto) return;
+        curtain_open = want;
+
+        // RT64 already renders a pass that covers the frame across the widened
+        // frame -- it measures a viewport through its clip ratios, so a 320-wide
+        // one measures 1920 and covers it however far it has been moved. What
+        // stops it is the origin this port puts on a menu's viewport to keep 3D
+        // objects in the boxes the layout gives them. That is right for a craft
+        // in a box and wrong for a curtain meant to cover the screen, so the
+        // origin comes off for the length of the call and goes back after.
+        //
+        // Through viewport_align rather than align_viewport: the latter also
+        // re-emits the last viewport the rewriter saw, which here belongs to the
+        // screen underneath, and its translate of 59,74 against the curtain's
+        // 160,120 moved the curtain down the screen by the difference.
+        if (want) {
+            curtain_took_origin_off = centred;
+            if (centred) {
+                viewport_align(G_EX_ORIGIN_NONE, 0);
+                centred = false;
+            }
+            ++released_sections;
+        }
+        else if (curtain_took_origin_off) {
+            if (!centred) {
+                viewport_align(G_EX_ORIGIN_CENTER, origin_cancel(G_EX_ORIGIN_CENTER));
+                centred = true;
+            }
+            curtain_took_origin_off = false;
         }
     }
 
@@ -1818,6 +1955,9 @@ namespace wr64::dlrewrite {
 uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     static const bool disabled = std::getenv("WR64_NO_REWRITE") != nullptr;
     static const bool hud_off = std::getenv("WR64_HUD_OFF") != nullptr;
+    // The transition curtain, and anything else laid out in screen space under a
+    // perspective projection: stretched to the frame unless this says otherwise.
+    static const bool no_curtain = std::getenv("WR64_NO_CURTAIN") != nullptr;
     static const bool tracing = std::getenv("WR64_HUD_TRACE") != nullptr;
     static Tags tags;
     static uint32_t traced_state = 0xFFFFFFFFu;
@@ -1834,8 +1974,10 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     const uint32_t state = wr64::current_game_state();
     const auto& config = ultramodern::renderer::get_graphics_config();
 
-    wr64::drawdistance::apply(rdram);
-
+    wr64::drawdistance::apply(rdram);
+
+
+
     wr64::inspector::begin_frame(state);
     trace_3d(rdram, list_vaddr, state);
 
@@ -1843,6 +1985,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     w.rdram = rdram;
     w.state = state;
     w.menu = !racing(state);
+    w.no_curtain = no_curtain;
     w.hud = !hud_off;
     static const bool noemit = std::getenv("WR64_HUD_NOEMIT") != nullptr;
     w.noemit = noemit;
@@ -1916,6 +2059,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // RDP state and has to be put back by hand.
             w.set_rect_class(Class::Auto);
             w.leave_class(false);
+            w.curtain(false);
             w.sky_close();
             w.emit(w0, w1);
             break;
@@ -1938,6 +2082,16 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 if (!e.empty()) w.classify_draw(e, w1);
                 if (!rects.empty()) w.classify_rect(rects, w1, {});
             }
+            // Screen-space geometry drawn from a static list: a projection
+            // built at an aspect of one, and a viewport inside the called list
+            // that covers the whole frame. The group wraps the call, for the
+            // same reason the water's does below -- what it applies to is inside.
+            const bool curtain =
+                w.menu && w.have_projection && w.projection_is_perspective &&
+                Walker::square_aspect(w.projection_only) &&
+                w.list_loads_full_frame_viewport(w.physical(w1), 0);
+            if (curtain) w.curtain(true);
+
             // The water surface is drawn from one of the game's static lists;
             // the group goes around the call, since the transform inside it is
             // created at its first vertex rather than at its matrix load.
@@ -1946,6 +2100,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             if (water) w.vertex_interp_group(Walker::kWaterId);
             w.emit(w0, w1);
             if (water) w.vertex_interp_group(G_EX_ID_AUTO);
+            if (curtain) w.curtain(false);
             continue;
         }
 
@@ -2008,17 +2163,31 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
             w.on_matrix(w0, w1);
             if (projection_load && w.trace != nullptr) {
-                char line[160];
-                std::snprintf(line, sizeof(line), "[hud] state 0x%02X projection load %s [1][1]=%.3f [3][3]=%.3f"
-                              " (class %s, viewport %s)\n",
+                // Both halves of the screen-space test, side by side. A section
+                // needs a square aspect and the whole frame, and the two arrive
+                // as separate commands: without seeing which half is missing,
+                // "it did not fire" is indistinguishable from "it fired and did
+                // nothing", which cost three rounds of guessing.
+                char line[256];
+                std::snprintf(line, sizeof(line), "[hud] state 0x%02X projection load %s"
+                              " [0][0]=%.3f [1][1]=%.3f [3][3]=%.3f square %s, viewport %s%s"
+                              " -> screen-space %s (class %s)\n",
                               state, w.projection_is_perspective ? "perspective" : "orthographic",
-                              w.projection.m[1][1], w.projection.m[3][3], class_name(w.cls),
-                              w.have_viewport ? "seen" : "not yet seen");
+                              w.projection_only.m[0][0], w.projection_only.m[1][1],
+                              w.projection.m[3][3],
+                              Walker::square_aspect(w.projection_only) ? "YES" : "no",
+                              w.have_viewport ? "seen" : "NOT YET SEEN",
+                              w.have_viewport
+                                  ? (w.viewport_is_full_frame(w.viewport_w1) ? " full-frame"
+                                                                             : " SUB-VIEWPORT")
+                                  : "",
+                              w.screen_space_section() ? "YES" : "no", class_name(w.cls));
                 w.trace->append(line);
             }
 
             if (projection_load && w.menu) {
                 const bool persp = w.projection_is_perspective;
+
                 if (persp && !w.centred && w.seen_ortho) {
                     w.align_viewport(G_EX_ORIGIN_CENTER, origin_cancel(G_EX_ORIGIN_CENTER));
                     w.centred = true;
@@ -2136,11 +2305,27 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
         std::fflush(stderr);
     }
 
+    // Whether a screen-space section was stretched, reported the first time it
+    // happens in each state. The per-list report below fires on the first list
+    // and the six-hundredth, which never coincides with a transition, so without
+    // this the log could not say whether the treatment reached the wipe at all --
+    // and "did it fire" is the whole question while this is being tuned.
+    {
+        static uint32_t reported_state = 0xFFFFFFFFu;
+        if (w.released_sections > 0 && state != reported_state) {
+            reported_state = state;
+            std::fprintf(stderr, "[wr64] %u screen-space section(s) released to the widened frame"
+                                 " (state 0x%02X)\n", w.released_sections, state);
+            std::fflush(stderr);
+        }
+    }
+
     static uint32_t lists = 0;
     if (++lists == 1 || lists == 600) {
         std::fprintf(stderr, "[wr64] display list rewritten: %u commands, %u centred sections,"
-                             " %u class changes (state 0x%02X)\n",
-                     w.written, w.centred_sections, w.class_changes, state);
+                             " %u released to the frame, %u class changes (state 0x%02X)\n",
+                     w.written, w.centred_sections, w.released_sections,
+                     w.class_changes, state);
         std::fflush(stderr);
     }
     return kScratch;

@@ -19,6 +19,16 @@ notice changes.
   from a handful to the whole course.
 - `WR64_3D_TRACE_EVERY` spaces the 3D trace's frames over a run instead of taking
   them consecutively, which is what a question about distance needs.
+- **The transition wipe between the select screens covers the whole frame.** It
+  had been boxed in the middle 4:3 since 0.3.0 and was the port's oldest known
+  issue. RT64 already renders a pass that covers the frame across the widened
+  frame; what stopped this one was the viewport origin the port sets on a menu's
+  perspective pass to keep 3D objects inside the boxes a layout gives them --
+  right for the watercraft on the rider-select screen, wrong for a curtain meant
+  to cover the screen. The origin now comes off for that call and goes back
+  after. Telling the two apart means looking inside the called display list the
+  curtain is drawn from, because the viewport that identifies it is loaded in
+  there and is invisible at the call.
 - **The audio crackle is fixed.** SDL takes a whole device period from the queue
   every time and fills whatever is missing with silence rather than waiting, and
   the queue was running at less than half a period -- empty in every one of the
