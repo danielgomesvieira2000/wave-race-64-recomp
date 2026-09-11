@@ -105,7 +105,17 @@ void report(clock::time_point now) {
     const double consumed =
         double(g_frames) - (double(g_depth_after_queue) - double(g_depth_at_start));
     const double silence = wanted - consumed;
-    if (silence > 0.0) {
+    // The window's boundaries fall between buffers, so this arithmetic carries an
+    // error of up to one buffer either way -- a few hundred frames, which is
+    // nothing beside a starved queue and everything beside a healthy one. The
+    // trough settles it: a queue that never fell below one device period cannot
+    // have been zero-filled, whatever the subtraction says.
+    if (g_have_depth && g_depth_min >= g_period_frames) {
+        std::fprintf(stderr, "[wr64-audio]   produced %llu frames, the device wanted %.0f:"
+                             " nothing zero-filled (the queue never fell below one period)\n",
+                     static_cast<unsigned long long>(g_frames), wanted);
+    }
+    else if (silence > 0.0) {
         std::fprintf(stderr, "[wr64-audio]   produced %llu frames, the device wanted %.0f:"
                              " %.0f frames of silence inserted (%.1f%% of the window)\n",
                      static_cast<unsigned long long>(g_frames), wanted, silence,

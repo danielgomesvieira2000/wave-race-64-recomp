@@ -19,6 +19,13 @@ notice changes.
   from a handful to the whole course.
 - `WR64_3D_TRACE_EVERY` spaces the 3D trace's frames over a run instead of taking
   them consecutively, which is what a question about distance needs.
+- **The audio crackle is fixed.** SDL takes a whole device period from the queue
+  every time and fills whatever is missing with silence rather than waiting, and
+  the queue was running at less than half a period -- empty in every one of the
+  forty-five two-second windows of a ninety-second run, which put a 0.7 ms hole
+  in the sound twenty-six times a second. The port now holds 30 ms in hand and
+  asks the device for 256 frames at a time instead of 1024. The samples
+  themselves were never at fault: a dump of the same run is clean.
 - `WR64_AUDIO_STATS` and `WR64_AUDIO_DUMP` measure the audio path: how much
   silence the output device had to be given because nothing was queued in
   time, and what the samples sound like before SDL ever sees them. Between

@@ -15,6 +15,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -454,6 +455,60 @@ std::atomic<bool> g_mute_unfocused{ true };
 constexpr int kAudioChannels = 2;
 constexpr int kBytesPerFrame = kAudioChannels * static_cast<int>(sizeof(int16_t));
 
+// How deep the game is persuaded to keep the queue, in milliseconds, and how
+// much the device takes at a time, in frames. These two decide whether the
+// output crackles, and both were wrong.
+//
+// SDL's queued-audio drain asks for a whole device period every time, takes what
+// the queue holds, and **zero-fills the rest without waiting**. So the queue has
+// to stay at least one period deep at its trough, not on average. Measured with
+// WR64_AUDIO_STATS at a 1024-frame period, the queue averaged 469 frames against
+// a period of 1024 and touched zero in every single two-second window of a
+// ninety-second run: each period came up about nineteen frames short, and SDL
+// put a 0.7 ms hole in the output twenty-six times a second, for the whole run.
+// That is the crackle, and nothing upstream of SDL was at fault -- a dump of the
+// same run is clean.
+//
+// The game will not correct this by itself. It sizes each buffer from what
+// osAiGetLength reports still queued, so it holds the queue at whatever depth it
+// is told to, and when the queue runs dry the zero-fill hides the shortfall from
+// it: the frames it never delivered get played as silence and it is never asked
+// for them again. It has the capacity to do better -- about 441 frames sixty
+// times a second where 448 are wanted, with a ceiling near 464.
+//
+// So the port under-reports the depth by a fixed amount, the game makes that
+// much more, and the queue settles that much deeper. The cost is latency equal
+// to the headroom, which is why the period is cut at the same time: a shorter
+// period needs less headroom to cover it, and a game that takes no timing from
+// its own sound can afford the tens of milliseconds either way.
+constexpr uint32_t kQueueHeadroomMs = 30;
+constexpr int kDevicePeriodFrames = 256;
+
+// Both are overridable, because the next question about either is always "and at
+// a different value?", and rebuilding to ask it is a poor trade.
+uint32_t queue_headroom_ms() {
+    static const uint32_t value = [] {
+        const char* env = std::getenv("WR64_AUDIO_HEADROOM_MS");
+        if (env == nullptr) return kQueueHeadroomMs;
+        const long parsed = std::strtol(env, nullptr, 10);
+        return parsed < 0 ? 0u : static_cast<uint32_t>(parsed);
+    }();
+    return value;
+}
+
+int device_period_frames() {
+    static const int value = [] {
+        const char* env = std::getenv("WR64_AUDIO_PERIOD");
+        if (env == nullptr) return kDevicePeriodFrames;
+        const long parsed = std::strtol(env, nullptr, 10);
+        return parsed < 32 ? kDevicePeriodFrames : static_cast<int>(parsed);
+    }();
+    return value;
+}
+
+// The headroom in frames at the rate now open, worked out once per device open.
+uint32_t g_queue_headroom_frames = 0;
+
 void close_audio_device() {
     if (g_audio_device != 0) {
         SDL_CloseAudioDevice(g_audio_device);
@@ -482,10 +537,9 @@ bool open_audio_device() {
     want.freq = static_cast<int>(g_audio_frequency);
     want.format = AUDIO_S16SYS;
     want.channels = kAudioChannels;
-    // Roughly a 60Hz frame's worth, rounded up to a power of two. Smaller than
-    // the game's own buffering, so the queue depth we report back stays
-    // dominated by what the game queued rather than by SDL's own latency.
-    want.samples = 1024;
+    // What SDL takes in one pull, and so the depth the queue has to stay above at
+    // every moment rather than on average. See kDevicePeriodFrames.
+    want.samples = static_cast<Uint16>(device_period_frames());
     want.callback = nullptr;  // queue-driven
 
     SDL_AudioSpec have{};
@@ -495,9 +549,14 @@ bool open_audio_device() {
         return false;
     }
 
+    g_queue_headroom_frames =
+        static_cast<uint32_t>(uint64_t(have.freq) * queue_headroom_ms() / 1000u);
+
     SDL_PauseAudioDevice(g_audio_device, 0);
-    std::fprintf(stderr, "[wr64] audio device open at %d Hz, %d channels\n",
-                 have.freq, have.channels);
+    std::fprintf(stderr, "[wr64] audio device open at %d Hz, %d channels,"
+                         " %d-frame period, holding %u frames (%u ms) in hand\n",
+                 have.freq, have.channels, have.samples,
+                 g_queue_headroom_frames, queue_headroom_ms());
     std::fflush(stderr);
 
     // `have` is not the hardware's spec. With SDL_AUDIO_ALLOW_ANY_CHANGE unset
@@ -620,10 +679,15 @@ size_t get_frames_remaining() {
         return 0;
     }
     const size_t frames = SDL_GetQueuedAudioSize(g_audio_device) / kBytesPerFrame;
-    // The game's own view of the queue, and the moment it decides how much more
-    // to make. No-op unless WR64_AUDIO_STATS is set.
+    // The real depth goes to the diagnostics, because that is what is being
+    // measured. No-op unless WR64_AUDIO_STATS is set.
     wr64::audiodiag::polled(static_cast<uint32_t>(frames));
-    return frames;
+
+    // The game gets a smaller number, makes up the difference, and the queue
+    // settles that much deeper. See kQueueHeadroomMs: this one subtraction is the
+    // whole mechanism, and it works only because the game sizes every buffer from
+    // the answer to this call.
+    return frames > g_queue_headroom_frames ? frames - g_queue_headroom_frames : 0;
 }
 
 void set_frequency(uint32_t frequency) {

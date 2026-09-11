@@ -738,6 +738,67 @@ With no device at all, report the queue permanently drained. That keeps the
 game's audio thread running at its normal cadence instead of stalling on a buffer
 that never empties -- which is also the right shape for a deliberate silent stub.
 
+### The queue must never be shallower than one device period
+
+**Symptom:** continuous crackle, in every scene, on a port whose samples are
+provably correct.
+
+SDL's queued-audio drain asks for a **whole device period** every time the device
+pulls, takes whatever the queue holds, and **zero-fills the remainder**. It does
+not wait. So the queue has to stay above one period at its *trough*, not on
+average, and a port that reasons about averages will crackle for its whole life.
+
+Measured here at 26900 Hz with a 1024-frame period:
+
+| | Before | After |
+|---|---|---|
+| Device period | 1024 frames (38.1 ms) | 256 frames (8.0 ms) |
+| Queue depth, min / avg | **0** / 469 frames | 1040 / 1293 frames |
+| Windows with the queue empty | **45 of 45** | 0 |
+| Silence inserted | 0.9-2.8 % of every window | none |
+
+Buffers of 441 frames arrived sixty times a second while the device took 1024
+every 38.1 ms, so each period came up about nineteen frames short: a 0.7 ms hole
+twenty-six times a second, for the whole run. A dump of exactly the bytes handed
+to SDL over the same run was clean, which is what rules out everything upstream.
+
+**The game will not correct this by itself**, and the reason is worth
+understanding before reaching for a bigger buffer. It sizes each buffer from what
+`osAiGetLength` reports still queued, so it holds the queue at whatever depth it
+is told to hold it at -- and the zero-fill hides the shortfall from it, because
+the frames it never delivered are played as silence and never asked for again.
+The loop is stable at a depth that crackles.
+
+Two numbers fix it and they trade against each other:
+
+- **Under-report the depth.** Subtract a fixed amount in the port's
+  `get_frames_remaining`; the game makes up the difference and the queue settles
+  that much deeper. 30 ms here.
+- **Cut the device period.** `want.samples` 1024 -> 256. A shorter period needs
+  less headroom to cover it.
+
+Total latency after both is about 48 ms, which a game that takes no timing from
+its own sound will not miss.
+
+Upstream has a knob for the same thing, set for a different host:
+`ultramodern::get_remaining_audio_bytes` subtracts `buffer_offset_frames` VIs
+from the answer, with `1` commented out "For SDL2" and `0.5f` live "For Godot",
+directly beneath a comment reading *"If there's ever any audio popping, check
+here first."* Doing it in the port instead needs no submodule patch and can be
+expressed in milliseconds at the rate actually open.
+
+### `have` is not the hardware's spec
+
+**Symptom:** a log line saying the device opened at 26900 Hz, on a machine with
+no device capable of it.
+
+With `SDL_AUDIO_ALLOW_ANY_CHANGE` unset, `SDL_OpenAudioDevice` builds a converter
+and hands back the spec that was *asked for*, whatever the hardware does. So
+whether SDL is resampling, and across what ratio, is invisible in the obvious
+place. `SDL_GetDefaultAudioInfo` (SDL 2.24+) answers it without opening a second
+device. Here the default device runs at 48000 while the game asks for 32000 in
+the menus and 26900 in a race, so everything is resampled, always.
+
 ### Give the microcode a private copy of its command list
 
 **Symptom:** a click every ~30 seconds; occasional "audio frame dropped".
