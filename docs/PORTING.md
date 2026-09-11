@@ -1259,8 +1259,10 @@ Practical rules this port arrived at:
 ### Interpolation: what RT64 can and cannot do on its own
 
 RT64 draws frames between the game's by pairing each object's transform with the
-previous frame's, by draw-call signature and nearest position. It pairs about 98%
-of transforms. Two things follow:
+previous frame's. It pairs about 98% of transforms. The mechanism is a draw-call
+hash, then matrix index within the call -- **not** nearest position, which enters
+only as a refinement; see *Geometry that bursts apart at the start of a race*
+below, where the difference matters. Two things follow:
 
 - **An unpaired transform costs nothing by itself.** It is drawn at its current
   matrix, so an object that is not moving looks no different. The plain count of
@@ -1417,6 +1419,96 @@ extended origin pins one edge of an element to the matching edge of the widened
 frame instead, and stretch spreads it across the whole frame. It is an
 approximation -- a scissor can still cut an element short -- but it is accurate
 enough to point with.
+
+### Geometry that bursts apart at the start of a race
+
+**Symptom:** at the moment a race starts, animated models briefly come apart into
+loose vertices and settle a second later. Present in one player, unmistakable in
+two. It appeared when matrix interpolation was added and is open as of 0.8.1.
+
+**Interpolation is certainly the cause.** Presenting at the game's own rate, so
+that no frames are interpolated, removes it entirely. That one check is worth
+running before any other, and it is free.
+
+**How RT64 actually pairs transforms**, which is not what the section above this
+one used to say. It hashes each draw call, matches calls between frames by that
+hash, and then pairs their world matrices **by index within the call**, requiring
+the same count on both sides:
+
+```cpp
+if ((curWorldMatrixCount == prevWorldMatrixCount) && curIt.second.doTransformMatching && ...) {
+    for (uint32_t w = 0; w < curWorldMatrixCount; w++) {
+        ...
+        transformCheckSet.emplace(curWorldMatrix, prevWorldMatrix);
+```
+
+Position enters only as a refinement afterwards. An explicit matrix id is folded
+into the call's hash (`matrixIdHash = matrixIdHash * 33 ^ group.matrixId`), so an
+id does not merely label a transform -- it **distinguishes one call from
+another**.
+
+**What this game presents it with.** In a two-player race:
+
+| | |
+|---|---|
+| Animated objects | 4 racers |
+| Matrices per racer | **18** |
+| Where they live | segment 3, the per-frame arena |
+| Where they are loaded | **inside each racer's called display list**, never at the top level |
+| Top-level call per racer | `0x02000290`, `0x020003D8`, `0x02000520`, `0x02000668` -- distinct, evenly spaced, stable across both of the game's alternating display lists |
+
+Two racers are the same model with the same textures and the same geometry mode,
+so their calls hash identically. That is the leading explanation for the burst:
+RT64 cannot tell them apart and pairs one rider's limbs with the other's, and a
+limb interpolated between two riders' poses is exactly geometry coming apart. It
+is consistent with every measurement so far but **is not proven**.
+
+**What has been ruled out, with measurements:**
+
+- **Vertex interpolation.** The sky and water are the only things this port asks
+  RT64 to interpolate per vertex. Running with `WR64_NO_SKY_INTERP=1
+  WR64_NO_WATER_INTERP=1` leaves the burst untouched.
+- **Unpaired transforms as such.** `WR64_PAIRING` shows a two-player start at
+  **34.8 transforms a frame unpaired and moving**, against 0.0-0.7 in steady
+  racing -- a fiftyfold spike in exactly the right window. But an unpaired
+  transform is drawn at its current matrix and cannot tear anything. The spike
+  marks the moment; it is not the mechanism.
+
+**Two attempts at a fix, both of which made things worse**, recorded because each
+failed for a reason worth knowing:
+
+1. **An id on every top-level matrix.** Improved the pairing counter tenfold
+   (34.8 to 3.4) and changed nothing on screen. The reason is in the table above:
+   every dynamic matrix is *inside* a call, so the only matrices this reached
+   were segment 5's static scenery -- precisely the transforms whose mispairing
+   is invisible, as this document already noted. A counter improving while the
+   symptom does not is a sign the counter is measuring something else.
+2. **The same, with `G_EX_ORDER_LINEAR`.** Worse jittering, and the cause is
+   explicit in RT64's source: transform matching runs only for `G_EX_ID_AUTO`, or
+   an explicit id with `G_EX_ORDER_AUTO`.
+
+   ```cpp
+   usesIdWithAutoOrdering = (matrixId != AUTO) && (matrixId != IGNORE) && (ordering == G_EX_ORDER_AUTO);
+   doTransformMatching = doTransformMatching || (matrixId == G_EX_ID_AUTO) || usesIdWithAutoOrdering;
+   ```
+
+   `LINEAR` switched matching **off** for every call it touched. Use `AUTO`
+   ordering unless several transforms are meant to share one id.
+
+**Where to start next.** Wrapping each racer's top-level call in a group whose id
+is that call's address reaches all eighteen matrices inside it, which is the only
+handle the port has on them -- the rewriter emits a call and lets RT64 walk in,
+so it cannot tag those matrices directly. A first attempt at this correctly
+identified all four racers and still made the counter worse (48.8), most likely
+because it passed `G_EX_INTERPOLATE_DECOMPOSE` and `G_EX_COMPONENT_AUTO` for
+every component including `vert` and `tc` -- changing *how* the racers are
+interpolated rather than only labelling them. Change the id and nothing else.
+
+**A fallback that is known to work.** Suppressing interpolation for the first
+second of a race would remove the burst where it is most visible, at the cost of
+those frames not gliding. The check at the top of this section proves it would
+work. It has not been done, because the fault is worth understanding.
+
 
 ---
 
