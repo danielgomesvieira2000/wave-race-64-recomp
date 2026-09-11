@@ -83,7 +83,7 @@ the game-state machine).
 |---|---|
 | **Hover a row** | Outlines that element on the screen in yellow. |
 | **Click a row** | Keeps the outline up in blue, so it stays while you use the dropdown. Click again to deselect. |
-| **class dropdown** | `as classified` drops the override; `center` / `left` / `right` / `stretch` apply from the **next frame**. No rebuild, no restart. |
+| **class dropdown** | `as classified` drops the override; `center` / `left` / `right` / `stretch` / `spill` apply from the **next frame**. No rebuild, no restart. |
 | **Hold this frame** | Freezes the *list* on the frame that was current when you ticked it, while the game keeps running. For anything animated. |
 | **Save to hud.json** | Writes every override into the tag table in the settings folder. Merges -- entries you did not touch survive, and an identity is removed from the other three lists first. |
 | **Clear overrides** | Drops every override. Does not touch `hud.json`. |
@@ -97,6 +97,17 @@ the game-state machine).
 | `left` | Extended origin `G_EX_ORIGIN_LEFT` | An element pinned to the left edge of the screen. |
 | `right` | Extended origin `G_EX_ORIGIN_RIGHT` | An element pinned to the right edge. |
 | `stretch` | `gEXSetRectAspect(G_EX_ASPECT_STRETCH)`, with the element's own origins left `G_EX_ORIGIN_NONE` | Backgrounds, full-screen overlays, wipes -- anything that should cover the widened frame. |
+| `spill` | Nothing about placement. The game's 4:3 scissor is lifted for the length of the element's run, through the same path `left` and `right` use. | An element that is already in the right place at the right size and is merely being **cut off** at the old frame's edge. The sun over a race is the case: the game draws it as a 48x48 square at x 0..48, running deliberately off the left of its own screen. |
+
+**`spill` is the only class that is about clipping rather than placement.** The
+other four decide where an element goes; this one decides whether it is allowed
+to continue past where the 4:3 frame used to end. If an element looks
+*positioned* wrongly, `spill` is not the answer -- and if it looks *cut*, none of
+the other four are.
+
+One consequence worth knowing before tagging: this game scissors a race to
+x 8..311, so an element the game draws from x 0 has eight units hidden even on
+original hardware. `spill` reveals them.
 
 **`G_EX_ASPECT_STRETCH` means "do not squeeze this to 4:3", not "cover the
 widened frame".** With it, a 320-wide rectangle reaches the frame's full width and
@@ -164,6 +175,7 @@ The outline is the rewriter's arithmetic run forwards. Window `W` x `H`, with th
 | `left` | `x/320 * B` |
 | `right` | `W - B + x/320 * B` |
 | `stretch` | `x/320 * W` |
+| `spill` | `(W - B)/2 + x/320 * B`, as `center` -- it does not move |
 
 Vertically always `y/240 * H`. It is an approximation: a scissor can still cut an
 element short, and RT64's upscaling filters move edges by a pixel. It is accurate

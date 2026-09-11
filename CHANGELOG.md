@@ -19,6 +19,13 @@ notice changes.
   from a handful to the whole course.
 - `WR64_3D_TRACE_EVERY` spaces the 3D trace's frames over a run instead of taking
   them consecutively, which is what a question about distance needs.
+- **A fifth 2D class, `spill`**, for an element that is in the right place at
+  the right size and is simply being cut off at the old frame's edge: it lifts
+  the game's 4:3 scissor for that element and changes nothing else. The sun over
+  a race is the case it was written for -- the game draws it running off the left
+  of its own screen, and on a widened frame it stopped dead at the 4:3 boundary.
+  Its disc, glare and haze ship tagged, bringing the built-in table to
+  thirty-three entries.
 - **The transition wipe between the select screens covers the whole frame.** It
   had been boxed in the middle 4:3 since 0.3.0 and was the port's oldest known
   issue. RT64 already renders a pass that covers the frame across the widened
