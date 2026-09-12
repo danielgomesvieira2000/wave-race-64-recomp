@@ -8,6 +8,37 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## Unreleased
+
+- **Draw Distance rebuilt, and no longer experimental.** It was a multiplier over
+  a list of per-object limits that was expected to grow. A census of every
+  display-list call over 5,000 race frames on two courses, repeated with one
+  field doubled, found there is no list: a single integer per course decides how
+  much of the course is submitted, and **49 of the 57 static kinds measured moved
+  out with it** — buoys, gate markers, the shoreline and the props alike. So the
+  setting is now one number, and it is a **distance** rather than a multiplier,
+  because the game's own value is between 2,500 and 6,000 depending on the course
+  and a multiplier therefore meant something different on every one. The choices
+  are Original, 8,000, 12,000 and 16,192 — the far plane, past which nothing can
+  be drawn at all; the furthest object measured on any course sat at 13,175.
+  Original still writes nothing to the game's memory.
+- **A draw-distance bug that silently disabled the setting on some courses.** The
+  old code decided the game had reloaded the struct by comparing the field
+  against what it had written. With the values the game actually uses that
+  collides — 2,500 doubled is 5,000, which is another course's own limit — so
+  moving between those two courses left the port believing its work was done and
+  the second course ran at the game's own distance. It now keys on the course
+  number, and waits for the course to load before reading the value it is going
+  to scale.
+- **The "flicker and slide" warning is gone, because it was about the wrong half
+  of the pipeline.** At twice the limit the buoys are drawn at exactly the same
+  39 world positions, and a position inside the limit blinks off for a single
+  frame in 0.01% of its chances, against 0.03% at the game's own distance. The
+  game submits correct, stable geometry at any of these settings. What slides is
+  RT64 pairing one buoy's matrix with another's between frames as the set of them
+  changes, which happens at the game's own distance too and is written up in
+  `docs/PORTING.md`.
+
 ## [0.9.0](docs/releases/0.9.0.md) — Linux, macOS, and modern water
 
 - **Linux and macOS builds.** The port builds and runs from the same tree on all

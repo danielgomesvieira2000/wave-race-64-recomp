@@ -298,12 +298,11 @@ void init() {
     // The sky has a frustum of its own and is widened by the same ratio, so it
     // keeps step.
     //
-    // There is no draw distance beside it, and the reason is worth writing down
-    // where the next person looks: the game's far plane is already at about
-    // 16,000 units against a course that needs a few hundred, so pushing it out
-    // reveals nothing. What limits the view is the game's own geometry -- the
-    // water lattice is built around the camera -- which the display-list
-    // rewriter cannot reach.
+    // The draw distance sits beside it and is a different thing entirely: the
+    // game's far plane is already at 16,192 against a course that needs a few
+    // thousand, so pushing *that* out reveals nothing. What limits the view is
+    // the game's own culling, one integer per course, which the setting below
+    // raises. See include/wr64/drawdistance.h.
     auto& graphics = recompui::config::create_graphics_tab();
     graphics.add_number_option(
         "fov", "Field of View",
@@ -312,39 +311,48 @@ void init() {
         "without stretching anything. The HUD and the menus are unaffected.",
         45.0, 110.0, 5.0, 0, false, 45.0);
     // Draw distance. Not the far plane -- that is already twenty times further
-    // out than anything the game draws -- but the game's own culling, which is
-    // decided per kind of object in that object's own code. One setting over a
-    // list of those limits, which grows as each is found; see
-    // include/wr64/drawdistance.h for what is in the list and what is not.
+    // out than anything the game draws -- but the game's own culling. It was
+    // built as a list of per-kind limits that would grow as each was found; a
+    // census of every display-list call, run again with one field doubled,
+    // showed there is only the one, and that it governs nearly all of a course's
+    // static geometry. See include/wr64/drawdistance.h.
     graphics.add_enum_option(
-        "object_draw_distance", "Draw Distance (experimental)",
-        "<recomp-color primary>Experimental.</recomp-color> Anything above Original makes the "
-        "buoys flicker and slide as they come into view -- the game is being shown more of them "
-        "than it was built to draw, and what decides which ones get drawn has not been found "
-        "yet. Original is unaffected: at that setting nothing is written to the game's memory "
-        "at all.<br /><br />"
-        "How far away the game keeps drawing things it culls by distance. "
-        "<recomp-color primary>Original</recomp-color> is the game's own behaviour. "
-        "It reaches most of a course's static geometry -- the buoys, the gate markers, the "
-        "shoreline and the scenery all share one limit, which the game sets per course between "
-        "2500 and 6000 while drawing the world out to 16,192, so the same setting does more on "
-        "some courses than others. It does not reach the course's direction arrows, which are "
-        "chosen by where you are rather than culled by distance, or the animated water, which "
-        "is built around the camera.",
+        "object_draw_distance", "Draw Distance",
+        "How far away the game keeps drawing the course, in world units. "
+        "<recomp-color primary>Original</recomp-color> is the game's own behaviour, and at that "
+        "setting nothing is written to the game's memory at all.<br /><br />"
+        "One number in the game decides this, and it covers nearly all of a course's fixed "
+        "scenery: the buoys, the gate markers, the shoreline and the props were all measured "
+        "moving out together when it was raised. The game sets it per course, between 2,500 and "
+        "6,000, which is why these are distances rather than multipliers -- doubling a 2,500 "
+        "course only reaches what a 6,000 course has by default, while a distance means the same "
+        "thing everywhere. <recomp-color primary>Maximum</recomp-color> is the far plane: "
+        "nothing can be drawn past it, and the furthest object measured on any course sat at "
+        "13,175, so it draws the whole course.<br /><br />"
+        "It does not reach the course's direction arrows, which are chosen by where you are "
+        "rather than culled by distance, or the animated water, which is built around the "
+        "camera. Drawing more costs frame time, so if the game is already running below its own "
+        "frame rate, leave it on Original.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
-            { 1u, "OneAndAHalf", "1.5x" },
-            { 2u, "Two", "2x" },
-            { 3u, "Four", "4x" },
+            { 1u, "Far", "Far (8,000)" },
+            { 2u, "VeryFar", "Very far (12,000)" },
+            { 3u, "Maximum", "Maximum (16,192)" },
         },
         0u);
     graphics.add_option_change_callback(
         "object_draw_distance",
         [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
            recomp::config::OptionChangeContext) {
-            static const double steps[] = { 1.0, 1.5, 2.0, 4.0 };
+            // Distances, not multipliers. Zero is the game's own. A stored id
+            // this build does not know -- the multiplier names this setting used
+            // to carry -- loads as the default, which is Original, so an old
+            // configuration comes back switched off rather than misread.
+            static const int32_t steps[] = {
+                0, 8000, 12000, wr64::drawdistance::kFarPlane,
+            };
             if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::drawdistance::set_multiplier(steps[*choice < 4 ? *choice : 0]);
+                wr64::drawdistance::set_reach(steps[*choice < 4 ? *choice : 0]);
             }
         });
 

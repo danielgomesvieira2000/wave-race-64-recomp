@@ -1697,6 +1697,44 @@ frame instead, and stretch spreads it across the whole frame. It is an
 approximation -- a scissor can still cut an element short -- but it is accurate
 enough to point with.
 
+### Objects that slide when more of them are drawn
+
+**Symptom:** raising the draw distance made the buoys "flicker and slide as they
+come into view". It is why the setting shipped labelled experimental in 0.8.1,
+and the explanation offered at the time -- that the game was being shown more
+buoys than it was built to draw, and something downstream was choosing badly --
+turned out to be about the wrong half of the pipeline.
+
+**The game submits correct geometry at the raised limit.** Measured from the
+render-distance census captures (see
+[RENDER-DISTANCE-CENSUS.md](RENDER-DISTANCE-CENSUS.md)), at twice the limit:
+
+| | at the game's own limit | at twice it |
+|---|---|---|
+| Distinct world positions the buoys are drawn at | **39** | **39**, the same ones |
+| Frames where one position is drawn twice | 38% (the two-triangle pair each buoy is) | 11% |
+| A position inside the limit blinking off for a single frame | **0.03%** of chances | **0.01%** |
+
+No new positions, no drift, and no more flicker -- slightly less. Whatever
+slides, the game is not submitting it.
+
+**The mechanism is the pairing described in the section below.** RT64 matches
+draw calls between frames by hash and then pairs their world matrices **by index
+within the call**. The buoys are one repeated call over a table of matrices in
+segment 5, and which buoys are in that table changes as the camera moves: a buoy
+drops off the near end while another appears at the far end, every matrix after
+it shifts one slot, and each one is then interpolated from the *previous* buoy's
+position -- which is exactly a slide. Raising the limit puts more buoys in the
+table, so the membership churns more and more of them slide.
+
+This is consistent with every measurement above but, like the burst, **is not
+proven**: it has not been watched on screen with the pairing instrumented. The
+useful consequence is narrower and solid -- **the draw distance is not the
+defect**. Anything that fixes this fixes it for the game's own distance too, and
+nothing done to the distance setting will fix it.
+
+---
+
 ### Geometry that bursts apart at the start of a race
 
 **Symptom:** at the moment a race starts, animated models briefly come apart into

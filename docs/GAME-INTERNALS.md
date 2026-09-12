@@ -453,11 +453,18 @@ somewhere else and has not been found.
 **The limit is per course**, and it varies more than enough to matter. Read out
 of the struct while racing: **5000** on courses 0 and 1 and **6000** on course 2;
 **3072** and **2500** were also seen in an earlier session. A course that starts
-at 2500 is
-at half another's draw distance before anything is changed, so the same
-multiplier does visibly different amounts of work on different courses -- two
-times on a 2500 course only reaches what a 5000 course has by default. Anyone
-judging a draw distance setting by eye needs to know which course they are on.
+at 2500 is at half another's draw distance before anything is changed, so a
+*multiplier* over it does visibly different amounts of work on different courses
+-- two times on a 2500 course only reaches what a 5000 course has by default.
+That is why this port's setting asks for a distance instead, and why anyone
+judging one by eye needs to know which course they are on.
+
+It is also why a port must not decide it has already done its work by comparing
+the field against what it wrote there: 2500 doubled is 5000, which is another
+course's own limit, so that test silently passes on the wrong course. The course
+number at `0x800D8170` is the identity, and it changes **before** the struct is
+filled in -- so a reader has to wait, or it reads the previous course's
+environment under the new course's name.
 
 **The buoys' display lists are per course too.** They are a pair, one triangle
 each, adjacent in segment 1: `0x0102CD78` and `0x0102CD90` on one course,

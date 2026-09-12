@@ -79,11 +79,14 @@ running natively:
   time spent drawing a frame, so **Original** is there and is a true bypass.
   Written by [Elliott Tate](https://github.com/elliotttate); see
   [Credits](#credits).
-- **Draw Distance**, up to 4x. There is no global draw distance in this game --
-  the far plane is already twenty times further out than anything drawn, and each
-  kind of object is culled by its own code. This is one setting over the limits
-  that have been found; today it reaches the buoys, which the game drops at 5,000
-  units while drawing the world to 16,192.
+- **Draw Distance**, in world units up to 16,192. There is no global draw
+  distance in this game -- the far plane is already twenty times further out than
+  anything drawn -- but there is one number per course that decides how much of
+  the course is submitted at all, and it covers nearly all of the fixed scenery:
+  buoys, gate markers, the shoreline and the props were all measured moving out
+  together when it was raised. The game sets it between 2,500 and 6,000 depending
+  on the course, which is why the setting is a distance rather than a multiplier,
+  and 16,192 is the far plane -- past it nothing can be drawn at all.
 - **Controller rumble**, which the game never had: it shipped a year before the
   Rumble Pak and has no rumble code at all, so the port works the feedback out
   from the race itself -- the slap of landing off a wave, buoys taken and missed,
