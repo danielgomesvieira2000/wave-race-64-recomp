@@ -8,6 +8,8 @@ depth, refraction, wakes that persist, wash along the shore.
 
 Two halves: [**using it**](#using-it) and [**putting it in another
 project**](#putting-it-in-another-project).
+[WATER-IMPLEMENTATION.md](WATER-IMPLEMENTATION.md) is the full account of how
+the fork built it and where this repository differs.
 
 **High with the Aqua style is the default**, on every platform -- what the fork
 this came from shipped, and what the water was tuned against. It is not free:
@@ -242,6 +244,7 @@ it" and "none of it".
 | `patches/water.cpp` | the two game hooks |
 | `src/overlays.cpp` | registers them by address |
 | `src/frontend.cpp` | the Graphics entry and the Water tab |
+| `src/callbacks.cpp` | the F9/F10 event watch |
 | `src/dlrewrite.cpp` | emits the material into the display list, around the four water draws |
 | `assets/water/profiles.json` | per-course parameters |
 

@@ -21,6 +21,7 @@ of them in the same commit.
 | | |
 |---|---|
 | [GAME-INTERNALS.md](GAME-INTERNALS.md) | **The game.** Cartridge identity, code and overlay layout, the main loop, the game-state machine, the overlay table, how a frame's display list is built, the 303×199 drawn region, the world's frustum, how a 3D object is placed inside a 2D layout, the sky and water geometry, reading a race out of RDRAM, and the audio microcode. |
+| [WATER-IMPLEMENTATION.md](WATER-IMPLEMENTATION.md) | **The water renderer, in full.** What the fork built -- the game-side boundary, the material ABI, the extended GBI transport, the RT64 passes, the shaders, the measured cost on Apple silicon -- and what this repository took, changed, dropped and added, including the two bugs that only appeared here. |
 | [PORTING.md](PORTING.md) | **The toolchain and runtime.** Getting a byte-exact ELF out of splat, N64Recomp's input modes and failure messages, overlay dispatch, the librecomp/ultramodern harness, recompiling RSP audio microcode, the RT64 patches and the display-list rewriter behind widescreen and interpolation, mods, the diagnostics worth building, and the measurement traps that cost the most time. Written symptom-first. |
 
 ## The working record

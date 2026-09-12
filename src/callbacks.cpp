@@ -53,6 +53,7 @@
 #include "wr64/haptics.h"
 #include "wr64/testdrive.h"
 #include "wr64/renderer.h"
+#include "wr64/water.h"
 
 // The recompiled audio microcode, produced by RSPRecomp from the cartridge.
 //
@@ -1105,6 +1106,21 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     return nullptr;
 }
 
+// F9 toggles the modern water against Original from the same camera; F10 cycles
+// the renderer's diagnostic views. Both are comparison tools rather than
+// settings, so neither is in the menus and neither is saved.
+int water_key_watch(void*, SDL_Event* event) {
+    if (event->type == SDL_KEYDOWN && event->key.repeat == 0) {
+        if (event->key.keysym.sym == SDLK_F9) {
+            wr64::water::toggle();
+        }
+        else if (event->key.keysym.sym == SDLK_F10) {
+            wr64::water::cycle_debug();
+        }
+    }
+    return 0;  // a watch never filters; the event goes on to the queue.
+}
+
 ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
     // Size the window, and decide whether it opens fullscreen.
     //
@@ -1164,6 +1180,17 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         return {};
     }
+
+    // F9 and F10, the water renderer's two comparison keys. An event *watch*
+    // rather than a polling loop: recompinput::handle_events() has to stay the
+    // only thing draining the queue -- see poll_input() above and PORTING.md --
+    // and a watch sees each event without consuming it.
+    //
+    // It is removed again in shutdown_platform(). RT64 shipped the same bug in
+    // the other direction: a filter installed at setup and never taken off, so
+    // SDL called into a destroyed object on the next event. See
+    // tools/patch_rt64_eventfilter.py.
+    SDL_AddEventWatch(water_key_watch, nullptr);
 
 #if WR64_WITH_FRONTEND
     // recompui reads the window through a global of its own; publish ours so
@@ -1320,6 +1347,7 @@ ultramodern::renderer::callbacks_t renderer_callbacks() {
 // point with an access violation at an address in no loaded module, and the
 // first thing worth knowing is which of these it gets past.
 void shutdown_platform() {
+    SDL_DelEventWatch(water_key_watch, nullptr);
     std::fprintf(stderr, "[wr64] shutting down: controller\n");
     std::fflush(stderr);
     if (g_controller != nullptr) {
