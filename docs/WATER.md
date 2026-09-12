@@ -49,6 +49,37 @@ effect while **Water** is Original.
 | **Surface ripples** | Soft / **Normal** / Strong. Fine detail added on top of the game's waves, never replacing them. |
 | **Spray particles** | The *added* airborne spray. Off keeps the surface foam, the wakes and the game's own splashes. |
 
+### How far the sea reaches
+
+The game animates a patch of water **922 units** across, carried with the camera,
+and that is all the water it draws. Everything beyond it is painted onto the
+lowest of the sky's three bands -- a seven-vertex plane at sea level, flat. Which
+means the shading stops in a ring around the player, and so does the sea.
+
+The port draws the missing surface itself: a ring of quads from the patch's edge
+out to the distance the rest of the course is drawn at, **standing on the same
+wave field the game's own patch stands on**, so the swell outside agrees with the
+swell inside rather than being invented. Its heights come from the game's own
+height query, sampled on the game thread.
+
+It carries the game's own water attributes too -- texture coordinates of
+`(1024, 1024)` and a shade of `FFFFFFB0`, read out of a trace of the patch. The
+alpha is the part that matters: the water is drawn translucent, and an opaque
+ring would read as a solid band laid over the sea. That is what lets this work
+with **Water at Original** as well as with the modern renderer -- there it is
+simply the game's water reaching further, with the game's own texel and
+translucency.
+
+| | |
+|---|---|
+| When it is drawn | whenever **either** Water quality or Draw Distance is above Original |
+| How far | as far as Draw Distance asks for, or the course's own cull, whichever is further |
+| What it costs | 7 circles x 24 sectors: 312 vertex slots and 144 quads a frame, against the game's own 500 vertices |
+| Turning it off | `WR64_NO_WATER_RING=1` |
+
+With both settings at Original nothing is added at all, because a frame with
+neither raised has to be the frame the game itself would have produced.
+
 ### Environment overrides
 
 For comparing settings without going through the menus. Read once, at the first
@@ -57,6 +88,7 @@ frame; they do not persist and they are not settings.
 | Variable | Values |
 |---|---|
 | `WR64_WATER` | `original`, `modern`, `high` |
+| `WR64_NO_WATER_RING` | `1` to stop drawing the sea past the game's own patch |
 | `WR64_WATER_STYLE` | `classic`, `modern`, `aqua` |
 | `WR64_WATER_RIPPLES` | `soft`, `normal`, `strong` |
 | `WR64_WATER_SPRAY` | `off` / `0`, anything else is on |

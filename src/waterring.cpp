@@ -2,6 +2,7 @@
 
 #include "wr64/waterring_sample.h"
 #include "wr64/water.h"
+#include "wr64/drawdistance.h"
 
 #include <algorithm>
 #include <cmath>
@@ -103,10 +104,19 @@ bool enabled() {
 
 void publish(uint8_t* rdram, recomp_context* ctx, uint32_t display_list) {
     if (!enabled()) return;
-    // Only with the modern renderer on. At Original the ring would be drawn with
-    // the game's own flat shading against a horizon the game painted, which is
-    // a worse picture than the one the game ships.
-    if (water::quality() == water::Quality::Original) return;
+
+    // Drawn when *either* setting has been moved off Original, and not before.
+    //
+    // With the modern renderer on, the ring is the sea that renderer would
+    // otherwise stop shading at 922 units. With the renderer at Original it is
+    // still worth having -- the game's own water simply reaches further, drawn
+    // with the game's own translucency and texel -- but only once the player has
+    // asked for a longer view, because with both settings at Original the port
+    // promises a frame the game itself would have produced, and geometry the
+    // cartridge never submitted would break that promise.
+    const bool modern = water::quality() != water::Quality::Original;
+    const bool further = drawdistance::reach() != 0;
+    if (!modern && !further) return;
 
     const uint32_t course = read_word(rdram, kCoursePointer) & 0x00FFFFFFu;
     if (course == 0 || course + kCullField + 4 > 0x00800000u) return;
@@ -118,7 +128,12 @@ void publish(uint8_t* rdram, recomp_context* ctx, uint32_t display_list) {
     const float cz = read_float(rdram, camera + kCameraZ);
     if (!std::isfinite(cx) || !std::isfinite(cz)) return;
 
-    float outer = static_cast<float>(cull);
+    // As far as the course is drawn, or as far as the player asked for,
+    // whichever is further. Reading the field alone is not enough: this runs on
+    // the game thread at task submission and drawdistance::apply runs on the
+    // graphics thread, so the field still holds the game's own number here even
+    // when the setting has raised it.
+    float outer = static_cast<float>(std::max(cull, drawdistance::reach()));
     outer = std::clamp(outer, kMinOuter, kMaxOuter);
     if (outer <= kInnerRadius * 1.2f) return;
 

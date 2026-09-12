@@ -1225,14 +1225,19 @@ struct Walker {
                         write_half(at + 2, uint16_t(v.y));
                         write_half(at + 4, uint16_t(v.z));
                         write_half(at + 6, 0);           // flag
-                        // Texture coordinates of zero. The water tile is loaded
-                        // with G_TX_CLAMP, so anything outside it clamps to an
-                        // edge texel anyway, and the modern renderer shades this
-                        // surface rather than taking its colour from that tile.
-                        write_half(at + 8, 0);
-                        write_half(at + 10, 0);
+                        // Texture coordinates and shade copied from the game's
+                        // own water, read out of a trace rather than guessed:
+                        // every block of the patch carries tc = (1024, 1024) --
+                        // a constant 32.0 in S10.5 -- and rgba = FFFFFFB0. The
+                        // alpha is the point. The water is drawn translucent
+                        // (G_RM_AA_ZB_XLU_SURF) and 0xB0 is what makes it so; an
+                        // opaque ring would read as a solid band laid over the
+                        // sea, which is what the first version of this would
+                        // have drawn at Water = Original.
+                        write_half(at + 8, 1024);
+                        write_half(at + 10, 1024);
                         write_half(at + 12, 0xFFFF);     // r, g
-                        write_half(at + 14, 0xFFFF);     // b, a
+                        write_half(at + 14, 0xFFB0);     // b, a
                     }
                 }
 
@@ -2206,10 +2211,22 @@ struct Tracer {
                         min_y = std::min(min_y, cy / cw); max_y = std::max(max_y, cy / cw);
                     }
                     std::fprintf(f, "%*svtx #%u 0x%08X (phys 0x%06X) n=%u hash %08X tex 0x%08X"
-                                    " v0=(%d,%d,%d) clip x[%.2f..%.2f] y[%.2f..%.2f]\n",
+                                    " v0=(%d,%d,%d) tc=(%d,%d) rgba=%02X%02X%02X%02X"
+                                    " clip x[%.2f..%.2f] y[%.2f..%.2f]\n",
                                  depth * 2, "", vtx_loads++, w1, addr, count, hash(addr, count * 16),
                                  texture, signed_half(addr), signed_half(addr + 2),
                                  signed_half(addr + 4),
+                                 // Texture coordinates and shade colour of the
+                                 // first vertex. Without them a trace says where
+                                 // geometry is but not what it is made to look
+                                 // like -- which is exactly what has to be
+                                 // matched when the port puts geometry of its
+                                 // own beside the game's.
+                                 signed_half(addr + 8), signed_half(addr + 10),
+                                 rdram[((addr + 12) & 0x00FFFFFFu) ^ 3],
+                                 rdram[((addr + 13) & 0x00FFFFFFu) ^ 3],
+                                 rdram[((addr + 14) & 0x00FFFFFFu) ^ 3],
+                                 rdram[((addr + 15) & 0x00FFFFFFu) ^ 3],
                                  max_x < min_x ? 0.0f : min_x, max_x < min_x ? 0.0f : max_x,
                                  min_y > max_y ? 0.0f : min_y, min_y > max_y ? 0.0f : max_y);
                     continue;

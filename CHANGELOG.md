@@ -10,6 +10,17 @@ notice changes.
 
 ## Unreleased
 
+- **The sea reaches as far as the course does.** The game animates a patch of
+  water 922 units across and paints everything beyond it onto the sky — a flat,
+  seven-vertex band at sea level, which is why the water appeared to meet the
+  horizon while stopping almost at the player's feet. The port now draws the
+  missing surface: a ring of quads from the patch's edge out to whatever Draw
+  Distance asks for, its heights taken from the same wave field the game's own
+  waves stand on, so the swell outside agrees with the swell inside. It carries
+  the game's own texture coordinates and translucency, so it works with the water
+  renderer **on or at Original**, and it appears as soon as either Water quality
+  or Draw Distance is raised. `WR64_NO_WATER_RING=1` switches it off.
+
 - **Draw Distance rebuilt, and no longer experimental.** It was a multiplier over
   a list of per-object limits that was expected to grow. A census of every
   display-list call over 5,000 race frames on two courses, repeated with one

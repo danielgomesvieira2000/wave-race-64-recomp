@@ -15,6 +15,14 @@
 // drawn at, standing on the **same wave field the game's own patch stands on**,
 // so the swell outside agrees with the swell inside instead of being invented.
 //
+// It carries the game's own water attributes rather than inventing those either:
+// tc = (1024, 1024) and rgba = FFFFFFB0, read out of a trace of the game's own
+// patch. The alpha is the part that matters -- the water is drawn translucent,
+// and an opaque ring reads as a solid band laid over the sea. That is what lets
+// this work with the water renderer at **Original** as well as with the modern
+// one: at Original the ring is simply the game's water reaching further, drawn
+// with the game's own texel and translucency.
+//
 // **Why the heights are sampled here and not in the renderer.** The field lives
 // in RDRAM and the game thread writes it. The display-list rewriter runs on the
 // graphics thread, so reading the field there would be a torn read of a moving

@@ -330,9 +330,13 @@ void init() {
         "nothing can be drawn past it, and the furthest object measured on any course sat at "
         "13,175, so it draws the whole course.<br /><br />"
         "It does not reach the course's direction arrows, which are chosen by where you are "
-        "rather than culled by distance, or the animated water, which is built around the "
-        "camera. Drawing more costs frame time, so if the game is already running below its own "
-        "frame rate, leave it on Original.",
+        "rather than culled by distance.<br /><br />"
+        "Above Original it also <recomp-color primary>extends the sea</recomp-color>. The game "
+        "animates a patch of water 922 units across and paints everything beyond it onto the "
+        "sky, so the port draws the missing surface itself, out to the same distance and from "
+        "the same waves the game's own patch stands on. This works with the water renderer on "
+        "or at Original. Drawing more costs frame time, so if the game is already running below "
+        "its own frame rate, leave this on Original.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
             { 1u, "Far", "Far (8,000)" },

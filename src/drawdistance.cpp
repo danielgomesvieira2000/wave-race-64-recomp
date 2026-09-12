@@ -104,6 +104,10 @@ void set_reach(int32_t world_units) {
     std::fflush(stderr);
 }
 
+int32_t reach() {
+    return g_reach.load(std::memory_order_relaxed);
+}
+
 void apply(uint8_t* rdram) {
     // This writes through a pointer read out of the game's own memory, so it is
     // checked before it is followed. A null one is the ordinary case -- before a

@@ -17,7 +17,9 @@ namespace wr64::waterring {
 // Called from the graphics-task hook on the game thread, beside
 // water::publish_frame, with the display list this task will run. Samples the
 // ring's vertices against the game's own wave field and publishes them for the
-// rewriter to claim. Does nothing unless the modern water renderer is on.
+// rewriter to claim. Does nothing while both the water renderer and the draw
+// distance are at Original, since a frame with neither raised has to be the
+// frame the game itself would have produced.
 void publish(uint8_t* rdram, recomp_context* ctx, uint32_t display_list);
 
 }  // namespace wr64::waterring

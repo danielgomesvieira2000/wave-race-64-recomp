@@ -79,6 +79,11 @@ void set_reach(int32_t world_units);
 // is clipped, so a larger number costs submission and shows nothing.
 constexpr int32_t kFarPlane = 16192;
 
+// What the setting currently asks for, in world units, or zero for the game's
+// own. Read by the water ring, which draws sea out to the same distance and has
+// to be off when this is off -- at Original nothing may be added to the frame.
+int32_t reach();
+
 // Called once per display list, from the thread that submits them.
 void apply(uint8_t* rdram);
 
