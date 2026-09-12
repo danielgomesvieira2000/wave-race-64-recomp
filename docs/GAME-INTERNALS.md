@@ -507,8 +507,32 @@ the course. Measured over five frames of a race, twenty seconds apart:
 For scale, the course's static geometry is culled at 5,000 or 6,000 depending on
 the course -- buoys and scenery share the one limit, see *The buoys, and where
 they stop being drawn* above -- so the animated water is a patch roughly a sixth
-of the course across. Water beyond it is drawn some other way, which is why the
-sea still meets the horizon.
+of the course across.
+
+**There is no water beyond it.** This document used to say the sea past the patch
+was "drawn some other way, which is why the sea still meets the horizon", and
+that was a guess standing in for a measurement. A whole-frame trace of a race
+says otherwise: across the entire frame, the only geometry within two units of
+water level is the patch's own 50 segment-3 blocks and a handful of segment-8
+loads that are the craft. Nothing else is at sea level at all.
+
+What fills the screen from the patch's edge down to the bottom is **the lowest of
+the sky's three bands** -- the haze band at `0x06000000`, seven vertices, drawn
+from segment 6 under the identity model matrix like the rest of the sky. Its
+first vertex sits at **y = 0**, water level, and in the traced frame it spans
+clip y **-0.63 to 0.15** while the patch's 50 blocks span **-8.87 to 0.15**: the
+two meet at exactly the same line, and the band carries on below the patch to the
+bottom of the screen.
+
+So the distant sea is **painted on the sky**, and the patch is drawn over it. That
+is the whole trick, and it is why the water looks like it reaches the horizon
+when it stops at 922 units. (The band's outer vertices are inferred from its first
+vertex and its screen extent; the trace records only v0 per load.)
+
+It also sets the limit on what a port can do here. There is no flat far-sea
+geometry to shade or to replace -- anything that makes the sea reach further has
+to put geometry where the game draws none, over a band the game painted to look
+like sea.
 
 **The builder is `func_80050204`**, and the call that fills the arena above is at
 `0x80051200`:
@@ -920,6 +944,11 @@ a renderer pairing frames:
 | frames in which all three bands moved by the **same** step | 5% |
 | frames whose largest step was 60 world units or more | 37% |
 | blocks whose first vertex changed height, ever | 0 |
+
+**The haze band is the distant sea.** Its first vertex sits at y = 0, water
+level, and it fills the screen from the horizon down to the bottom -- everything
+outside the animated patch's 922-unit reach is this band, not water. See *The
+water* below, where the frame that measured it is described.
 
 The three bands move **independently** -- each follows the camera at its own
 rate, which is the parallax between haze, horizon and clouds -- and none of them
