@@ -15,10 +15,10 @@
 // against; the setting scales every one of them, from whatever the game itself
 // last wrote, and restores them when it goes back to Original.
 //
-// **In the list**
+// **In the list: one number, and it is not only the buoys'**
 //
-// The buoys. `func_8006E674` builds the list to draw and keeps each buoy only if
-// its distance from the camera is less than an integer at `+0xA4` of a per-course
+// `func_8006E674` builds the list of buoys to draw and keeps each one only if its
+// distance from the camera is less than an integer at `+0xA4` of a per-course
 // struct, whose address the game leaves at `0x801C0C80`:
 //
 //     0x8006EC30  mul.s   $f10, $f20, $f20     ; dx^2
@@ -28,9 +28,31 @@
 //     0x8006EC60  c.lt.s  $f0, $f14            ; distance < limit ?
 //     0x8006EC70  bc1fl   L_8006ED20           ; no -> skip this buoy
 //
-// It reads 5000. At four times, the count drawn went from 12-23 to 40-54 and the
-// furthest from 4,096-4,570 to 7,062-8,617 -- the far side of the course, which
-// is why four is the cap.
+// That was found by reading the buoy code, and calling the entry "the buoys" was
+// too small a claim. A census of every display-list call over 5,000 race frames
+// on two courses, and the same census with this one field doubled, says what it
+// actually governs: **49 of the 57 static kinds measured on both runs moved out
+// with it**, buoys, gate markers, shoreline props and course scenery alike. One
+// number caps nearly all of the course's static geometry.
+//
+// It is per course -- 5000 on courses 0 and 1, 6000 on course 2 -- and the census
+// recovers it from the drawing alone, without being told: the buoys' 99.5th
+// percentile reach is 4,997 on course 1 and 5,969 on course 2.
+//
+// **A second class sits at exactly twice it.** On course 1, with the field at
+// 5000, a family of larger structures reaches 9,916 and is never drawn beyond,
+// though its sites get 13,175 away. Doubling the field to 10000 lifts that class
+// past what the course contains at all, which is what a limit of 20,000 would do.
+// So the multiplier already scales both; they are one setting, not two.
+//
+// The measured tail is about 9% over the limit -- 23,526 buoy draws top out at
+// 5,464 against 5,000 -- because the cull runs when the list is *built* and the
+// object is still in the list a frame or two later. That is not slack to scale
+// into; it is the same limit, measured a frame late.
+//
+// At four times, 5000 to 20000, the count of buoys drawn went from 12-23 to 40-54
+// and the furthest from 4,096-4,570 to 7,062-8,617 -- the far side of the course.
+// That is why four is the cap: there is nothing further out to reveal.
 //
 // **Not in the list, and why**
 //
@@ -44,7 +66,13 @@
 // patch reaching 922 units, rebuilt around the camera every frame, whose spacing
 // is computed rather than stored. There is no number to scale.
 //
-// Both are written up in docs/GAME-INTERNALS.md with what has been ruled out.
+// **Still missing a number.** One static kind on course 2 -- display list
+// `0x0102CE78` with texture `0x01015220`, 746 sites -- is culled at about 5,100
+// and did **not** move when `+0xA4` doubled (5,108 to 5,083). It has its own
+// limit somewhere else, and until that is found this setting does not reach it.
+//
+// All of this is written up in docs/GAME-INTERNALS.md, and the measurement that
+// produced it in docs/RENDER-DISTANCE-CENSUS.md.
 
 #include <cstdint>
 

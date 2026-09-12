@@ -407,16 +407,53 @@ which is what a player sees as pop-in.
 ```
 
 `$s2` is `lw 0xA4($v0)` at `0x8006E9AC`, and `$v0` is the word at **`0x801C0C80`**
--- a pointer the game leaves there to a per-course struct. So the limit is
+-- a pointer the game leaves there to a per-course struct. **The pointer does not
+move between courses**: it reads `0x801CB058` on every one, so the game copies the
+current course's environment into a single struct rather than indexing an array.
+A diagnostic that waits for the pointer to change to know the course changed
+therefore fires once and never again. So the limit is
 
 | | |
 |---|---|
 | Pointer to the struct | `0x801C0C80` |
-| Buoy distance | struct `+0xA4`, an `int`, **5000** on the courses measured |
+| The distance | struct `+0xA4`, an `int`, **5000** on courses 0 and 1, **6000** on course 2 |
 | Neighbours | `+0xA0` reads 400 and `+0xA8` reads 135; both are compared elsewhere in the same function |
 
-**The limit is per course**, and it varies more than enough to matter. Observed
-in one session: **5000**, **3072** and **2500**. A course that starts at 2500 is
+**It is not the buoys' limit. It is the course's.** Calling this "the buoy
+distance" was reading one caller and assuming it was the only one. A census of
+every display-list call over 5,000 race frames on two courses, repeated with
+this single field doubled, settles what it governs: **49 of the 57 static kinds
+measured on both runs moved out with it** -- buoys, gate markers, shoreline
+props and scenery alike, on both courses. One integer caps nearly all of a
+course's static geometry.
+
+The census recovers the number from the drawing alone, without being told it
+exists: the 99.5th percentile of the distances the buoys are drawn at is 4,997
+on course 1, where the field reads 5000, and 5,969 on course 2, where it reads
+6000. See [RENDER-DISTANCE-CENSUS.md](RENDER-DISTANCE-CENSUS.md) for the method.
+
+**A second class sits at exactly twice it.** On course 1, with the field at
+5000, a family of larger structures (`0x01018A38`-`0x01018D58` in segment 1)
+reaches 9,916 and is never drawn beyond it, although its sites get 13,175 from
+the camera. Doubling the field to 10000 lifts that class past anything the
+course contains, which is what a limit of 20,000 does. So the same field governs
+both tiers, one at `x1` and one at `x2`.
+
+**The cull runs when the list is built, not when it is drawn.** A buoy accepted
+at 4,999 is still in the list a frame or two later once the camera has moved off,
+so a thin tail always lands past the limit: 23,526 buoy draws top out at 5,464
+against 5,000, a 9% overshoot. It is the same limit measured a frame late, not
+slack in it.
+
+**One thing it does not reach.** On course 2, display list `0x0102CE78` with
+texture `0x01015220` -- 746 sites -- is culled at about 5,100 and did not move
+when `+0xA4` doubled: 5,108 at `x1` against 5,083 at `x2`. Its limit is
+somewhere else and has not been found.
+
+**The limit is per course**, and it varies more than enough to matter. Read out
+of the struct while racing: **5000** on courses 0 and 1 and **6000** on course 2;
+**3072** and **2500** were also seen in an earlier session. A course that starts
+at 2500 is
 at half another's draw distance before anything is changed, so the same
 multiplier does visibly different amounts of work on different courses -- two
 times on a 2500 course only reaches what a 5000 course has by default. Anyone
@@ -460,9 +497,11 @@ the course. Measured over five frames of a race, twenty seconds apart:
 | Grid | x steps of 32; z steps of 55 to 56 |
 | Vertex arena | segment 3, `0x13D68` to `0x15AA8` -- the same addresses in every frame |
 
-For scale, the buoys are culled at 5,000 and the course scenery reaches 6,000, so
-the animated water is a patch roughly a sixth of the course across. Water beyond
-it is drawn some other way, which is why the sea still meets the horizon.
+For scale, the course's static geometry is culled at 5,000 or 6,000 depending on
+the course -- buoys and scenery share the one limit, see *The buoys, and where
+they stop being drawn* above -- so the animated water is a patch roughly a sixth
+of the course across. Water beyond it is drawn some other way, which is why the
+sea still meets the horizon.
 
 **The builder is `func_80050204`**, and the call that fills the arena above is at
 `0x80051200`:

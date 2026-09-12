@@ -325,11 +325,12 @@ void init() {
         "at all.<br /><br />"
         "How far away the game keeps drawing things it culls by distance. "
         "<recomp-color primary>Original</recomp-color> is the game's own behaviour. "
-        "It reaches the buoys, which the game drops between 2500 and 5000 units depending on "
-        "the course, while drawing the world to 16,192 -- so the same setting does more on some "
-        "courses than others. It does not reach the course's direction arrows, which are chosen "
-        "by where you are rather than culled by distance, or the animated water, which is built "
-        "around the camera.",
+        "It reaches most of a course's static geometry -- the buoys, the gate markers, the "
+        "shoreline and the scenery all share one limit, which the game sets per course between "
+        "2500 and 6000 while drawing the world out to 16,192, so the same setting does more on "
+        "some courses than others. It does not reach the course's direction arrows, which are "
+        "chosen by where you are rather than culled by distance, or the animated water, which "
+        "is built around the camera.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
             { 1u, "OneAndAHalf", "1.5x" },

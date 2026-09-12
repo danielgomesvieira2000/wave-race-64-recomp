@@ -27,17 +27,29 @@ struct Limit {
     uint32_t seen;         // the struct address those two refer to
 };
 
-// The buoys. func_8006E674 keeps a buoy only if its distance from the camera is
-// less than this, and it reads 5000 while the far plane is at 16,192.
+// The course's static geometry. func_8006E674 keeps a buoy only if its distance
+// from the camera is less than this, which is how the field was found -- but a
+// census of every display-list call, run again with this one field doubled, says
+// it governs far more than buoys: 49 of the 57 static kinds measured on two
+// courses moved out with it. It reads 5000 or 6000 depending on the course,
+// while the far plane is at 16,192. A second class of larger structures is
+// culled at exactly twice it and so scales with it too.
+//
+// One entry, then, rather than the several this list was expected to grow: the
+// game has one distance limit for its scenery, per course, and this is it.
 //
 // Not yet here, and why:
-//   - the arrows and signs at the gates, culled at roughly 1,600 by code that has
-//     not been found. See docs/GAME-INTERNALS.md, *The gate markers*.
+//   - one kind on course 2 (display list 0x0102CE78, texture 0x01015220) that is
+//     culled at about 5,100 and did not move when this field doubled. Its number
+//     is somewhere else and has not been found.
+//   - the arrows and signs at the gates, which are not culled by distance at all
+//     but chosen by where the player is on the course. See docs/GAME-INTERNALS.md,
+//     *The gate markers*.
 //   - the animated water, which is not culled at all but generated: a fixed
 //     500-vertex patch reaching 922 units, whose spacing is computed per frame
 //     rather than stored, so there is no number here to scale.
 Limit g_limits[] = {
-    { "buoys", 0x001C0C80, 0xA4, 0, 0, 0 },
+    { "course geometry", 0x001C0C80, 0xA4, 0, 0, 0 },
 };
 
 constexpr double kMaxMultiplier = 4.0;
