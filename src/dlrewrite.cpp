@@ -2235,17 +2235,29 @@ void dump_course_struct(const uint8_t* rdram, uint32_t state) {
     static const char* path = std::getenv("WR64_COURSE_STRUCT");
     if (path == nullptr) return;
 
-    // Only while a race is on screen. At boot the course number already reads 0
-    // while the struct still holds whatever was there before it, and the two
-    // disagree: the first run of this dumped a "course 0" whose buoy limit read
-    // 5000, and the same course read 6000 once it was actually being raced. A
-    // row that is wrong in a way nothing in it reveals is worse than a missing
-    // row, so the boot frame is skipped rather than labelled.
+    // Only once a race has been on screen for a while. The course number and the
+    // struct's contents do not change together: at boot the number already reads
+    // 0 while the struct still holds what was there before, and a dump taken the
+    // instant the number changes reads the *previous* course's environment under
+    // the new course's name. Two runs of this produced a "course 0" whose buoy
+    // limit read 5000 and another whose read 6000, and the difference was
+    // entirely when the row was taken. A row that is wrong in a way nothing in
+    // it reveals is worse than a missing row, so it waits.
     if (!racing(state)) return;
+    static uint32_t settling = 0;
+    static uint32_t settling_course = 0xFFFFFFFFu;
+    const uint32_t now = read_word(rdram, 0x000D8170);
+    if (now != settling_course) {
+        settling_course = now;
+        settling = 0;
+    }
+    // Sixty race frames: three seconds of the game's own time, long enough for
+    // a course load to have finished and short enough to catch every demo.
+    if (++settling < 60) return;
 
     const uint32_t base = read_word(rdram, 0x001C0C80) & 0x00FFFFFFu;
     if (base == 0 || base >= 0x00800000u) return;
-    const uint32_t course = read_word(rdram, 0x000D8170);
+    const uint32_t course = settling_course;
 
     // Keyed on the course, not on the pointer. The pointer was the obvious
     // guard and it is the wrong one: the game leaves it at 0x801CB058 for every
@@ -2268,8 +2280,12 @@ void dump_course_struct(const uint8_t* rdram, uint32_t state) {
         }
         std::fprintf(f, "# The per-course environment struct the buoy cull reads its\n"
                         "# limit from, one row per field. Known so far: +0x88..+0x94\n"
-                        "# fog RGBA, +0x98 fog near, +0x9C fog far, +0xA4 the buoy\n"
-                        "# cull distance. See include/wr64/drawdistance.h.\n"
+                        "# fog RGBA; +0x98 and +0x9C the fog near and far, in the\n"
+                        "# N64's 0..1000 normalised depth rather than world units,\n"
+                        "# which is why they read about 1000 on every course; +0xA4\n"
+                        "# the buoy cull distance, in world units. Taken sixty race\n"
+                        "# frames into a course, so the load has finished.\n"
+                        "# See include/wr64/drawdistance.h.\n"
                         "course,address,offset,int,float,hex\n");
     }
 

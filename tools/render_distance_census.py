@@ -133,6 +133,29 @@ def load(path: Path):
     return rows, cameras
 
 
+def at_origin(x, z):
+    """Drawn under no world matrix: the HUD, the sky, a full-screen effect."""
+    return abs(x) < ORIGIN_RADIUS and abs(z) < ORIGIN_RADIUS
+
+
+def without_origin_draws(per_frame):
+    """The same frames with the matrix-less draws removed.
+
+    Dropping the *draw* and not the whole kind matters. A kind is often drawn
+    both at real sites and, in some other pass, at the origin -- and since the
+    origin draw's "distance" is really the camera's distance from (0,0,0), it
+    lands in the reach as if the object had been drawn there. One such kind was
+    credited with a reach of 6,290 on that basis while its eleven real sites
+    stopped at 5,000 like everything else around them.
+    """
+    kept = {}
+    for frame, instances in per_frame.items():
+        rest = [i for i in instances if not at_origin(i[0], i[2])]
+        if rest:
+            kept[frame] = rest
+    return kept
+
+
 def sites_of(per_frame):
     """The distinct positions a kind was drawn at, and how many draws in all."""
     seen = set()
@@ -146,8 +169,6 @@ def sites_of(per_frame):
 
 def classify(sites, draws):
     """Whether the reach test can say anything about this kind at all."""
-    if all(abs(x) < ORIGIN_RADIUS and abs(z) < ORIGIN_RADIUS for x, _y, z in sites):
-        return "at origin"
     if len(sites) > MOVING_SITE_RATIO * draws:
         return "moves"
     return None
@@ -199,8 +220,14 @@ def hit_rate(sites, cameras, per_frame, reach):
 def analyse(rows, cameras, min_frames, include_all):
     """Every kind of one course, judged."""
     results = []
-    for (dlist, texture), per_frame in rows.items():
-        if len(per_frame) < min_frames and not include_all:
+    for (dlist, texture), all_draws in rows.items():
+        if len(all_draws) < min_frames and not include_all:
+            continue
+        per_frame = without_origin_draws(all_draws)
+        if not per_frame:
+            reach = max(d for i in all_draws.values() for *_p, d in i)
+            results.append(("at origin", reach, 0.0, 0.0, len(all_draws), 0,
+                            0, dlist, texture))
             continue
         sites, draws = sites_of(per_frame)
         reach = max(d for instances in per_frame.values() for *_p, d in instances)
