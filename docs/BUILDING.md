@@ -242,7 +242,15 @@ every build (see [HUD-INSPECTOR.md](HUD-INSPECTOR.md)):
 
 ```
 python tools/patch_rt64.py
+python tools/patch_runtime_shutdown.py
 ```
+
+`patch_rt64.py` runs every other RT64 patch itself, including the modern water
+renderer (`patch_rt64_water.py`) -- the port does not compile without the
+headers that one adds, whatever the water setting is. `patch_runtime_shutdown.py`
+is separate only because it patches N64ModernRuntime rather than RT64; it joins
+the runtime's workers before the shutdown path frees what they are reading. The
+per-platform build scripts run both.
 
 On Windows, use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`. On
 Linux and macOS, plain `clang`/`clang++` is right and `clang-cl` does not exist;

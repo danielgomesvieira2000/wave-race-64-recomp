@@ -265,7 +265,7 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
                              src/haptics.cpp src/music.cpp
                              src/inspector.cpp src/mods.cpp
                              src/drawdistance.cpp src/audiodiag.cpp
-                             src/resample.cpp)
+                             src/resample.cpp src/water.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
@@ -444,6 +444,9 @@ if(WR64_WITH_FRONTEND)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
                 "${WR64_ASSET_DIR}/icons"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/water"
+                "${WR64_ASSET_DIR}/water"
         COMMAND ${CMAKE_COMMAND} -E make_directory
                 "${WR64_ASSET_DIR}/promptfont"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -32,6 +32,8 @@ namespace wr64 {
 
 void pi_start_dma_hook(uint8_t* rdram, recomp_context* ctx);
 void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx);
+void water_task_submit_hook(uint8_t* rdram, recomp_context* ctx);
+void water_race_init_hook(uint8_t* rdram, recomp_context* ctx);
 
 void register_overlays() {
     recomp::overlays::overlay_section_table_data_t sections{};
@@ -135,6 +137,15 @@ void register_runtime_functions() {
         recomp::overlays::add_loaded_function(static_cast<int32_t>(vi_swap_buffer_addr),
                                               vi_swap_buffer_hook);
     }
+
+    // The two hooks the modern water renderer needs, both wrapping the original
+    // rather than replacing it -- see patches/water.cpp. These addresses are
+    // USA Rev A's and are not looked up, because neither function is
+    // runtime-provided or relocated: both are resident in main_segment.
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x80046CF8),
+                                          water_task_submit_hook);
+    recomp::overlays::add_loaded_function(static_cast<int32_t>(0x8009345C),
+                                          water_race_init_hook);
 
     std::fprintf(stderr,
                  "[wr64] registered %zu runtime-provided and %zu resident functions"

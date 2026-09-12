@@ -38,7 +38,8 @@ done
 # once. patch_rt64.py runs the rest of the RT64 ones itself.
 echo "=== patches ==="
 for patch in patch_rt64.py patch_n64recomp.py patch_rsprecomp.py \
-             patch_librecomp.py patch_recompinput.py; do
+             patch_librecomp.py patch_recompinput.py \
+             patch_runtime_shutdown.py; do
     python3 "tools/$patch"
 done
 

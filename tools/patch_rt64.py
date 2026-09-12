@@ -394,6 +394,15 @@ def main():
     import patch_macos
     patch_macos.main()
 
+    # The modern water renderer. Last, because it is the largest and touches
+    # several of the files the patches above do -- applying it first would make
+    # their anchors harder to find, not the other way round. Original is the
+    # default setting, so this costs a player who does not want it nothing, but
+    # the port does not compile without the headers it adds.
+    import patch_rt64_water
+    if patch_rt64_water.main() != 0:
+        raise SystemExit(1)
+
     print("Rebuild to pick it up.")
 
 
