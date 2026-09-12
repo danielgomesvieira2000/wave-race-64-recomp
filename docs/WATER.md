@@ -87,12 +87,14 @@ There is no free version of this. Two measurements, neither of them a benchmark:
 | | |
 |---|---|
 | Apple M3 Max, Metal ([PR #2][pr]) | game-render GPU median/p95 **1.260/1.897 ms → 2.658/4.303 ms**, and a private depth copy of **18.7 MiB** at 1280x956 with 4x MSAA |
-| Intel Iris Xe, D3D12 (this tree) | boots, drives into a race and holds the game's own 20 fps in the menus and at the start of a race with **High** selected |
+| Intel Iris Xe, D3D12 (this tree) | with the renderer engaged and verified on screen, a scripted run through the title, the menus and an attract race holds the game's own 20 fps at **Original**, **Modern** and **High** alike |
 
-The second is a "does it work" result and not a frame-cost comparison: a
-like-for-like measurement of the same camera at both settings has not been made
-here yet, and the port's own frame-rate line reports the *game's* rate, which is
-the cartridge's 20 or 30 and does not move until the machine stops keeping up.
+The second is still not a frame-cost comparison. The port's frame-rate line
+reports the *game's* rate -- the cartridge's 20 or 30 -- which does not move at
+all until the machine stops keeping up, so "20 at every setting" means the
+headroom was not exhausted here, not that the settings cost the same. A
+like-for-like GPU measurement of one camera at both settings has not been made
+on this hardware.
 
 The honest summary is the first row: expect the time spent drawing a frame to
 roughly double. If your machine is comfortably ahead of the game's rate you will
@@ -154,7 +156,7 @@ skipping emission when the feature is off, so "no command at all" unambiguously
 means the rewriter is not running; and print the material at the point it is
 handed over, which is what `WR64_WATER_MATERIAL_TRACE` does above.
 
-### The three problems worth knowing about in advance
+### The problems worth knowing about in advance
 
 **The lattice recenters, so vertex indices are meaningless between frames.**
 The game rebuilds its water surface around the camera every frame. Pairing
@@ -171,6 +173,17 @@ opaque compositing those quads overwrite nearer wave crests. The fix is a
 private per-view D32 copy carrying nearest-water depth for the surface and
 colour passes, MSAA samples included, leaving scene depth intact for the
 original effects that run later. This is where the 18.7 MiB goes.
+
+**The modified transforms are not always there.** The camera for the water pass
+comes from `drawData.modViewTransforms[proj.transformsIndex]`, and those are
+filled per frame by the projection processor for the workloads in that frame. A
+framebuffer added through `State::fullSync` has not been through it, so the
+vector is empty and the index reads off the front of it -- a crash on the
+graphics thread, in this game on the title screen, the moment the renderer is
+switched on. Treat the transforms being present as a precondition for taking
+over the draw, not as something to work around: without them this is not a draw
+the renderer can shade, and falling through to the game's own water is already
+what it does for anything it does not recognise.
 
 **Refraction bleeds at silhouettes.** All four bilinear taps have to be tested
 against scene and surface depth; a tap that lands on sky or on foreground

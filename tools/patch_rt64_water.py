@@ -76,8 +76,79 @@ def apply_patch(submodule: Path, patch: Path, name: str) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+#  A precondition the renderer assumes and does not check
+#
+#  **Symptom:** with Water set to anything but Original the port dies on the
+#  title screen, reading address 0x44 in FramebufferRenderer::addFramebuffer,
+#  on the graphics thread, under State::fullSync.
+#
+#  addFramebuffer indexes drawData.modViewTransforms[proj.transformsIndex] to
+#  get the camera for the water pass. Those "mod" transforms are not part of a
+#  workload: ProjectionProcessor::process fills them, for the workloads in the
+#  frame it is given, by copying the raw transforms. Reached through fullSync
+#  instead of the normal present path, that processing has not run, the vector
+#  is empty, and the index walks off the front of it.
+#
+#  The fix is the precondition, not a fallback: if the modified transforms for
+#  this projection are not there, the draw is not one this renderer can take
+#  over, and it falls through to the game's own water for that frame -- which
+#  is what the renderer already does for any display list it does not
+#  recognise.
+#
+#  Anchored rather than folded into the diff above because it is three lines
+#  and belongs to a symptom worth keeping next to its explanation.
+# ---------------------------------------------------------------------------
+
+FB_RENDERER = SUBMODULE / "src" / "render" / "rt64_framebuffer_renderer.cpp"
+
+GUARD_MARKER = "wr64: the modified transforms may not exist"
+
+GUARD_ANCHOR = """                const bool wantsWater = call.callDesc.waterMaterial.identity.x > 0.0f &&
+                    instanceDrawCall.type == InstanceDrawCall::Type::IndexedTriangles && p.fbStorage->colorTarget && p.fbStorage->depthTarget;
+"""
+
+GUARD_REPLACEMENT = """                // wr64: the modified transforms may not exist for this projection.
+                // ProjectionProcessor::process fills them per frame; a framebuffer
+                // added through State::fullSync has not been through it, and the
+                // index below would read off the front of an empty vector.
+                const bool waterTransformsReady =
+                    proj.transformsIndex < drawData.modViewTransforms.size() &&
+                    proj.transformsIndex < drawData.modViewProjTransforms.size();
+                const bool wantsWater = call.callDesc.waterMaterial.identity.x > 0.0f &&
+                    instanceDrawCall.type == InstanceDrawCall::Type::IndexedTriangles && p.fbStorage->colorTarget && p.fbStorage->depthTarget &&
+                    waterTransformsReady;
+"""
+
+
+def apply_guard() -> int:
+    text = FB_RENDERER.read_text(encoding="utf-8")
+    if GUARD_MARKER in text:
+        print(f"{NAME}: transform guard already applied")
+        return 0
+    if GUARD_ANCHOR not in text:
+        print(f"{NAME}: could not find the wantsWater anchor in {FB_RENDERER.name}.\n"
+              "The water patch has moved; re-derive this guard before continuing.",
+              file=sys.stderr)
+        return 1
+    FB_RENDERER.write_text(text.replace(GUARD_ANCHOR, GUARD_REPLACEMENT, 1), encoding="utf-8")
+    print(f"{NAME}: transform guard applied")
+    return 0
+
+
 def main() -> int:
-    return apply_patch(SUBMODULE, PATCH, NAME)
+    # The guard below edits a line the diff itself introduced, so once it is in,
+    # "git apply --reverse --check" no longer recognises the tree as patched.
+    # The guard's marker is therefore the authority on "fully applied", and it
+    # is checked before anything else is attempted.
+    if FB_RENDERER.is_file() and GUARD_MARKER in FB_RENDERER.read_text(encoding="utf-8"):
+        print(f"{NAME}: already applied")
+        return 0
+
+    result = apply_patch(SUBMODULE, PATCH, NAME)
+    if result != 0:
+        return result
+    return apply_guard()
 
 
 if __name__ == "__main__":
