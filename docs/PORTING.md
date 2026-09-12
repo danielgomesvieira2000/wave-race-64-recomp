@@ -1727,11 +1727,17 @@ it shifts one slot, and each one is then interpolated from the *previous* buoy's
 position -- which is exactly a slide. Raising the limit puts more buoys in the
 table, so the membership churns more and more of them slide.
 
-This is consistent with every measurement above but, like the burst, **is not
-proven**: it has not been watched on screen with the pairing instrumented. The
-useful consequence is narrower and solid -- **the draw distance is not the
-defect**. Anything that fixes this fixes it for the game's own distance too, and
-nothing done to the distance setting will fix it.
+**Confirmed the same way the burst was**: presenting at the game's own frame rate,
+so that no frames are interpolated at all, removes the sliding entirely. That is
+the one check worth running before any other here, it is free, and it settles
+which side of the renderer a symptom is on -- the game's submission is identical
+either way, so anything that survives it is not interpolation and anything that
+disappears is nothing else.
+
+The consequence is that **the draw distance is not the defect**. Raising it makes
+the sliding easier to notice by putting more objects in the table, but the fault
+is the pairing, it is there at the game's own distance too, and nothing done to
+the distance setting will fix it.
 
 ---
 

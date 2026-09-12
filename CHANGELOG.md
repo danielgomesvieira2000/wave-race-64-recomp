@@ -36,8 +36,10 @@ notice changes.
   frame in 0.01% of its chances, against 0.03% at the game's own distance. The
   game submits correct, stable geometry at any of these settings. What slides is
   RT64 pairing one buoy's matrix with another's between frames as the set of them
-  changes, which happens at the game's own distance too and is written up in
-  `docs/PORTING.md`.
+  changes — confirmed by presenting at the game's own frame rate, where no frames
+  are interpolated and the sliding does not happen. It is there at the game's own
+  distance too, and it is written up in `docs/PORTING.md` under *Objects that
+  slide when more of them are drawn*.
 
 ## [0.9.0](docs/releases/0.9.0.md) — Linux, macOS, and modern water
 
