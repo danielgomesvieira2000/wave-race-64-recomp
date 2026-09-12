@@ -90,27 +90,37 @@ def axial(x: float, z: float):
 def height_at(heights, x: float, z: float) -> float:
     """The surface height at a world XZ: a plane over the containing triangle.
 
-    A single cell lookup is not the model. func_8004D30C builds a triangular
-    plane and evaluates the point against it, and func_8004F3D4 shows which
-    diagonal splits the rhombus: it compares the two fractional parts, so the
-    split runs along fu == fv, and its two candidate cells -- (cu, cv+1) and
-    (cu+1, cv) -- are the off-diagonal corner of each half.
+    Transcribed from func_8004D30C, 0x8004D410 onward. The rhombus is split
+    along `frac u == frac v` -- the branch at 0x8004D424 tests `frac v > frac u`
+    -- and each half takes the base corner plus the two the code actually
+    loads. What it computes is a pair of *differences* between adjacent corner
+    heights, then walks them by the fractional parts:
 
-        fu <  fv   corners (cu,cv), (cu,cv+1), (cu+1,cv+1)
-        fu >= fv   corners (cu,cv), (cu+1,cv), (cu+1,cv+1)
+        frac v <= frac u    corners (cu,cv), (cu+1,cv), (cu+1,cv+1)
+                            d0 = h00 - h10     (0x8004D548)
+                            d1 = h10 - h11     (0x8004D584)
+                            h  = h00 - fu*d0 - fv*d1
 
-    Barycentric weights fall straight out of the local coordinates, which is
-    what the two branches below are.
+        frac v >  frac u    corners (cu,cv), (cu,cv+1), (cu+1,cv+1)
+                            d1 = h00 - h01     (0x8004D470)
+                            d0 = h01 - h11     (0x8004D4D8)
+                            h  = h00 - fv*d1 - fu*d0
+
+    Both reduce to the corner value at each corner, which is the check that the
+    weights are the right way round. The function goes on to normalise a plane
+    with a square root at 0x8004D5C4 -- that is for the *slope* it also returns
+    to its callers, not for the height.
     """
     cu, cv, fu, fv = axial(x, z)
 
-    def h(du: int, dv: int) -> float:
+    def h(du: int, dv: int) -> int:
         row, col = entry_index(cu + du, cv + dv)
         return heights[row][col]
 
-    if fu < fv:
-        return (1.0 - fv) * h(0, 0) + (fv - fu) * h(0, 1) + fu * h(1, 1)
-    return (1.0 - fu) * h(0, 0) + (fu - fv) * h(1, 0) + fv * h(1, 1)
+    h00 = h(0, 0)
+    if fv > fu:
+        return h00 - fv * (h00 - h(0, 1)) - fu * (h(0, 1) - h(1, 1))
+    return h00 - fu * (h00 - h(1, 0)) - fv * (h(1, 0) - h(1, 1))
 
 
 def load_field(path: Path):

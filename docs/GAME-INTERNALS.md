@@ -569,8 +569,33 @@ the kind of error that looks like an imperfect decode rather than a wrong one.
 diagonal `frac u == frac v` splitting each rhombus into two triangles.
 `func_8004F3D4`'s two candidate cells -- `(cu, cv+1)` and `(cu+1, cv)` -- are
 the off-diagonal corner of each half, which is the same split seen from the
-writing side. The reader then forms a plane from up to three corners; the corner
-values and the split are established, the exact weights are not yet transcribed.
+writing side.
+
+Each half then forms a plane from three corners, and what the code computes is
+a pair of **differences** between adjacent corner heights:
+
+| Branch | Corners | Differences |
+|---|---|---|
+| `frac v <= frac u` | `(cu,cv)`, `(cu+1,cv)`, `(cu+1,cv+1)` | `h00-h10` at `0x8004D548`, `h10-h11` at `0x8004D584` |
+| `frac v >  frac u` | `(cu,cv)`, `(cu,cv+1)`, `(cu+1,cv+1)` | `h00-h01` at `0x8004D470`, `h01-h11` at `0x8004D4D8` |
+
+They are combined in 12-bit fixed point at `0x8004D588`-`0x8004D600`:
+`(gWaterLevel + h00) << 12`, plus each difference times a saved weight, with a
+square root of `d0^2 + d1^2 + 0x1000` taken at `0x8004D5C4` -- a plane normal
+being normalised, which the function also gives its callers for slope.
+
+**The weights are the part still open.** A plain barycentric plane over those
+corners reproduces the game to a median of **0.089 world units on lattice-aligned
+probes**, against a field spanning about 90, but probes well inside a cell still
+differ by about one unit and no rearrangement of which fraction weights which
+difference improves it. The residual is in that fixed-point tail, not in the
+index or the corner choice, both of which are settled.
+
+For anything that needs exact heights, the answer is not to finish this
+transcription: **call `func_8004D30C` itself.** It is recompiled like everything
+else and `src/waterfield.cpp` calls it thousands of times a frame without
+trouble. The decode is for understanding the field and for evaluating it in bulk
+somewhere the game's function cannot go, such as a shader.
 
 #### How this was checked, and what it is for
 
