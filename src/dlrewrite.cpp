@@ -99,6 +99,7 @@
 #include "wr64/dlrewrite.h"
 #include "wr64/display.h"
 #include "wr64/drawdistance.h"
+#include "wr64/waterring.h"
 #include "wr64/inspector.h"
 #include "wr64/testdrive.h"
 #include "wr64/water.h"
@@ -132,6 +133,23 @@ constexpr uint32_t kMaxCommands = kScratchSize / 8;
 // bytes; a frame loads a handful, and the cursor restarts every frame.
 constexpr uint32_t kMatrixScratch = kScratch + kScratchSize;
 constexpr uint32_t kMatrixScratchSize = 0x1000u;   // 64 matrices
+
+// And where the water ring's vertices go, past the matrices. A Vtx is 16 bytes
+// and the ring emits its bands in batches of 26, twice per band; 8 KB is more
+// than twice what the largest ring needs, and the cursor restarts every frame.
+constexpr uint32_t kVertexScratch = kMatrixScratch + kMatrixScratchSize;
+constexpr uint32_t kVertexScratchSize = 0x2000u;
+
+// The microcode this game runs is not stock F3D. RT64 carries a variant for it
+// -- lib/RT64/src/gbi/rt64_gbi_f3dwave.cpp -- and these are that variant's own
+// encodings, read from it rather than guessed from a gbi.h:
+//
+//   G_VTX   count = (w0 >> 9) & 0x7F,  destination index = ((w0 >> 16) & 0xFF)/5
+//   G_QUAD  four indices, each x5, packed into w1 at 24, 16, 8, 0
+//
+// The index scaling by five is what makes this ucode its own case; writing a
+// stock F3D quad here would address every fifth vertex.
+constexpr uint8_t kOpQuad = 0xB5;
 
 // Fast3D opcodes this walk has to understand. Everything else is copied.
 constexpr uint8_t kOpMtx = 0x01;
@@ -511,6 +529,9 @@ struct Walker {
     float far_scale = 1.0f;
     float fov_scale = 1.0f;
     uint32_t matrix_cursor = 0;
+    // How far into the ring's vertex scratch this frame has written. The Walker
+    // is built fresh every frame, so this restarts with it.
+    uint32_t vertex_cursor = 0;
 
     bool centred = false;
     bool centred_by_viewport = false;   // ... and on_viewport_load is what decided it
@@ -1149,6 +1170,90 @@ struct Walker {
     bool known_water_material(uint32_t segmented_list) const {
         return segmented_list == 0x010082F0 || segmented_list == 0x0100B590 ||
                segmented_list == 0x0100D258 || segmented_list == 0x0100E680;
+    }
+
+    // The water ring: geometry for the sea outside the game's own patch.
+    //
+    // The game's patch reaches 922 units and there is nothing beyond it -- the
+    // distant sea is painted on the sky's lowest band. This draws a ring of
+    // quads from the patch's edge out to the course's own draw distance,
+    // standing on the same wave field the patch stands on. The heights were
+    // sampled on the game thread; see wr64/waterring.h for why.
+    //
+    // It is emitted immediately after the game's own water call and inside the
+    // same material bracket, which gets three things for free: the render mode,
+    // combine and texture the game just set for water; the identity model matrix
+    // the water is drawn under, so world-space vertices are correct as they
+    // stand; and the modern renderer's shading, since the material is still
+    // attached.
+    void water_ring(const wr64::waterring::Ring& ring) {
+        using wr64::waterring::kSectors;
+        using wr64::waterring::kCircles;
+
+        // Once, so a run says whether this reached the display list at all --
+        // the difference between "drawn and invisible" and "never emitted" is
+        // the first thing to establish and the log is the cheapest place.
+        static bool announced = false;
+        if (!announced) {
+            announced = true;
+            std::fprintf(stderr,
+                         "[water] ring: %d sectors x %d circles, %.0f to %.0f units\n",
+                         kSectors, kCircles, ring.inner, ring.outer);
+            std::fflush(stderr);
+        }
+
+        // Each band is split in half because a batch is 26 vertices and a whole
+        // band is 50: thirteen columns of two, twelve quads, twice per band.
+        constexpr int kHalfColumns = kSectors / 2 + 1;      // 13
+        constexpr int kBatchVertices = kHalfColumns * 2;    // 26
+
+        for (int band = 0; band + 1 < kCircles; ++band) {
+            for (int half = 0; half < 2; ++half) {
+                const uint32_t base = kVertexScratch + vertex_cursor;
+                if (vertex_cursor + kBatchVertices * 16 > kVertexScratchSize) return;
+
+                for (int col = 0; col < kHalfColumns; ++col) {
+                    const int sector = (half * (kSectors / 2) + col) % kSectors;
+                    for (int row = 0; row < 2; ++row) {
+                        const auto& v = ring.vertices[(band + row) * kSectors + sector];
+                        const uint32_t at = base + uint32_t(col * 2 + row) * 16;
+                        // A Vtx is six s16 then four u8. write_half already
+                        // carries the XOR-2 convention RDRAM is stored under, so
+                        // these are byte offsets into the vertex and nothing
+                        // here has to reason about word endianness.
+                        write_half(at + 0, uint16_t(v.x));
+                        write_half(at + 2, uint16_t(v.y));
+                        write_half(at + 4, uint16_t(v.z));
+                        write_half(at + 6, 0);           // flag
+                        // Texture coordinates of zero. The water tile is loaded
+                        // with G_TX_CLAMP, so anything outside it clamps to an
+                        // edge texel anyway, and the modern renderer shades this
+                        // surface rather than taking its colour from that tile.
+                        write_half(at + 8, 0);
+                        write_half(at + 10, 0);
+                        write_half(at + 12, 0xFFFF);     // r, g
+                        write_half(at + 14, 0xFFFF);     // b, a
+                    }
+                }
+
+                // G_VTX: count in bits 9..15, destination index (times five) in
+                // 16..23, the byte length in the low bits for form's sake.
+                const uint32_t n = kBatchVertices;
+                emit((uint32_t(kOpVtx) << 24) | ((n << 9) | (n * 16 - 1)),
+                     0x80000000u | base);
+
+                for (int col = 0; col + 1 < kHalfColumns; ++col) {
+                    const uint32_t a = uint32_t(col * 2 + 0) * 5;
+                    const uint32_t b = uint32_t(col * 2 + 1) * 5;
+                    const uint32_t c = uint32_t((col + 1) * 2 + 1) * 5;
+                    const uint32_t d = uint32_t((col + 1) * 2 + 0) * 5;
+                    emit(uint32_t(kOpQuad) << 24,
+                         (a << 24) | (b << 16) | (c << 8) | d);
+                }
+
+                vertex_cursor += kBatchVertices * 16;
+            }
+        }
     }
 
     // The frame's water material, as an extended GBI command in the display
@@ -2467,6 +2572,17 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             if (water && w.water_interp) w.vertex_interp_group(Walker::kWaterId);
             if (modern_water) w.water_material(true);
             w.emit(w0, w1);
+            // The ring goes after the game's own surface and inside the same
+            // material bracket: after, so the patch is drawn first and the
+            // overlap between them is covered by the game's own vertices rather
+            // than by these; inside, so the modern renderer shades both as one
+            // sea. It is claimed by list identity, so the two split-screen views
+            // each get their own.
+            if (modern_water) {
+                if (const auto* ring = wr64::waterring::claim(list_vaddr)) {
+                    w.water_ring(*ring);
+                }
+            }
             if (modern_water) w.water_material(false);
             if (water && w.water_interp) w.vertex_interp_group(G_EX_ID_AUTO);
             if (curtain) w.curtain(false);

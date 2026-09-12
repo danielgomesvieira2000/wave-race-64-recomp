@@ -11,6 +11,7 @@
 
 #include "wr64/water.h"
 #include "wr64/waterfield.h"
+#include "wr64/waterring_sample.h"
 
 extern "C" void SysMain_SendGfxTaskSetMesg(uint8_t* rdram, recomp_context* ctx);
 extern "C" void func_8009345C(uint8_t* rdram, recomp_context* ctx);
@@ -41,6 +42,10 @@ void water_race_init_hook(uint8_t* rdram, recomp_context* ctx) {
 void water_task_submit_hook(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t display_list = MEM_W(0x30, ctx->r4);
     water::publish_frame(rdram, display_list);
+
+    // The sea outside the game's own patch, sampled against the game's own wave
+    // field. Same thread, same moment, same key -- see wr64/waterring.h.
+    waterring::publish(rdram, ctx, display_list);
 
     // The wave field, dumped for offline decoding. Off unless armed, and it
     // happens here because calling the game's own height query needs a valid
