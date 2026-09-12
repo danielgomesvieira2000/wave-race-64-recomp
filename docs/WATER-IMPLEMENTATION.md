@@ -205,9 +205,18 @@ Inside `FramebufferRenderer::addFramebuffer`, per identified water range:
 
 ## Three problems the design exists to solve
 
-**The lattice recenters.** The game rebuilds its water around the camera in
-roughly 64-unit steps. Vertex *n* is not the same point between frames, so
-index-paired interpolation blends unrelated world positions and the waves slide.
+**The lattice recenters, and this was measured here rather than taken on
+trust.** The game carries its water with the camera in 64-unit steps. Vertex *n*
+is not the same *water* between frames -- the lattice moves through a world-fixed
+field and samples a different height -- so index-paired interpolation blends
+unrelated positions and the waves slide.
+
+This project originally concluded the opposite, that the carry was rigid and
+index pairing was therefore sound. Measured per vertex across three courses, on
+the frames where an index shift can express the carry at all, shifting the index
+cuts the height error by **28-51%**. The fork was right. See
+[GAME-INTERNALS.md](GAME-INTERNALS.md), *Does index i keep its meaning?*, for the
+numbers and for why the older measurement read the other way.
 `rt64_water_interpolation.h` keeps the previous surface in a bounded BVH of
 triangles (`sampleTriangle`, `sampleNode`, `sample(x, z)`) and samples it at each
 current world XZ, interpolating height and reflection UVs. New boundary vertices
