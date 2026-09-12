@@ -79,6 +79,25 @@ NO_LIMIT_RATIO = 0.90
 # beyond it" means anything.
 MIN_BEYOND = 30
 
+# The reach is a high percentile of the drawn distances, not their maximum,
+# because **the cull is applied when the list is built and measured when the
+# list is drawn**. A buoy accepted at 4,999 is still in the list a frame or two
+# later when the camera has moved further off, so a few draws always land past
+# the limit: the buoys' maximum over 23,526 draws is 5,464 against a limit of
+# 5,000, a 9% overshoot, while their 99.5th percentile is 4,997. The same
+# percentile reads 5,969 on a course whose limit is 6,000 and 9,916 on a class
+# whose limit looks like 10,000. The maximum is still reported, as `max drawn`,
+# because the size of the tail is itself worth seeing.
+REACH_PERCENTILE = 0.995
+
+
+def percentile(sorted_values, fraction):
+    """The value below which `fraction` of a sorted list falls."""
+    if not sorted_values:
+        return 0.0
+    return sorted_values[min(len(sorted_values) - 1,
+                             int(len(sorted_values) * fraction))]
+
 # Every camera against every site is frames x sites per kind, and a long run has
 # thousands of each -- billions of distances for an answer that does not need
 # them. Both are thinned to an even stride instead, which keeps the extremes of
@@ -225,16 +244,18 @@ def analyse(rows, cameras, min_frames, include_all):
             continue
         per_frame = without_origin_draws(all_draws)
         if not per_frame:
-            reach = max(d for i in all_draws.values() for *_p, d in i)
-            results.append(("at origin", reach, 0.0, 0.0, len(all_draws), 0,
-                            0, dlist, texture))
+            drawn = sorted(d for i in all_draws.values() for *_p, d in i)
+            results.append(("at origin", percentile(drawn, REACH_PERCENTILE),
+                            drawn[-1], 0.0, 0.0, len(all_draws), 0, 0,
+                            dlist, texture))
             continue
         sites, draws = sites_of(per_frame)
-        reach = max(d for instances in per_frame.values() for *_p, d in instances)
+        drawn = sorted(d for instances in per_frame.values() for *_p, d in instances)
+        reach = percentile(drawn, REACH_PERCENTILE)
         excuse = classify(sites, draws)
         if excuse is not None:
-            results.append((excuse, reach, 0.0, 0.0, len(per_frame), len(sites),
-                            0, dlist, texture))
+            results.append((excuse, reach, drawn[-1], 0.0, 0.0, len(per_frame),
+                            len(sites), 0, dlist, texture))
             continue
 
         furthest, beyond = opportunity(sites, cameras, reach)
@@ -246,22 +267,24 @@ def analyse(rows, cameras, min_frames, include_all):
             call = "CULLED" if hit >= 0.5 else "unclear"
         else:
             call = "not culled"
-        results.append((call, reach, furthest, hit, len(per_frame), len(sites),
-                        beyond, dlist, texture))
+        results.append((call, reach, drawn[-1], furthest, hit, len(per_frame),
+                        len(sites), beyond, dlist, texture))
     return results
 
 
 def report(results, wanted, show_all):
     """Print one course's table, and return its verdict per kind."""
     results.sort(key=lambda r: (ORDER[r[0]], -r[1]))
-    print(f"  {'verdict':<10} {'reach':>7} {'furthest':>9} {'drawn<=reach':>13} "
-          f"{'frames':>7} {'sites':>6} {'beyond':>8}  list / texture")
-    for call, reach, furthest, hit, nframes, nsites, beyond, dlist, texture in results:
+    print(f"  {'verdict':<10} {'reach':>7} {'max drawn':>10} {'furthest':>9} "
+          f"{'drawn<=reach':>13} {'frames':>7} {'sites':>6} {'beyond':>8}"
+          f"  list / texture")
+    for (call, reach, top, furthest, hit, nframes, nsites, beyond,
+         dlist, texture) in results:
         if not show_all and call.lower() not in wanted:
             continue
         far = f"{furthest:>9.0f}" if furthest else f"{'-':>9}"
         rate = f"{hit:>12.0%}" if furthest else f"{'-':>12}"
-        print(f"  {call:<10} {reach:>7.0f} {far} {rate} "
+        print(f"  {call:<10} {reach:>7.0f} {top:>10.0f} {far} {rate} "
               f"{nframes:>7} {nsites:>6} {beyond:>8}  {dlist} {texture}")
 
     tally = defaultdict(int)

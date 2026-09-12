@@ -79,12 +79,13 @@ frame,course,list,texture,x,y,z,distance,camx,camz
 ### Reading the report
 
 ```
-=== course 1: 601 frames, 202 kinds, camera x -6215..6583, z -1194..1318 ===
-  verdict      reach  furthest  drawn<=reach  frames  sites   beyond  list / texture
-  CULLED        4999     13602           94%     566     39    11010  0x0102CD78 0x01021978
+=== course 1: 2604 frames, 575 kinds, camera x -6784..6630, z -1481..1346 ===
+  verdict      reach  max drawn  furthest  drawn<=reach  frames  sites   beyond  list / texture
+  CULLED        4997       5464     13757           95%    2456     39    46585  0x0102CD78 0x01021978
 ```
 
-* **reach** — the furthest this kind was ever actually drawn.
+* **reach** — the 99.5th percentile of the distances it was drawn at.
+* **max drawn** — the furthest single draw, which overshoots; see below.
 * **furthest** — the furthest any of its sites ever was from the camera.
 * **drawn<=reach** — of the frames where a site was within the reach, how many
   drew the kind.
@@ -92,7 +93,7 @@ frame,course,list,texture,x,y,z,distance,camx,camz
   drawn.
 
 The row above is the buoys, and it is the calibration case: their limit is known
-to read **5,000**, and the census recovers 4,999 without being told.
+to read **5,000**, and the census recovers 4,997 without being told.
 
 | Verdict | What it means |
 |---|---|
@@ -103,7 +104,17 @@ to read **5,000**, and the census recovers 4,999 without being told.
 | `moves` | Its positions are not fixed — another racer, spray, part of the player's craft. The test does not apply. |
 | `at origin` | Drawn under no world matrix at all: the HUD, the sky, a full-screen effect. The census has nothing to say about it. |
 
-### Two traps this already fell into
+### Three traps this already fell into
+
+**The cull is applied when the list is built, not when it is drawn.** A buoy
+accepted at 4,999 is still in the list a frame or two later, when the camera
+has moved further off, so a thin tail of draws always lands past the limit:
+over 23,526 buoy draws the maximum is **5,464** against a limit of **5,000**,
+a 9% overshoot. That is why the reported reach is a high percentile rather
+than the maximum -- the 99.5th percentile of the same draws is 4,997. It
+reads 5,969 on a course whose limit is 6,000 and 9,916 on a class whose limit
+looks like 10,000. The maximum is still printed, because the size of the tail
+is worth seeing.
 
 **`reach` is a lower bound, not the limit.** A kind with forty sites spread along
 the course has one sitting at the limit in most frames, and its reach lands
@@ -198,7 +209,9 @@ texture)` pair on one course:
    outnumber half the draws, the object moves and the test does not apply. If
    they are all at the origin, it is drawn under no matrix and the test does not
    apply.
-2. `reach` = the furthest it was actually drawn.
+2. `reach` = a high percentile of the distances it was actually drawn at.
+   Not the maximum: the cull runs when the list is built and the measurement
+   happens when the list is drawn, so a few draws always land past the limit.
 3. `opportunity` = the furthest any site ever was from the camera, over every
    frame of the run — **including the frames where it was not drawn**. This is
    the whole trick: the camera is recorded in every row, so the distance to a
