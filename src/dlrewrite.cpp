@@ -1900,6 +1900,24 @@ struct Walker {
 // say which geometry the game rebuilds from scratch every frame, which is
 // the geometry RT64 has nothing to interpolate between unless it is told to
 // interpolate the vertices themselves.
+uint32_t read_word(const uint8_t* rdram, uint32_t offset) {
+    uint32_t v;
+    std::memcpy(&v, rdram + (offset & 0x7FFFFF), sizeof v);
+    return v;
+}
+
+float read_float(const uint8_t* rdram, uint32_t offset) {
+    float v;
+    std::memcpy(&v, rdram + (offset & 0x7FFFFF), sizeof v);
+    return v;
+}
+
+#if defined(_WIN32)
+constexpr const char* kNullDevice = "NUL";
+#else
+constexpr const char* kNullDevice = "/dev/null";
+#endif
+
 struct Tracer {
     uint8_t* rdram = nullptr;
     std::FILE* f = nullptr;
@@ -1909,6 +1927,38 @@ struct Tracer {
     int modelview_depth = 0;
     uint32_t texture = 0;
     uint32_t vtx_loads = 0;
+
+    // Census mode. When this is set the tree is not printed at all and one CSV
+    // row is written per display-list call instead: what was drawn, where, and
+    // how far away. See tools/render_distance_census.py.
+    //
+    // The distance is free. The modelview stack in this GBI holds view * model,
+    // so the translation row of the matrix an object is drawn under is already
+    // the object's position in eye space, and its length is the distance from
+    // the camera. Nothing has to be inverted or tracked separately.
+    std::FILE* csv = nullptr;
+    int csv_frame = 0;
+    // The camera, read from the game rather than derived from a matrix. The
+    // first attempt at this took the modelview's translation as an eye-space
+    // position and then as a world position transformed by "the frame's view
+    // matrix", and both gave every static object a distance that never changed:
+    // object matrices are *loaded*, so their translation is a world position,
+    // and the view is not in the modelview stack at all.
+    //
+    // gCameraPerspective is at 0x80227C80 with a stride of 0x10C, and the
+    // camera's world position sits at +0x4C, +0x50, +0x54 -- which is exactly
+    // what the buoy cull reads at 0x8006EC30 ("the camera at $s6+0x4C"). Using
+    // the same position the game's own cull uses is what makes a measured
+    // ceiling comparable with the limit behind it.
+    float camera_x = 0.0f;
+    float camera_z = 0.0f;
+    // Which course, in every row. The attract demo drives itself properly and
+    // moves on to another course when it has finished with one, which makes it
+    // a far better census driver than a blind input script -- a script that
+    // cannot see the shore beaches the craft and ends the race in twenty
+    // seconds. One long unattended run then covers several courses, and this
+    // column is what lets the analysis take them apart afterwards.
+    uint32_t course = 0;
 
     Tracer() { modelview[0] = Mat4::identity(); }
 
@@ -1956,8 +2006,34 @@ struct Tracer {
                     return;
                 case kOpDisplayList: {
                     const bool branch = ((w0 >> 16) & 0xFF) != 0;
-                    std::fprintf(f, "%*s%s 0x%08X (phys 0x%06X)\n", depth * 2, "",
-                                 branch ? "branch" : "call", w1, physical(w1));
+                    if (csv != nullptr) {
+                        // A segmented address into a fixed segment, or the
+                        // texture, is what identifies an object between
+                        // sessions -- a segment 3 offset says only where this
+                        // frame's allocator landed. Both are written and the
+                        // census decides which to group on.
+                        const Mat4& mv = modelview[modelview_depth];
+                        const float x = mv.m[3][0], y = mv.m[3][1], z = mv.m[3][2];
+                        // Horizontal, because the game's own cull is: the buoy
+                        // test at 0x8006EC30 squares dx and dz and leaves dy
+                        // out. A census measuring something else would not be
+                        // comparable with the limit it is looking for.
+                        const float dx = x - camera_x;
+                        const float dz = z - camera_z;
+                        // The camera goes in every row, redundantly. It is
+                        // what lets the census ask the question a ceiling
+                        // cannot answer for a lone object: how far away it
+                        // *would* have been in the frames it was not drawn.
+                        std::fprintf(csv,
+                                     "%d,%u,0x%08X,0x%08X,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f\n",
+                                     csv_frame, course, w1, texture, x, y, z,
+                                     std::sqrt(dx * dx + dz * dz),
+                                     camera_x, camera_z);
+                    }
+                    else {
+                        std::fprintf(f, "%*s%s 0x%08X (phys 0x%06X)\n", depth * 2, "",
+                                     branch ? "branch" : "call", w1, physical(w1));
+                    }
                     if (branch) { cursor = physical(w1); continue; }
                     if (depth < 6) {
                         const int saved = modelview_depth;
@@ -2045,7 +2121,12 @@ struct Tracer {
 // the first WR64_3D_TRACE_FRAMES frames (two by default), and reports when
 // it is done.
 void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
-    static const char* path = std::getenv("WR64_3D_TRACE");
+    // Two modes over one walk. WR64_3D_TRACE writes the readable tree;
+    // WR64_DISTANCE_CSV writes one row per display-list call -- what was drawn,
+    // where, and how far from the camera -- for the render-distance census.
+    // The census wants hundreds of frames, so it defaults to far more of them.
+    static const char* csv_path = std::getenv("WR64_DISTANCE_CSV");
+    static const char* path = csv_path != nullptr ? csv_path : std::getenv("WR64_3D_TRACE");
     if (path == nullptr) return;
     // Race frames by default; WR64_3D_TRACE_STATE names another game state,
     // in hexadecimal, for the screens that are not races.
@@ -2062,7 +2143,8 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
     }
 
     static const char* frames_env = std::getenv("WR64_3D_TRACE_FRAMES");
-    static const int wanted = frames_env != nullptr ? std::atoi(frames_env) : 2;
+    static const int wanted = frames_env != nullptr ? std::atoi(frames_env)
+                                                    : (csv_path != nullptr ? 600 : 2);
     // How far apart the traced frames are, in race frames. One is consecutive,
     // which is what a frame-to-frame diff of the geometry wants. A larger
     // number spreads them over the run, which is what a question about
@@ -2084,11 +2166,40 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
     }
 
     ++written;
-    std::fprintf(f, "==== frame %d of %d (race frame %d, state 0x%02X, list 0x%08X) ====\n",
-                 written, wanted, seen - 1, state, list_vaddr);
     Tracer t{};
     t.rdram = rdram;
-    t.f = f;
+
+    if (csv_path != nullptr) {
+        // The tree's own prints go to the null device rather than being guarded
+        // one by one: the walk is shared, and a dozen conditionals in it would
+        // be a dozen chances to get one wrong.
+        static std::FILE* sink = std::fopen(kNullDevice, "w");
+        static bool header = false;
+        if (!header) {
+            header = true;
+            std::fprintf(f, "# One row per display-list call. x,y,z is the world\n"
+                            "# position the object was drawn at -- the translation of\n"
+                            "# the matrix in force -- and distance is the horizontal\n"
+                            "# distance from the game's own camera, the metric the\n"
+                            "# game's own culls use. camx,camz is that camera.\n"
+                            "frame,course,list,texture,x,y,z,distance,camx,camz\n");
+        }
+        t.f = sink;
+        t.csv = f;
+        t.csv_frame = written;
+        // gCameraPerspective[D_80223930], world position at +0x4C.
+        const uint32_t index = read_word(rdram, 0x00223930) & 3;
+        const uint32_t base = 0x00227C80 + index * 0x10C;
+        t.camera_x = read_float(rdram, base + 0x4C);
+        t.camera_z = read_float(rdram, base + 0x54);
+        t.course = read_word(rdram, 0x000D8170);
+    }
+    else {
+        std::fprintf(f, "==== frame %d of %d (race frame %d, state 0x%02X, list 0x%08X) ====\n",
+                     written, wanted, seen - 1, state, list_vaddr);
+        t.f = f;
+    }
+    if (t.f == nullptr) return;
     t.walk(list_vaddr & 0x00FFFFFFu, 0);
     std::fflush(f);
     if (written >= wanted) {
@@ -2097,6 +2208,85 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
         std::fprintf(stderr, "[wr64] 3D trace: %d frames written to %s\n", written, path);
         std::fflush(stderr);
     }
+}
+
+// The per-course environment struct, dumped whenever the course changes.
+//
+// This is the other half of the render-distance census. The census says "this
+// kind stops being drawn at about 5,000"; the number 5,000 then has to be found
+// somewhere the game can be made to change it, and the first place to look is
+// not RDRAM at large. The buoy cull already reads its limit from `+0xA4` of a
+// per-course struct, and the fog near and far distances sit at `+0x98` and
+// `+0x9C` of the same one -- three distances in one place is a table of
+// distances, so a reach that matches another field in it is a candidate with an
+// address attached, found by one lookup rather than a scan.
+//
+// The struct is not addressed by index here. The game leaves the *current*
+// course's struct address at 0x801C0C80 and the buoy code dereferences exactly
+// that, so following the same pointer needs no stride and cannot be wrong about
+// one; running across courses -- the attract demo does this by itself -- fills
+// in the rest, and the addresses it prints give the stride for free.
+//
+// Each field is printed three ways because its type is not known in advance: as
+// a signed integer, as a float, and as raw hex. A distance limit reads plainly
+// in one of the first two and as noise in the other, which is itself the type
+// evidence. Set WR64_COURSE_STRUCT to a path to arm it.
+void dump_course_struct(const uint8_t* rdram, uint32_t state) {
+    static const char* path = std::getenv("WR64_COURSE_STRUCT");
+    if (path == nullptr) return;
+
+    // Only while a race is on screen. At boot the course number already reads 0
+    // while the struct still holds whatever was there before it, and the two
+    // disagree: the first run of this dumped a "course 0" whose buoy limit read
+    // 5000, and the same course read 6000 once it was actually being raced. A
+    // row that is wrong in a way nothing in it reveals is worse than a missing
+    // row, so the boot frame is skipped rather than labelled.
+    if (!racing(state)) return;
+
+    const uint32_t base = read_word(rdram, 0x001C0C80) & 0x00FFFFFFu;
+    if (base == 0 || base >= 0x00800000u) return;
+    const uint32_t course = read_word(rdram, 0x000D8170);
+
+    // Keyed on the course, not on the pointer. The pointer was the obvious
+    // guard and it is the wrong one: the game leaves it at 0x801CB058 for every
+    // course, so it is the array's base rather than an entry in it, and a dump
+    // that waits for it to move dumps once and never again. Which entry a course
+    // uses -- and therefore the stride -- is not something this can assume, so
+    // it records the address it read alongside the course and lets the analysis
+    // say whether they differ.
+    static std::FILE* f = nullptr;
+    static uint32_t last_course = 0xFFFFFFFFu;
+    if (course == last_course) return;
+    last_course = course;
+
+    if (f == nullptr) {
+        f = std::fopen(path, "w");
+        if (f == nullptr) {
+            std::fprintf(stderr, "[wr64] course struct: cannot write %s\n", path);
+            path = nullptr;
+            return;
+        }
+        std::fprintf(f, "# The per-course environment struct the buoy cull reads its\n"
+                        "# limit from, one row per field. Known so far: +0x88..+0x94\n"
+                        "# fog RGBA, +0x98 fog near, +0x9C fog far, +0xA4 the buoy\n"
+                        "# cull distance. See include/wr64/drawdistance.h.\n"
+                        "course,address,offset,int,float,hex\n");
+    }
+
+    // 0x110 bytes: the decompilation's own declaration of this struct runs to a
+    // float at +0x108, so that is where it is known to end.
+    for (uint32_t offset = 0; offset < 0x110; offset += 4) {
+        const uint32_t word = read_word(rdram, base + offset);
+        float real;
+        std::memcpy(&real, &word, sizeof real);
+        std::fprintf(f, "%u,0x%08X,0x%03X,%d,%.4f,0x%08X\n", course,
+                     0x80000000u | (base + offset), offset,
+                     int32_t(word), real, word);
+    }
+    std::fflush(f);
+    std::fprintf(stderr, "[wr64] course struct: course %u at 0x%08X dumped to %s\n",
+                 course, 0x80000000u | base, path);
+    std::fflush(stderr);
 }
 
 }  // namespace
@@ -2138,6 +2328,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
     wr64::inspector::begin_frame(state);
     trace_3d(rdram, list_vaddr, state);
+    dump_course_struct(rdram, state);
 
     Walker w{};
     w.rdram = rdram;

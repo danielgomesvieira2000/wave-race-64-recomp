@@ -1808,6 +1808,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **Audio queue statistics** (`WR64_AUDIO_STATS`) | Whether the crackle is samples arriving late. Every two seconds: how many buffers the game produced and how big they were, the queue depth at its trough and average, the device period they have to cover, and -- the number it exists for -- how many frames of silence SDL had to insert. The device consumes at the sample rate whether or not anything is queued, so `elapsed x rate` minus the frames handed over (less the change in queue depth) is the shortfall, measured rather than inferred. It also prints what the machine's default device actually runs at, which `SDL_OpenAudioDevice` hides when `SDL_AUDIO_ALLOW_ANY_CHANGE` is unset: the spec it hands back mirrors the request no matter what the hardware does. |
 | **Audio dump** (`WR64_AUDIO_DUMP`) | Whether the crackle is in the samples themselves. Writes exactly the bytes handed to `SDL_QueueAudio` to a WAV, one file per device open so the rate in its header is always right. This is the cut that halves the problem: everything that could corrupt samples -- the recompiled microcode, the command list, the channel swap, the volume scale -- is upstream of that call and everything that could deliver them late is downstream, and the two sound identical on a speaker. A clean file exonerates the first half outright. |
 | **HUD inspector** (**F1**, via `tools/patch_rt64_inspector.py`) | Which 2D elements a frame contains, what identity each has, what class the rewriter gave it, and what happens if that class is changed -- answered while the frame is on the screen rather than in a log read afterwards. Hovering a row outlines the element; a dropdown changes its class from the next frame; a button writes the result into `hud.json`. See §7. |
+| **Render-distance census** (`WR64_DISTANCE_CSV`, `WR64_COURSE_STRUCT`) | Which kinds of object the game stops drawing at a distance, and which it does not -- measured rather than assumed, because a renderer cannot put back what was never submitted. One CSV row per display-list call carrying the object's world position, the game's own camera and the course; the analysis then compares each kind's **reach** (the furthest it was ever drawn) against its **opportunity** (the furthest its fixed sites ever were from the camera, counting the frames it was not drawn). It recovers the buoys' known 5,000 without being told. **[docs/RENDER-DISTANCE-CENSUS.md](RENDER-DISTANCE-CENSUS.md) is the manual and the recipe.** |
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
@@ -1848,6 +1849,24 @@ Small things, each of which cost real time here.
   race frames it moves in 74% of them, in steps of 32 to 128 world units.
   Whatever a capture is meant to establish, take it while the thing it is about
   is happening -- a camera at rest hides everything that follows the camera.
+- **A steady maximum is not a ceiling.** The obvious way to find a distance cull
+  is to watch the furthest instance of a kind drawn each frame and call it culled
+  when that maximum holds steady. It works only where the kind has instances
+  spread through the whole course, so that one of them always sits at the limit.
+  For anything rarer the per-frame maximum is just where that one object happens
+  to be, and it reads as a perfect ceiling: four kinds were reported culled at
+  exactly 2,572 on that basis, and all four turned out to be drawn at the world
+  origin under no matrix at all, so their "distance" was the camera's distance
+  from (0,0,0). Ask instead how far the object *could* have been drawn and was
+  not -- which needs the camera recorded in every row, not just the object.
+- **Let the game drive, not a script of button presses.** A timed input script
+  cannot see the shore. The one written to drive a census beached the craft on
+  its first long lean and the race ended after twenty seconds and 443 frames,
+  on one course, with a camera that had barely moved. The attract demo races
+  properly, laps the course, and moves on to another course by itself, which is
+  both a better driver and the only unattended way to get the second course a
+  reproducible verdict needs.
+
 - **`head` on a search is not the whole answer.** A truncated grep supported a
   confident claim about "the single caller" of an address. There were 19 call
   sites across two functions.

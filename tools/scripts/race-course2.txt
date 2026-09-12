@@ -1,0 +1,50 @@
+# A scripted race on a course other than the first.
+#
+# Not for the render-distance census: that lets the attract demo drive, because
+# a blind script cannot see the shore and beaches the craft within a lap. This
+# is for the things a script is actually good at -- reaching a chosen course
+# repeatably, and proving the menus still work after a change to them.
+#
+# Same format and same menu walk as race.txt; see that file and
+# src/testdrive.cpp. The one addition is the stick nudge at 33 seconds.
+#
+# Where the course is chosen is not where it looks. The state transcript of a
+# scripted run goes
+#
+#     TITLE_SCREEN -> MAIN_MENU -> RIDER_SELECT -> COURSE_OVERVIEW -> TIME_TRIAL
+#
+# and never passes through COURSE_SELECT (0x14) at all: on this path the course
+# is cycled on the overview screen itself, with left and right, and the A that
+# starts the race is the same A the racing lines hold from 40 seconds. So one
+# nudge right during the overview is the whole difference between this file and
+# race.txt.
+#
+# Start is ignored while a screen is animating in, which is why the presses are
+# repeated every four seconds rather than aimed. The log says which one landed:
+# grep it for "state:".
+
+# The menus. Start advances title, main menu and rider select.
+3.0    3.5   START          # Start (title screen)
+7.0    7.5   START          # Start
+11.0   11.5  START          # Start
+15.0   15.5  START          # Start
+19.0   19.5  START          # Start (main menu -> rider select)
+23.0   23.5  START          # Start
+27.0   27.5  START          # Start
+31.0   31.5  START          # Start (rider select -> course overview)
+
+# The course. One nudge right on the overview screen moves on by one course;
+# repeat the line to go further. Held for half a second because the screen is
+# polled at the game's rate, not the port's.
+33.0   33.5  -       70  0  # next course
+
+# Racing. No Start from here on: it would pause. A both confirms the course and
+# accelerates, and the leans keep the camera moving through the course, which is
+# what the render-distance census needs -- a parked camera measures nothing.
+40.0   220.0 A       0   0  # accelerate
+45.0   65.0  A      30   0  # lean right
+70.0   90.0  A     -30   0  # lean left
+95.0   115.0 A      20   0  # lean right again
+120.0  140.0 A     -20   0  # lean left again
+145.0  165.0 A      25   0  # lean right again
+170.0  190.0 A     -25   0  # lean left again
