@@ -1147,6 +1147,20 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     // CAMetalLayer off. Asking for the layer later, on a window made without
     // it, fails.
     flags |= SDL_WINDOW_METAL;
+#elif defined(PLUME_SDL_VULKAN_ENABLED)
+    // The same requirement, for the same reason, on the Linux Vulkan path: with
+    // RT64 built for an SDL window, plume calls SDL_Vulkan_CreateSurface on
+    // this window, and SDL refuses unless the window was created as a Vulkan
+    // one. Without the flag the port boots, opens a window, loads its fonts,
+    // reaches the title screen and prints
+    //
+    //     SDL_Vulkan_CreateSurface failed with error
+    //     The specified window isn't a Vulkan window.
+    //
+    // then dies a few frames later, because the renderer carries on with no
+    // surface. The message is one line in the middle of a successful-looking
+    // startup.
+    flags |= SDL_WINDOW_VULKAN;
 #endif
 
     SDL_Rect display{};

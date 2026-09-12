@@ -100,6 +100,15 @@ The dump argument is needed on the first build only; after that
 Vulkan here, so a working Vulkan driver is not optional -- `vulkaninfo --summary`
 should name your GPU.
 
+**Verified** on Ubuntu 26.04 under WSL2/WSLg, Clang 21.1.8, CMake 4.2.3: builds
+and links, `--identify` validates a dump, and the port boots, opens its window,
+draws, walks the menus and runs the attract race. The only Vulkan device there
+is Mesa's `llvmpipe` software rasteriser -- no GPU is passed through -- and even
+so the game held **14-21 fps against the 20 it asks for**, with water at
+Original. That is a correctness result, not a performance one: on llvmpipe
+nothing about frame cost generalises, and the modern water settings were not
+exercised.
+
 Settings, saves and mods live in `$XDG_DATA_HOME/WaveRace64Recomp`, or
 `~/.local/share/WaveRace64Recomp`.
 

@@ -35,9 +35,15 @@ SUBMODULE = REPO / "lib" / "N64ModernRuntime"
 PATCH = REPO / "tools" / "patches" / "runtime-shutdown.patch"
 NAME = "runtime shutdown"
 
+# Settles "already applied" without going near git apply -- see the note on
+# line endings in patch_rt64_water.py. join_timer_thread is declared by this
+# patch and by nothing else.
+MARKER = (SUBMODULE / "ultramodern" / "include" / "ultramodern" / "ultramodern.hpp",
+          "void join_timer_thread();")
+
 
 def main() -> int:
-    return apply_patch(SUBMODULE, PATCH, NAME)
+    return apply_patch(SUBMODULE, PATCH, NAME, marker=MARKER)
 
 
 if __name__ == "__main__":

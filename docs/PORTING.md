@@ -377,12 +377,142 @@ The trap after that one is directory scope again. RT64 defines
 `PLUME_SDL_VULKAN_ENABLED` for *its* directory, so a port that includes RT64
 headers itself compiles against the X11 definition while RT64 compiles against
 the SDL one. Both compile. The disagreement is a silent ABI mismatch at the one
-call that passes the handle across. Define it on the port's target too.
+call that passes the handle across. It has to be defined for everything else in
+the build, and a per-target definition is not enough -- see *The plume window
+definition has to be directory-scoped* below.
 
 macOS needs one more thing, invisible in the types because both fields are
 `void*`: plume wants the **`CAMetalLayer`**, not the `NSView` that SDL wraps it
 in. `SDL_Metal_CreateView` then `SDL_Metal_GetLayer` -- and the window must have
 been created with `SDL_WINDOW_METAL` or there is no layer to get.
+
+### An SDL window has to be created as the kind of window the renderer wants
+
+**Symptom:** on Linux the port starts, opens a window, loads its fonts, opens
+the audio device, boots the game and reaches the title screen — and one line in
+the middle of all that says
+
+```
+SDL_Vulkan_CreateSurface failed with error The specified window isn't a Vulkan window.
+```
+
+after which the process dies a few frames later with a plain segfault and no
+report, because the crash handler off Windows is a stub.
+
+`SDL_Vulkan_CreateSurface` requires `SDL_WINDOW_VULKAN` to have been passed to
+`SDL_CreateWindow`. It cannot be added afterwards. The renderer then carries on
+with no surface, so the failure surfaces later and somewhere else.
+
+This is the same requirement as `SDL_WINDOW_METAL` on macOS, and worth setting
+from the same place for the same reason:
+
+```c++
+#if defined(__APPLE__)
+    flags |= SDL_WINDOW_METAL;
+#elif defined(PLUME_SDL_VULKAN_ENABLED)
+    flags |= SDL_WINDOW_VULKAN;
+#endif
+```
+
+Guarding the Linux one on `PLUME_SDL_VULKAN_ENABLED` rather than `__linux__`
+keeps it tied to the thing that actually needs it: RT64 built for an SDL window.
+
+### The plume window definition has to be directory-scoped, not per-target
+
+A correction to the note above. Defining `PLUME_SDL_VULKAN_ENABLED` on the
+port's own target is not enough, because the port is not the only thing outside
+RT64 that includes plume's headers. `recompui` does too, and its
+`rt64_render_context.cpp` contains
+
+```c++
+#elif defined(__linux__) || defined(__ANDROID__)
+    appCore.window = window_handle;      // SDL_Window* → RenderWindow
+```
+
+which does not compile against the X11 `{ Display*, Window }` definition:
+
+```
+error: no viable overloaded '='
+note: cannot convert argument of incomplete type
+      'ultramodern::renderer::WindowHandle' (aka 'SDL_Window *')
+      to 'const RenderWindow'
+```
+
+Set it with `add_compile_definitions()` at directory scope, before
+`add_subdirectory()` of RT64 and of the frontend, so **every** translation unit
+in the build agrees:
+
+```cmake
+if(UNIX AND NOT APPLE)
+    set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
+    add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
+endif()
+```
+
+recompui sets `RT64_SDL_WINDOW_VULKAN TRUE` itself, in its own `CMakeLists.txt`
+— after RT64 has already been added, and as a plain variable in its own
+directory, so it changes nothing. Do not rely on it.
+
+### A stubbed platform branch is not compiled until you compile it
+
+**Symptom:** the first Linux build of a file that has always built on Windows
+fails on something that cannot possibly be a portability problem:
+
+```
+src/crash_handler.cpp:476:26: error: expected expression
+src/crash_handler.cpp:481:21: error: expected ';' after expression
+```
+
+The `#else` half of a platform split is dead code on the platform you develop
+on. Anything can be wrong in it — here, two `printf` format strings had a real
+newline in place of `\n`, so the literals were unterminated:
+
+```c++
+std::fprintf(stderr, "[wr64] %s: %p
+", label, address);
+```
+
+It is worth knowing that this class of damage is invisible until the other
+platform is built, and that the compiler is the only reliable detector: a
+search for it produces mostly false positives, because a legitimate multi-line
+string concatenation looks the same to a regular expression.
+
+### git apply across the Windows/WSL boundary
+
+**Symptom:** a patch script that is idempotent on Windows reports, under WSL, on
+the same working tree:
+
+```
+runtime shutdown: this patch does not match the checkout in N64ModernRuntime.
+error: patch failed: librecomp/src/recomp.cpp:994
+```
+
+for a patch that is already applied, and that the same script correctly called
+"already applied" ten minutes earlier from Windows.
+
+The submodule sources are checked out by Windows git with
+`core.autocrlf=true`, so they are **CRLF** in the working tree, while the patch
+files are stored **LF**. Windows git normalises during `git apply` and never
+notices. WSL's git has no `autocrlf` set, sees CRLF content against LF context,
+and refuses the patch in *both* directions — so `git apply --reverse --check`,
+which is the natural idempotency test, reports "not applied" for a tree where it
+plainly is.
+
+Measured on this tree:
+
+| | plain | `--ignore-whitespace` |
+|---|---|---|
+| reverse check, patch applied | 1 (wrong) | **0** (correct) |
+| forward check, patch applied | 1 (correct) | 1 (correct) |
+
+So `--ignore-whitespace` fixes the false negative without weakening the
+protection against applying twice. Two things follow for any project whose tree
+is shared between Windows and WSL:
+
+- pass `--ignore-whitespace` to every `git apply`, check and apply alike;
+- prefer a **marker string in a patched file** as the "already applied" test.
+  It is cheaper, it does not invoke git, and it is immune to all of this. A
+  symbol the patch introduces and nothing else defines is ideal.
 
 ### `__PRFCHWINTRIN_H` is a fact about the vendored SDL, not about Clang
 

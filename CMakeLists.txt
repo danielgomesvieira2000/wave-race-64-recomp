@@ -90,8 +90,20 @@ if(WR64_WITH_RUNTIME)
     #
     # It is deliberately not set on macOS: there plume and ultramodern already
     # agree on { window, view }, and RT64 ignores this option off Linux anyway.
+    #
+    # The two definitions go with it, and they have to be set *here*, at
+    # directory scope, before anything is added -- not on a target. RT64
+    # defines them for its own directory when the option is on, and that
+    # reaches neither this project's target nor RecompFrontend's. Every
+    # translation unit that includes plume_render_interface_types.h has to
+    # agree about what RenderWindow is: recompui assigns an SDL_Window* to
+    # Application::Core::window (rt64_render_context.cpp), which does not
+    # compile against the X11 definition, and a target that compiled against
+    # the wrong one would be an ABI mismatch at the call that passes the
+    # handle across rather than an error.
     if(UNIX AND NOT APPLE)
         set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
+        add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
     endif()
 
     add_subdirectory("${WR64_LIB_DIR}/RT64" EXCLUDE_FROM_ALL)
@@ -343,19 +355,6 @@ if(WR64_WITH_RUNTIME)
         target_compile_definitions(WaveRace64Recomp PRIVATE
             NOMINMAX
             __PRFCHWINTRIN_H)
-    endif()
-
-    # Same problem, worse consequence. RT64 defines these two for its own
-    # directory when it is built for an SDL window, and they are what
-    # plume_render_interface_types.h reads to decide that RenderWindow is an
-    # SDL_Window*. Without them here, src/renderer.cpp compiles against the X11
-    # { Display*, Window } definition instead, and the port and the renderer
-    # disagree about the type of the thing being passed between them -- which
-    # the linker is under no obligation to notice.
-    if(UNIX AND NOT APPLE)
-        target_compile_definitions(WaveRace64Recomp PRIVATE
-            PLUME_SDL_VULKAN_ENABLED
-            RT64_SDL_WINDOW_VULKAN)
     endif()
 
     target_include_directories(WaveRace64Recomp PRIVATE

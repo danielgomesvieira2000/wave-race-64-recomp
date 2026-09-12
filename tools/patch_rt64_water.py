@@ -42,8 +42,31 @@ PATCH = REPO / "tools" / "patches" / "rt64-water.patch"
 NAME = "RT64 water renderer"
 
 
-def apply_patch(submodule: Path, patch: Path, name: str) -> int:
-    """Apply a patch to a submodule, idempotently. Shared with the runtime one."""
+# git apply is line-ending sensitive, and this tree is checked out by Windows
+# git with core.autocrlf=true while the patches are stored LF. Windows git
+# normalises during apply and does not notice; WSL's git has no autocrlf, sees
+# CRLF content against LF context, and rejects the patch in *both* directions --
+# so the reverse-check idempotency test reports "does not match this checkout"
+# for a patch that is already fully applied.
+#
+# --ignore-whitespace is the documented tolerance for exactly that: with it the
+# reverse check correctly succeeds on an applied tree and the forward check
+# still correctly refuses to apply twice.
+IGNORE_WS = "--ignore-whitespace"
+
+
+def apply_patch(submodule: Path, patch: Path, name: str, marker: tuple = None) -> int:
+    """Apply a patch to a submodule, idempotently. Shared with the runtime one.
+
+    `marker` is an optional (path, string) pair that settles "already applied"
+    without invoking git at all, which is both cheaper and immune to the
+    line-ending problem described above.
+    """
+    if marker is not None:
+        marker_path, marker_text = marker
+        if marker_path.is_file() and marker_text in marker_path.read_text(encoding="utf-8"):
+            print(f"{name}: already applied")
+            return 0
     if not (submodule / ".git").exists() and not (submodule / "CMakeLists.txt").is_file():
         print(f"{name}: {submodule} is missing.\n"
               "Run: git submodule update --init --recursive", file=sys.stderr)
@@ -53,7 +76,7 @@ def apply_patch(submodule: Path, patch: Path, name: str) -> int:
         return 1
 
     def check(*args):
-        return subprocess.run(["git", "apply", "--check", *args, str(patch)],
+        return subprocess.run(["git", "apply", "--check", IGNORE_WS, *args, str(patch)],
                               cwd=submodule, capture_output=True, text=True)
 
     # Reverse-applies cleanly means it is already there, in full.
@@ -71,7 +94,7 @@ def apply_patch(submodule: Path, patch: Path, name: str) -> int:
         print(forward.stderr, file=sys.stderr)
         return 1
 
-    subprocess.run(["git", "apply", str(patch)], cwd=submodule, check=True)
+    subprocess.run(["git", "apply", IGNORE_WS, str(patch)], cwd=submodule, check=True)
     print(f"{name}: applied")
     return 0
 
