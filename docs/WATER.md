@@ -9,10 +9,12 @@ depth, refraction, wakes that persist, wash along the shore.
 Two halves: [**using it**](#using-it) and [**putting it in another
 project**](#putting-it-in-another-project).
 
-**Original is the default**, on every platform, and on that setting the renderer
-is not engaged at all. The cost is real -- see [What it
-costs](#what-it-costs) -- and this port is played on machines that are already
-working to hold the game's own frame rate.
+**High with the Aqua style is the default**, on every platform -- what the fork
+this came from shipped, and what the water was tuned against. It is not free:
+expect the time spent drawing a frame to roughly double, see [What it
+costs](#what-it-costs). **Original** is one step away in Graphics -> Water and is
+a true bypass, not a degraded mode -- on that setting the renderer is not
+engaged at all and the water is exactly the cartridge's.
 
 The renderer comes from [PR #2][pr] by elliotttate, which built and played it on
 an Apple M3 Max. This tree has since verified it on Windows and D3D12, which
@@ -32,13 +34,15 @@ that branch explicitly had not.
 |---|---|
 | **Original** | The game's own water. The renderer is not engaged; nothing below has any effect. |
 | **Modern** | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
-| **High** | Modern, plus screen-space reflections of scenery in view, and fine airborne spray. |
+| **High** *(default)* | Modern, plus screen-space reflections of scenery in view, and fine airborne spray. |
 
-The **Water** tab shapes how it looks, and does nothing while Water is Original.
+The **Water** tab shapes how that renderer looks. If it appears to do nothing,
+check the setting above first: every entry in it shapes the modern renderer, and
+none of them has any effect while Water is Original.
 
 | | |
 |---|---|
-| **Water style** | **Modern** is richer and darker. **Aqua** (the default) is the same rendering with a lighter teal and clearer shallows. **Classic** keeps the cartridge's own colours, transparency, fog and broad highlights and adds only the effects. |
+| **Water style** | **Modern** is richer and darker. **Aqua** *(default)* is the same rendering with a lighter teal and clearer shallows. **Classic** keeps the cartridge's own colours, transparency, fog and broad highlights and adds only the effects. |
 | **Water brightness / Aqua tint / Water clarity** | Aqua only, and hidden under the other two styles. 50% is the default look in each. Clarity is how far you see into the shallows. |
 | **Surface ripples** | Soft / **Normal** / Strong. Fine detail added on top of the game's waves, never replacing them. |
 | **Spray particles** | The *added* airborne spray. Off keeps the surface foam, the wakes and the game's own splashes. |
@@ -57,6 +61,21 @@ frame; they do not persist and they are not settings.
 | `WR64_WATER_DEBUG` | `0`-`14`, the diagnostic views |
 | `WR64_WATER_PROFILES` | path to a `profiles.json` to use instead of the packaged one |
 | `WR64_WATER_TRACE` | path to write a per-30-frame CSV of craft position and state |
+| `WR64_WATER_MATERIAL_TRACE` | set to anything: prints the first few materials handed to the renderer, before and after the style is applied |
+
+`WR64_WATER_MATERIAL_TRACE` is the one to reach for when a setting looks inert.
+It distinguishes the two cases that look identical on screen -- the style is
+being applied and you cannot see it, versus the material never reaches the
+renderer at all -- by printing what was actually sent:
+
+```
+[water-trace] quality=2 style=Aqua opticsW=0.0
+  deep 0.0080 0.1000 0.1500 a=0.0030 -> 0.0160 0.1850 0.2025 a=0.0018
+  shallow 0.0300 0.4400 0.3800 -> 0.0510 0.5720 0.4636  vis 66.7 -> 93.3
+```
+
+No lines at all in a race means the display list carrying the material is not
+being emitted, which is a rewriter problem and not a settings one.
 
 `F9` flips between the current setting and Original from the same camera, which
 is the only honest way to compare the two. `F10` cycles the diagnostic views.
@@ -115,6 +134,25 @@ The general lesson: **the boundary is the task submission, not the display
 list.** A display list tells you what to draw and nothing about what the game
 thinks is happening; the moment before it is handed to the OS is where a
 consistent view of both exists.
+
+### The material travels in the display list, and something has to put it there
+
+There is no callback from RT64 back into the port for this. The material reaches
+the renderer as an **extended GBI command** (`G_EX_WATER_MATERIAL_V1`) written
+into the display list immediately before the call that draws the surface, read by
+`rt64_gbi_extended.cpp` and attached to the draw that follows; a cleared command
+after the call detaches it again. So the port's display-list rewriter has to emit
+it, and the material is 1584 bytes travelling in-band once per water draw.
+
+Miss that step and every symptom points the wrong way. The settings save and
+reload correctly, the menu behaves, the port's own state is right when you print
+it -- and the water is unchanged, because the renderer was never told anything.
+It reads exactly like "this setting does nothing".
+
+Two things make it cheap to diagnose: emit the *cleared* command rather than
+skipping emission when the feature is off, so "no command at all" unambiguously
+means the rewriter is not running; and print the material at the point it is
+handed over, which is what `WR64_WATER_MATERIAL_TRACE` does above.
 
 ### The three problems worth knowing about in advance
 
@@ -191,6 +229,7 @@ it" and "none of it".
 | `patches/water.cpp` | the two game hooks |
 | `src/overlays.cpp` | registers them by address |
 | `src/frontend.cpp` | the Graphics entry and the Water tab |
+| `src/dlrewrite.cpp` | emits the material into the display list, around the four water draws |
 | `assets/water/profiles.json` | per-course parameters |
 
 ---

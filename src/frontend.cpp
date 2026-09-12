@@ -353,8 +353,16 @@ void init() {
     // things that shape how it looks, rather than whether it runs, get their own
     // tab below: five settings crowded into Graphics would bury Field of View.
     //
-    // Original is the default and is not a degraded mode -- it is what the
-    // cartridge draws, and what every screenshot of this port before now shows.
+    // High by default, which is what the water was tuned against. This default
+    // is the one that decides what a new profile gets -- the Load callback runs
+    // before the first frame and overwrites the one in src/water.cpp. Original
+    // is a true bypass rather than a degraded mode: it is what the cartridge
+    // draws, and it is one step away for anyone whose machine wants it.
+    // The enum ids below are the lower-case ones the fork this renderer came
+    // from used, and they are deliberately not the display names. They are what
+    // is written into graphics.json and water.json, so a settings file written
+    // by either build is read correctly by the other -- and an id that matches
+    // nothing does not fail loudly, it quietly resolves to some other entry.
     graphics.add_enum_option(
         "water_quality", "Water",
         "<recomp-color primary>Original</recomp-color> is the game's own water. "
@@ -367,11 +375,11 @@ void init() {
         "drawing each frame, and a machine that is already only just holding the game's frame "
         "rate will feel it. See docs/WATER.md.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
-            { 0u, "Original", "Original" },
-            { 1u, "Modern", "Modern" },
-            { 2u, "High", "High" },
+            { 0u, "original", "Original" },
+            { 1u, "modern", "Modern" },
+            { 2u, "high", "High" },
         },
-        0u);
+        2u);
     graphics.add_option_change_callback(
         "water_quality",
         [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
@@ -473,9 +481,9 @@ void init() {
         "cartridge's own colours, transparency, fog and broad highlights, and adds only the "
         "effects. Does nothing while Water is Original.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
-            { 0u, "Modern", "Modern" },
-            { 1u, "Classic", "Classic" },
-            { 2u, "Aqua", "Aqua" },
+            { 0u, "modern", "Modern" },
+            { 1u, "classic", "Classic" },
+            { 2u, "aqua", "Aqua" },
         },
         2u);
     water.add_option_change_callback(
@@ -553,9 +561,9 @@ void init() {
         "The cartridge's waves, and how the craft handles on them, are the same at every "
         "setting.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
-            { 0u, "Soft", "Soft" },
-            { 1u, "Normal", "Normal" },
-            { 2u, "Strong", "Strong" },
+            { 0u, "soft", "Soft" },
+            { 1u, "normal", "Normal" },
+            { 2u, "strong", "Strong" },
         },
         1u);
     water.add_option_change_callback(
@@ -575,8 +583,8 @@ void init() {
         "Fine airborne spray around each craft, which is the added one and not the game's own "
         "splashes. Turning it off keeps the surface foam and the wakes.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
-            { 0u, "Off", "Off" },
-            { 1u, "On", "On" },
+            { 0u, "off", "Off" },
+            { 1u, "on", "On" },
         },
         1u);
     water.add_option_change_callback(

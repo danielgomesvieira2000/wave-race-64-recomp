@@ -101,6 +101,7 @@
 #include "wr64/drawdistance.h"
 #include "wr64/inspector.h"
 #include "wr64/testdrive.h"
+#include "wr64/water.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1128,8 +1129,48 @@ struct Walker {
     static constexpr uint32_t kWaterSegment = 3;
 
     bool draws_water(uint32_t segmented_list) {
-        return water_interp && projection_is_perspective &&
+        return projection_is_perspective &&
                first_vertex_segment(segmented_list) == kWaterSegment;
+    }
+
+    // Which of the segment-3 lists the modern water renderer may take over.
+    //
+    // draws_water() above answers "is this the water surface" well enough to
+    // hang an interpolation group off, because anything else in segment 3 that
+    // it catches is harmless to interpolate. Handing a list to the water
+    // renderer is a stronger claim, and a wrong one would shade craft spray or
+    // some other segment-3 geometry as though it were the sea. These four are
+    // the lists USA Rev A's Draw_WaterEffects selects for the full grid, the
+    // opening and rider-select scene, and the two split-screen views.
+    bool known_water_material(uint32_t segmented_list) const {
+        return segmented_list == 0x010082F0 || segmented_list == 0x0100B590 ||
+               segmented_list == 0x0100D258 || segmented_list == 0x0100E680;
+    }
+
+    // The frame's water material, as an extended GBI command in the display
+    // list itself. RT64 has no callback into the port here: rt64_gbi_extended
+    // reads this command and attaches the payload to the draw that follows, so
+    // the material has to travel in-band, immediately before the call that
+    // draws the surface, and be cleared immediately after it.
+    //
+    // An identity of zero means the player has Water set to Original, and the
+    // cleared command is what tells RT64 to draw the surface exactly as the
+    // game asked. That is why this is emitted at all in that case rather than
+    // skipped: leaving a stale material attached would be worse than sending
+    // an empty one.
+    void water_material(bool enabled) {
+        const uint32_t op = (RT64_EXTENDED_OPCODE << 24) | G_EX_WATER_MATERIAL_V1;
+        const auto m = wr64::water::material(0);
+        if (!enabled || m.identity.x == 0) {
+            emit(op, 0);
+            return;
+        }
+        if (GfxCommand* commands = reserve(1 + sizeof(m) / 8)) {
+            auto* data = reinterpret_cast<uint32_t*>(commands);
+            data[0] = op;
+            data[1] = 2;  // payload v2: v1 stopped before the effect preferences
+            std::memcpy(data + 2, &m, sizeof(m));
+        }
     }
 
     // ---- diagnostic: does index i mean the same point twice? ------------
@@ -2005,6 +2046,13 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
 
 
+    // Claim this frame's water snapshot before anything is emitted. The game
+    // thread published it at task submission keyed by this display list, and
+    // water_material() below reads whatever this call selected. A list with no
+    // matching snapshot leaves the material empty, which is the same as
+    // Original: unknown tasks keep the game's own water.
+    wr64::water::begin_frame(list_vaddr);
+
     wr64::inspector::begin_frame(state);
     trace_3d(rdram, list_vaddr, state);
 
@@ -2124,9 +2172,12 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // created at its first vertex rather than at its matrix load.
             if (w.lattice_trace) w.collect_lattice(w.physical(w1), 0);
             const bool water = w.draws_water(w1);
-            if (water) w.vertex_interp_group(Walker::kWaterId);
+            const bool modern_water = water && w.known_water_material(w1);
+            if (water && w.water_interp) w.vertex_interp_group(Walker::kWaterId);
+            if (modern_water) w.water_material(true);
             w.emit(w0, w1);
-            if (water) w.vertex_interp_group(G_EX_ID_AUTO);
+            if (modern_water) w.water_material(false);
+            if (water && w.water_interp) w.vertex_interp_group(G_EX_ID_AUTO);
             if (curtain) w.curtain(false);
             continue;
         }

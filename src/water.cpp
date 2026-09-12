@@ -18,11 +18,15 @@
 
 namespace wr64::water {
 namespace {
-// Original by default, on every platform. The modern path is a real cost --
-// see docs/WATER.md for the measurements -- and this port is played on machines
-// that are already working to hold the game's own frame rate. A player who wants
-// it turns it on; nobody gets it by surprise.
-std::atomic<uint32_t> selected{uint32_t(Quality::Original)};
+// High and Aqua by default, which is what the fork this came from shipped and
+// what the water was tuned against. It is not free -- expect the time spent
+// drawing a frame to roughly double, see docs/WATER.md -- and Graphics -> Water
+// steps it down to Modern or all the way to Original, which is a true bypass.
+//
+// This default is the one in src/frontend.cpp, not this one: the config's Load
+// callback runs before the first frame and overwrites whatever is here. This
+// value only applies to a build without the frontend.
+std::atomic<uint32_t> selected{uint32_t(Quality::High)};
 std::atomic<uint32_t> selectedStyle{uint32_t(Style::Aqua)};
 std::atomic<float> aquaBrightness{0.5f}, aquaTint{0.5f}, aquaClarity{0.5f};
 std::atomic<uint32_t> selectedRipples{uint32_t(RippleDetail::Normal)};
@@ -334,8 +338,14 @@ void begin_frame(uint32_t display_list) {
 }
 
 interop::WaterMaterial material(uint32_t view) {
+    static const bool trace = std::getenv("WR64_WATER_MATERIAL_TRACE") != nullptr;
     auto result = frame;
     result.surface.w = float(view);
+    // Only the numbers the trace prints, not a copy of the material: this runs
+    // once per water draw per frame, and the material is 1584 bytes.
+    const interop::float4 beforeDeep = result.deepColor;
+    const interop::float4 beforeShallow = result.shallowColor;
+    const float beforeVisibility = result.optics.x;
     // Keep the published course profile immutable. Each view/draw applies the
     // current preference once, so repeated draws cannot amplify the ripples.
     constexpr float rippleScales[]={0.5f,1.0f,1.7f};
@@ -363,6 +373,27 @@ interop::WaterMaterial material(uint32_t view) {
         // Keep the finite visibility fade: beyond the authored underwater
         // geometry the shader must still resolve to water, never exposed sky.
         result.optics.x = std::min(result.optics.x * (1.0f + frameClarity * 0.80f), 140.0f);
+    }
+    // What the renderer is actually being handed, which is the only way to tell
+    // "the style does nothing" from "the style never reaches the renderer" --
+    // the two look identical on screen. See docs/WATER.md.
+    if (trace) {
+        static int shown = 0;
+        if (shown < 3) {
+            ++shown;
+            const char *names[] = {"Modern","Classic","Aqua"};
+            std::fprintf(stderr,
+                "[water-trace] quality=%u style=%s opticsW=%.1f "
+                "deep %.4f %.4f %.4f a=%.4f -> %.4f %.4f %.4f a=%.4f  "
+                "shallow %.4f %.4f %.4f -> %.4f %.4f %.4f  vis %.1f -> %.1f\n",
+                uint32_t(quality()), names[uint32_t(frameStyle)], result.optics.w,
+                beforeDeep.x, beforeDeep.y, beforeDeep.z, beforeDeep.w,
+                result.deepColor.x, result.deepColor.y, result.deepColor.z, result.deepColor.w,
+                beforeShallow.x, beforeShallow.y, beforeShallow.z,
+                result.shallowColor.x, result.shallowColor.y, result.shallowColor.z,
+                beforeVisibility, result.optics.x);
+            std::fflush(stderr);
+        }
     }
     return result;
 }
