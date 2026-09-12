@@ -400,78 +400,21 @@ void init() {
                 wr64::dlrewrite::set_field_of_view(*degrees);
             }
         });
-    // Main Volume did nothing until this. recompui defines the slider and reads
-    // it back, and nothing upstream ever applies it -- the port is expected to,
-    // and this one was not. The callback covers all three ways it changes:
-    // Load, when the saved setting is read at startup; Temporary, while the
-    // slider is being dragged, which is what makes it audible as you move it;
-    // and Permanent, on Apply.
-    auto& sound = recompui::config::create_sound_tab();
-    sound.add_option_change_callback(
-        recompui::config::sound::options::main_volume,
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            if (const double* percent = std::get_if<double>(&value)) {
-                wr64::set_audio_volume(*percent);
-            }
-        });
 
-    // Music separately from everything else. Main Volume is applied to the
-    // finished buffer; this one cannot be, because music and effects are already
-    // mixed together by then, so it is applied inside the game's own sequence
-    // players instead (src/music.cpp).
-    sound.add_percent_number_option(
-        "music_volume", "Music Volume",
-        "Controls the volume of the game's music, without changing the effects.",
-        100.0);
-    sound.add_option_change_callback(
-        "music_volume",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            if (const double* percent = std::get_if<double>(&value)) {
-                wr64::music::set_volume(*percent);
-            }
-        });
-
-    sound.add_bool_option(
-        "mute_unfocused", "Mute When Not In Focus",
-        "Silences the game while another window has focus. Feedback stops with it.",
-        true);
-    sound.add_option_change_callback(
-        "mute_unfocused",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            if (const bool* mute = std::get_if<bool>(&value)) {
-                wr64::set_mute_when_unfocused(*mute);
-            }
-        });
-    recompui::config::create_controls_tab();
-
-    // Mods. The runtime half of this has been running since the port first
-    // started: recomp::start calls initialize_mods() and scan_mods() on its own,
-    // main.cpp gives librecomp this game's mod id, and the mods and mod_config
-    // folders have existed in the settings directory all along. What was missing
-    // was any way to see what is in them -- so a mod could be installed and
-    // never appear, never be enabled and never be reported broken.
+    // The Water tab, immediately after Graphics because that is where it
+    // belongs: the Graphics entry decides whether the renderer runs and
+    // everything here shapes how it looks.
     //
-    // The tab lists what was found, with each mod's description, author, version
-    // and its own options; the launcher entry below opens it without starting the
-    // game first.
-    recompui::config::create_mods_tab();
-
-    // No add_game_input calls: recompinput already knows the N64 controller,
-    // and this game has no inputs beyond it. Ports with extra actions -- an
-    // ocarina, a quick-save -- declare them here so they appear in the
-    // remapping list.
-
-    // The Water tab is created last, after every other tab has been created
-    // *and* fully configured. create_config_tab appends to a vector, so making
-    // a new tab can reallocate it and leave every reference an earlier
-    // create_*_tab returned dangling. Adding this tab in the middle of the
-    // graphics block crashed the next graphics.add_option_change_callback with
-    // a stack that named the callback, not the tab that had moved.
-    // Everything below shapes the modern water rather than deciding whether it
-    // runs, so all of it does nothing while Water is Original.
+    // The ordering rule this has to respect: create_config_tab appends to a
+    // vector of tabs and returns a reference into it, so creating a tab can
+    // reallocate that vector and leave every reference an earlier
+    // create_*_tab returned dangling. Configure each tab *completely* before
+    // creating the next one, and never touch an earlier reference again.
+    // Getting that wrong crashed the launcher inside the graphics tab's own
+    // fov callback -- an option this change did not touch -- with a stack
+    // that named the callback rather than the tab that had moved.
+    //
+    // Everything below does nothing while Water is Original.
     auto& water = recompui::config::create_config_tab("Water", "water", true);
     water.add_enum_option(
         "water_style", "Water style",
@@ -598,6 +541,70 @@ void init() {
                 wr64::water::set_spray_enabled(*choice != 0u);
             }
         });
+
+    // Main Volume did nothing until this. recompui defines the slider and reads
+    // it back, and nothing upstream ever applies it -- the port is expected to,
+    // and this one was not. The callback covers all three ways it changes:
+    // Load, when the saved setting is read at startup; Temporary, while the
+    // slider is being dragged, which is what makes it audible as you move it;
+    // and Permanent, on Apply.
+    auto& sound = recompui::config::create_sound_tab();
+    sound.add_option_change_callback(
+        recompui::config::sound::options::main_volume,
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* percent = std::get_if<double>(&value)) {
+                wr64::set_audio_volume(*percent);
+            }
+        });
+
+    // Music separately from everything else. Main Volume is applied to the
+    // finished buffer; this one cannot be, because music and effects are already
+    // mixed together by then, so it is applied inside the game's own sequence
+    // players instead (src/music.cpp).
+    sound.add_percent_number_option(
+        "music_volume", "Music Volume",
+        "Controls the volume of the game's music, without changing the effects.",
+        100.0);
+    sound.add_option_change_callback(
+        "music_volume",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* percent = std::get_if<double>(&value)) {
+                wr64::music::set_volume(*percent);
+            }
+        });
+
+    sound.add_bool_option(
+        "mute_unfocused", "Mute When Not In Focus",
+        "Silences the game while another window has focus. Feedback stops with it.",
+        true);
+    sound.add_option_change_callback(
+        "mute_unfocused",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const bool* mute = std::get_if<bool>(&value)) {
+                wr64::set_mute_when_unfocused(*mute);
+            }
+        });
+    recompui::config::create_controls_tab();
+
+    // Mods. The runtime half of this has been running since the port first
+    // started: recomp::start calls initialize_mods() and scan_mods() on its own,
+    // main.cpp gives librecomp this game's mod id, and the mods and mod_config
+    // folders have existed in the settings directory all along. What was missing
+    // was any way to see what is in them -- so a mod could be installed and
+    // never appear, never be enabled and never be reported broken.
+    //
+    // The tab lists what was found, with each mod's description, author, version
+    // and its own options; the launcher entry below opens it without starting the
+    // game first.
+    recompui::config::create_mods_tab();
+
+    // No add_game_input calls: recompinput already knows the N64 controller,
+    // and this game has no inputs beyond it. Ports with extra actions -- an
+    // ocarina, a quick-save -- declare them here so they appear in the
+    // remapping list.
 
     // Loads the player's saved settings from disk. Must come after every tab.
     recompui::config::finalize();

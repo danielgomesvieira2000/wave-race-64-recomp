@@ -702,8 +702,12 @@ graphics.add_option_change_callback("fov", ...);   // graphics is dangling
 the crash lands on the *next* use of the older reference, which is why it points
 away from the change that caused it.
 
-**Create each tab, finish configuring it, then create the next.** A tab added
-last is also a tab whose reference nothing outlives.
+**Create each tab, finish configuring it, then create the next**, and never
+touch an earlier reference again. Putting the new tab last is the easy way out
+and it costs you the tab order -- tabs appear in creation order, so a tab that
+belongs beside Graphics has to be *created* beside Graphics. The invariant is
+about the order of the two operations, not about which tab is last: finish the
+graphics block, then create and fill the next tab, then the next.
 
 ### A setting the frontend defines is not a setting the frontend applies
 
