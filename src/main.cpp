@@ -18,6 +18,7 @@
 #   include "wr64/frontend.h"
 #endif
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #if defined(_WIN32)
@@ -25,6 +26,8 @@
 #   include <io.h>
 #   define WIN32_LEAN_AND_MEAN
 #   include <windows.h>
+#elif defined(__APPLE__)
+#   include <mach-o/dyld.h>
 #endif
 #include <filesystem>
 #include <string>
@@ -42,8 +45,11 @@ namespace wr64 {
 // The per-user directory for settings, controller profiles and mod state.
 //
 // On Windows this is %LOCALAPPDATA%\WaveRace64Recomp, the same folder RT64
-// already keeps its own files in, so a player has one place to look; elsewhere
-// it is $XDG_DATA_HOME/WaveRace64Recomp, or ~/.local/share/WaveRace64Recomp.
+// already keeps its own files in, so a player has one place to look. On macOS
+// it is ~/Library/Application Support/WaveRace64Recomp, which is where a Mac
+// application is expected to put this and where Migration Assistant will carry
+// it. On Linux and the rest it is $XDG_DATA_HOME/WaveRace64Recomp, or
+// ~/.local/share/WaveRace64Recomp.
 // A file called portable.txt in the working directory keeps everything there
 // instead, for a copy carried on a stick -- the same convention RecompFrontend
 // uses for its own paths.
@@ -57,6 +63,10 @@ std::filesystem::path settings_directory() {
     base = std::getenv("LOCALAPPDATA");
     if (base != nullptr) {
         root = base;
+    }
+#elif defined(__APPLE__)
+    if ((base = std::getenv("HOME")) != nullptr) {
+        root = std::filesystem::path{ base } / "Library" / "Application Support";
     }
 #else
     base = std::getenv("XDG_DATA_HOME");
@@ -81,6 +91,21 @@ std::filesystem::path executable_directory(const char* argv0) {
     const DWORD length = GetModuleFileNameW(nullptr, buffer, static_cast<DWORD>(std::size(buffer)));
     if (length > 0 && length < std::size(buffer)) {
         return std::filesystem::path{ buffer }.parent_path();
+    }
+#elif defined(__APPLE__)
+    // There is no /proc on macOS. _NSGetExecutablePath asked with a zero size
+    // reports the size it needs; the path it then gives back may contain
+    // symlinks and ".." components, so it is canonicalised before its parent is
+    // taken -- inside a bundle that parent is Contents/MacOS.
+    uint32_t length = 0;
+    _NSGetExecutablePath(nullptr, &length);
+    std::vector<char> buffer(length);
+    if (length > 0 && _NSGetExecutablePath(buffer.data(), &length) == 0) {
+        const std::filesystem::path self =
+            std::filesystem::weakly_canonical(buffer.data(), ec);
+        if (!ec) {
+            return self.parent_path();
+        }
     }
 #else
     const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", ec);

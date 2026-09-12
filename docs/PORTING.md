@@ -18,10 +18,14 @@ Pinned upstream revisions, for reference:
 | RT64 | `5473732a822a4423b5696e7cb18fecc425a59875` |
 | RecompFrontend | `b1a1477c6556aeb7ed45defbfb5924f721efebc1` |
 
-Four of the fixes below are patches to those submodules, applied by scripts in
-`tools/`. They are **scripted and idempotent on purpose**: a submodule update
+Several of the fixes below are patches to those submodules, applied by scripts
+in `tools/`. They are **scripted and idempotent on purpose**: a submodule update
 reverts a hand edit silently, and the resulting failure -- a build that stops, a
 port that goes mute -- points nowhere near its cause.
+
+The port builds for Windows, Linux and macOS from this one tree. Where something
+differs between them it is called out; *Building the same tree for Windows,
+Linux and macOS* in section 5 collects the ones that are purely about the build.
 
 ---
 
@@ -326,6 +330,115 @@ Repeat each on your own target.
 
 The DLL case is the nastiest: Windows reports only a status code, naming neither
 the missing DLL (`dxcompiler.dll`, `dxil.dll`) nor the fact that one is missing.
+
+### Building the same tree for Windows, Linux and macOS
+
+**Symptom:** a project that has only ever been built for Windows fails on Linux
+in four separate places at once -- SDL2 not found, `dxc.exe` not executable,
+undefined symbols from the crash handler at link time, and a type mismatch on
+the window handle -- and none of the failures mention the platform.
+
+All four are in the port's own `CMakeLists.txt` and sources, not in the
+libraries. RT64, ultramodern and RecompFrontend all support the three platforms
+already: RT64 has a Metal backend and a Linux Vulkan path, RecompFrontend falls
+back to `find_package(SDL2)` off Windows, and ultramodern defines its window
+handle per platform. What is Windows-only is whatever the *port* wrote down
+while Windows was the only target.
+
+| Windows-only thing | What it becomes |
+|---|---|
+| SDL2 from `contrib/mupen64plus-win32-deps` | `find_package(SDL2 REQUIRED)`, in the port's own scope -- RT64 and the frontend each run their own |
+| `dxc.exe` | `dxc-macos` or `dxc-linux`, both vendored beside it, each needing its own `libdxcompiler` on `DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH` |
+| the DLL copy step, `dbghelp`, the `.rc` | already conditional, or trivially made so |
+| `-mssse3 -msse4.1` on the recompiled RSP source | x86 only. On arm64 the flags are a hard error; librecomp reaches the same intrinsics through `thirdparty/sse2neon`, which has to be on the include path instead |
+| assets staged beside the executable | `Contents/Resources/assets` on macOS, because the product there is a bundle |
+
+### The window handle has three types, and all three ends must agree
+
+**Symptom:** on Linux, `core.window = window_handle.window` does not compile,
+and the obvious way to make it compile produces a renderer that fails to set up
+a swap chain.
+
+Three declarations have to meet, and each is guarded independently:
+
+| | ultramodern `WindowHandle` | plume `RenderWindow` |
+|---|---|---|
+| Windows | `{ HWND, DWORD thread_id }` | `HWND` |
+| Linux | `SDL_Window*` | `{ Display*, Window }`, **unless** `PLUME_SDL_VULKAN_ENABLED` |
+| macOS | `{ void* window, void* view }` | `{ void* window, void* view }` |
+
+On Linux the two disagree by default, and the option that reconciles them is
+RT64's `RT64_SDL_WINDOW_VULKAN`. It reads like a preference and is not: it
+decides a *type*. Set it before `add_subdirectory(RT64)` and plume's
+`RenderWindow` becomes an `SDL_Window*` as well -- which also takes X11 out of
+the build entirely, so the result runs under Wayland.
+
+The trap after that one is directory scope again. RT64 defines
+`PLUME_SDL_VULKAN_ENABLED` for *its* directory, so a port that includes RT64
+headers itself compiles against the X11 definition while RT64 compiles against
+the SDL one. Both compile. The disagreement is a silent ABI mismatch at the one
+call that passes the handle across. Define it on the port's target too.
+
+macOS needs one more thing, invisible in the types because both fields are
+`void*`: plume wants the **`CAMetalLayer`**, not the `NSView` that SDL wraps it
+in. `SDL_Metal_CreateView` then `SDL_Metal_GetLayer` -- and the window must have
+been created with `SDL_WINDOW_METAL` or there is no layer to get.
+
+### `__PRFCHWINTRIN_H` is a fact about the vendored SDL, not about Clang
+
+**Symptom:** off Windows, translation units fail on `_m_prefetch` being
+undeclared.
+
+SDL 2.26 works around an old Clang bug by defining `_m_prefetch` itself, guarded
+only by `__PRFCHWINTRIN_H`, and current Clang has `_m_prefetch` as a builtin, so
+the workaround has become the error. Defining that guard is the fix **for the
+SDL 2.26 vendored for Windows**. Off Windows, SDL comes from the system and is
+newer, and defining the guard only hides Clang's real `prfchwintrin.h` from
+everything downstream. Scope it to `WIN32`.
+
+### A platform-stubbed file still has to define every symbol
+
+**Symptom:** the Linux build compiles cleanly and then fails at link with four
+undefined symbols, from a file that has a perfectly good `#else` branch.
+
+A crash handler written against `dbghelp` naturally becomes `#if defined(_WIN32)
+... #else` with an empty stub, and the stub is the part nobody rereads. It ends
+up defining `install_crash_handler()` -- the one the reader was thinking about --
+while the other side of the `#if` also exported an address describer, a hang
+watchdog, and an `extern "C"` hook that a submodule patch injects a call to.
+Those are called from code that is *not* platform-gated, so on the stubbed
+platform each is a link error, a long way from the file responsible.
+
+The general form: the non-Windows branch of a platform-split file is an
+interface obligation, not an optional extra. Check it against the header's
+declarations, not against the calls you remember writing.
+
+### Cocoa events belong to the main thread
+
+**Symptom:** on macOS the game deadlocks or aborts inside AppKit, usually in the
+first frames, with a stack that goes through SDL's event pump.
+
+Draining SDL's event queue pumps Cocoa, and AppKit is main-thread-only. That is
+fine while only the main loop polls -- and this port has a second caller, because
+`osContStartReadData` wants a fresh pad reading and reaches the same polling
+function from the game thread. On Windows and Linux that is merely redundant; on
+macOS it is undefined.
+
+The fix is for the second caller to do nothing: `if (!pthread_main_np()) return;`
+at the top. The pad state it wanted was refreshed by the main thread microseconds
+earlier, and the snapshot is what the input path reads anyway.
+
+### Per-user paths are three conventions, not two
+
+`%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME` or `~/.local/share` on Linux, and
+`~/Library/Application Support` on macOS -- the last of which is *not* what the
+XDG branch would produce, and is where both a Mac user and Migration Assistant
+expect to find it.
+
+Finding the executable differs too, and it matters because the assets sit beside
+it: `GetModuleFileNameW`, `/proc/self/exe`, and `_NSGetExecutablePath` -- the
+last called twice, once with a null buffer to learn the length, and
+canonicalised afterwards because what it returns may contain symlinks and `..`.
 
 ### Use clang-cl, not clang++
 
@@ -660,6 +773,9 @@ it is told, that is the current working directory: start the game from a
 different directory and every setting comes back as its default. Register the
 config path before anything loads a setting, and make sure the frontend sees the
 same one -- these are two separate registrations and they drift apart silently.
+
+Where "there" is differs per platform; see *Per-user paths are three
+conventions, not two* above.
 
 ---
 

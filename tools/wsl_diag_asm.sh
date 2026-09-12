@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Diagnostic: why does assembling splat's output fail?
-cd /mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64/reference/wr64-decomp
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/reference/wr64-decomp"
 
 F=asm-all/us/rev1/sys/sys_main.s
 

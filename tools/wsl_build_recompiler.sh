@@ -10,7 +10,9 @@
 # The tool is built out of tree so the Windows build directory is left intact.
 set -euo pipefail
 
-REPO="/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64"
+# Derived rather than hardcoded: these scripts also run natively on Linux and
+# macOS, where the checkout is not under /mnt/c.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$REPO/lib/N64ModernRuntime/N64Recomp"
 BUILD="$SRC/build-linux"
 

@@ -8,6 +8,28 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## Unreleased
+
+- **Linux and macOS builds.** The port builds and runs from the same tree on all
+  three platforms. `tools/setup_linux.sh` and `tools/build_linux.sh` take a Linux
+  machine from a clean clone to a running game in two commands, and
+  `tools/setup_macos.sh` / `tools/build_macos.sh` do the same on Apple Silicon,
+  producing a double-clickable, ad-hoc signed `.app`. The macOS support comes
+  from [PR #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
+  which was built and played on an M3 Max.
+- Release packaging for both: `tools/package_release.py` writes a `.tar.gz` on
+  Linux and a `.zip` of the signed bundle on macOS, beside the Windows
+  `package_release.ps1`. `tools/build_macos_dependencies.sh` builds SDL2,
+  FreeType and libpng from checksum-pinned source against the bundle's
+  deployment target, so a published `.app` does not demand a newer macOS than it
+  claims to.
+- Settings and saves follow each platform's convention:
+  `~/Library/Application Support/WaveRace64Recomp` on macOS,
+  `$XDG_DATA_HOME/WaveRace64Recomp` on Linux.
+- The `tools/` scripts no longer assume a checkout path or a WSL host. They
+  derive the repository root from their own location, and find MIPS binutils
+  natively where it exists.
+
 ## [0.8.1](docs/releases/0.8.1.md) — Draw Distance marked experimental
 
 - **Draw Distance is marked experimental.** Anything above Original makes the

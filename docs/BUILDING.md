@@ -5,6 +5,17 @@ why the recompiler runs under Linux, why the audio microcode loads at `0x1080` -
 [PORTING.md](PORTING.md) explains it, and [GAME-INTERNALS.md](GAME-INTERNALS.md)
 records what the game itself turned out to be.
 
+The port builds for **Windows, Linux and macOS** from this one tree. Linux and
+macOS have a script each that does the whole thing from a clean clone:
+
+```sh
+bash tools/setup_linux.sh --install      # or tools/setup_macos.sh
+bash tools/build_linux.sh "/path/to/Wave Race 64 (USA) (Rev A).z64"
+```
+
+Windows is still step by step, below. Everything from *Clone* onwards applies to
+all three; the per-platform prerequisites are in the next section.
+
 ## Requirements
 
 | Tool | Version | Why |
@@ -15,6 +26,9 @@ records what the game itself turned out to be.
 | Clang | 15+ | N64Recomp's output is validated against Clang and MSVC |
 | Python | 3.10+ | splat and the symbol tooling in `tools/` |
 | MIPS binutils | any | assembling the disassembly into an ELF (phase 01) |
+
+Per-platform prerequisites and the one-command build are below: [Windows](#windows),
+[Linux](#linux), [macOS](#macos).
 
 **Do not build with modern GCC.** Recompiled output has a documented history of
 miscompiling under modern GCC's optimizer. CMake will warn if you try.
@@ -50,6 +64,86 @@ A MIPS assembler is not available through winget. Phase 01 needs one of:
 The Microsoft Store `python` stub on a fresh Windows install is not Python. If
 `python --version` opens the Store, install the real thing with the winget
 command above.
+
+### Linux
+
+Tested on Ubuntu 26.04 x86-64. The packages, and what each is for:
+
+| Package | Needed by |
+|---|---|
+| `clang`, `lld` | the port. Not GCC -- see above |
+| `cmake`, `ninja-build`, `pkg-config` | the build |
+| `libsdl2-dev` | the window, the pad, the audio device |
+| `libfreetype-dev` | RmlUi's font engine, under `recompui` |
+| `libgtk-3-dev` | `nativefiledialog-extended`, which RT64 opens the ROM picker with |
+| `libvulkan-dev`, `mesa-vulkan-drivers` | RT64's only renderer here. Skip the drivers if the proprietary NVIDIA or AMD stack is installed |
+| `vulkan-tools` | `vulkaninfo`, for when the renderer will not start |
+| `binutils-mips-linux-gnu` | assembling the disassembly into an ELF |
+| `python3`, `python3-venv` | splat and the symbol tooling in `tools/` |
+
+```sh
+bash tools/setup_linux.sh            # prints what is missing
+bash tools/setup_linux.sh --install  # installs it, with sudo
+```
+
+`setup_linux.sh` also initialises the submodules, clones the reference
+decompilation into `reference/`, and builds the Python environment splat runs
+in. Then:
+
+```sh
+bash tools/build_linux.sh "/path/to/Wave Race 64 (USA) (Rev A).z64"
+./build-linux/WaveRace64Recomp
+```
+
+The dump argument is needed on the first build only; after that
+`bash tools/build_linux.sh` rebuilds from source alone. RT64 renders through
+Vulkan here, so a working Vulkan driver is not optional -- `vulkaninfo --summary`
+should name your GPU.
+
+Settings, saves and mods live in `$XDG_DATA_HOME/WaveRace64Recomp`, or
+`~/.local/share/WaveRace64Recomp`.
+
+### macOS
+
+Apple Silicon, macOS 15 or newer. **Not tested by this project's maintainers**:
+the macOS support here comes from [PR #2][macos-pr], which was built and played
+on an M3 Max, and is kept building but not run on a Mac by anyone here. Treat a
+macOS-only failure as a real bug and report it.
+
+[macos-pr]: https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2
+
+Prerequisites, from Xcode and Homebrew:
+
+```sh
+brew install cmake ninja python sdl2 freetype
+```
+
+Xcode itself is needed for the **Metal Toolchain** -- RT64 compiles its shaders
+to Metal with it, and the command line tools alone do not include it. If the
+build reports it missing:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+    xcodebuild -downloadComponent MetalToolchain
+```
+
+MIPS binutils has no formula worth relying on, so `setup_macos.sh` builds it
+from checksum-pinned source into `build-toolchain/`. That takes a few minutes,
+once.
+
+```sh
+bash tools/setup_macos.sh
+bash tools/build_macos.sh "/path/to/Wave Race 64 (USA) (Rev A).z64"
+open build-macos/WaveRace64Recomp.app
+```
+
+The product is a double-clickable bundle, ad-hoc signed for local use and not
+notarized. `tools/package_macos.py` -- which `build_macos.sh` runs -- copies the
+non-system dylibs into `Contents/Frameworks`, rewrites their install names, and
+signs from the inside out.
+
+Settings, saves and mods live in `~/Library/Application Support/WaveRace64Recomp`.
+The dump stays outside the bundle; pick it in the launcher and it is remembered.
 
 ## Clone
 
@@ -150,7 +244,9 @@ every build (see [HUD-INSPECTOR.md](HUD-INSPECTOR.md)):
 python tools/patch_rt64.py
 ```
 
-Use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`:
+On Windows, use **clang-cl**, not `clang++`, once `WR64_WITH_RUNTIME=ON`. On
+Linux and macOS, plain `clang`/`clang++` is right and `clang-cl` does not exist;
+the reason for the Windows rule is below and does not apply there.
 
 ```
 cmake -B build-rt -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl       -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON
@@ -204,8 +300,10 @@ falls back to reporting each audio task complete without running it.
 
 ## Playing it
 
-Double-click `build-fe\WaveRace64Recomp.exe` and pick your dump in the
-launcher; it is remembered. From a shell, a path skips the launcher:
+Double-click the program -- `build-fe\WaveRace64Recomp.exe` on Windows,
+`build-linux/WaveRace64Recomp` on Linux, `build-macos/WaveRace64Recomp.app` on
+macOS -- and pick your dump in the launcher; it is remembered. From a shell, a
+path skips the launcher:
 
 ```
 build-fe/WaveRace64Recomp.exe <your dump>.z64
@@ -217,11 +315,16 @@ prints to the shell as before, so redirecting stderr to a file still works.
 
 It can be started from any directory, by double-click or from a shell, and a
 relative path to the dump is taken relative to where you typed it. Settings,
-controller profiles and mod state live in `%LOCALAPPDATA%\WaveRace64Recomp`
-on Windows (`$XDG_DATA_HOME/WaveRace64Recomp` or `~/.local/share/WaveRace64Recomp`
-elsewhere), beside the files RT64 keeps there; the first line the port prints
-says where. A file called `portable.txt` next to the executable keeps them next
-to the executable instead.
+controller profiles and mod state live beside the files RT64 keeps there, in:
+
+| | |
+|---|---|
+| Windows | `%LOCALAPPDATA%\WaveRace64Recomp` |
+| Linux | `$XDG_DATA_HOME/WaveRace64Recomp`, or `~/.local/share/WaveRace64Recomp` |
+| macOS | `~/Library/Application Support/WaveRace64Recomp` |
+
+The first line the port prints says which. A file called `portable.txt` next to
+the executable keeps them next to the executable instead.
 
 A gamepad is used if one is attached, and the keyboard works at the same time --
 neither has to be chosen, and player one always has both. Those bindings are
@@ -248,6 +351,47 @@ powershell -ExecutionPolicy Bypass -File tools/capture_window.ps1 -OutDir shots 
 For a repeatable session without touching the pad, `WR64_INPUT_SCRIPT` points at
 a file of timed inputs; `tools/scripts/race.txt` drives the game from boot into
 a race. Leave the variable unset and nothing is injected.
+
+## Packaging a release
+
+One script per platform, each producing an archive under `dist/` plus its
+SHA-256. None of them will package a dump or a save -- they refuse to continue
+if they find one where they are staging -- and the Unix one refuses to overwrite
+an archive that already exists, because a published checksum should not quietly
+start describing different bytes.
+
+```
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version 0.8.1
+python3 tools/package_release.py --version 0.8.1
+```
+
+The second one reads the platform it is running on: a `.tar.gz` on Linux with
+the executable, the assets, a launcher and a note about the distribution
+packages it needs at run time; a `.zip` on macOS holding the signed `.app`,
+written with `ditto` so the bundle's symlinks and the executable bit survive.
+Debug info is split into a second archive where an `objcopy` is available.
+
+### A redistributable macOS build
+
+A local macOS build links against Homebrew's SDL2 and FreeType, and a Homebrew
+bottle is built for the OS it was installed on -- so the bundle ends up
+advertising a minimum macOS newer than the one it was compiled for, and refuses
+to launch on exactly the systems it claims to support.
+`tools/package_macos.py` derives `LSMinimumSystemVersion` from the binaries
+actually shipped, so this is visible rather than silent. To fix it, build the
+libraries against the same deployment target:
+
+```sh
+bash tools/build_macos_dependencies.sh
+WR64_BUILD_DIR=build-macos-release \
+WR64_DEPENDENCY_PREFIX="$PWD/build-macos-deps/install" \
+    bash tools/build_macos.sh
+python3 tools/package_release.py --version 0.8.1 --build-dir build-macos-release
+```
+
+SDL2, FreeType and libpng are pinned by version and by SHA-256 there, and the
+script checks each built dylib's architecture and deployment target before it
+finishes. Test the extracted archive before publishing it.
 
 ## The frontend UI (phase 06, in progress)
 

@@ -31,6 +31,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from toolchain import readelf_command
+
 REPO = Path(__file__).resolve().parent.parent
 INL = REPO / "RecompiledFuncs" / "recomp_overlays.inl"
 ELF = "wr64.elf"
@@ -39,7 +41,7 @@ OVERLAY_RE = re.compile(r"ovl_|seg_1C3|segment_1B1FB0")
 
 def readelf(flag):
     return subprocess.run(
-        ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf", flag, ELF],
+        readelf_command() + [flag, ELF],
         capture_output=True, text=True, cwd=REPO).stdout
 
 

@@ -2,8 +2,10 @@
 
 Committed tooling. Everything here is original code that operates on a ROM the
 user supplies; nothing here contains game data. The `wsl_*.sh` scripts run
-under WSL because the disassembler and the MIPS assembler are Linux tools; the
-rest run wherever Python or PowerShell does.
+under WSL *on Windows* because the disassembler and the MIPS assembler are Linux
+tools; on Linux and macOS they run natively, and they derive the repository root
+from their own location rather than assuming one. The rest run wherever Python
+or PowerShell does.
 
 `docs/BUILDING.md` says which to run and in what order. This is the index.
 
@@ -40,7 +42,25 @@ rest run wherever Python or PowerShell does.
 | `gen_reimplemented_decls.py` | Declares the libultra functions the runtime reimplements. |
 | `gen_runtime_func_table.py` | Registers runtime-provided libultra functions in the address lookup. |
 | `fix_overlay_relocs.py` | Drops the relocation entries N64Recomp emits with no type. |
-| `package_release.ps1` | Stages a built tree into a release folder and zips it. See the script for what it deliberately leaves out. |
+| `package_release.ps1` | Stages a built Windows tree into a release folder and zips it. See the script for what it deliberately leaves out. |
+| `package_release.py` | The same for Linux (`.tar.gz`) and macOS (`.zip` of the signed bundle), picking the platform it is running on. Refuses to package a dump or a save, and refuses to overwrite an existing archive. |
+
+## Per-platform build scripts
+
+Each of these is the whole thing from a clean clone, in the order
+`docs/BUILDING.md` describes step by step.
+
+| Script | Purpose |
+|---|---|
+| `setup_linux.sh` | Reports or installs the Linux build packages, initialises the submodules, clones the reference decompilation, and builds the Python environment splat runs in. `--install` to actually install. |
+| `build_linux.sh` | Applies every patch script, builds the recompiler, generates the game sources from a dump on a first build, then configures and builds. |
+| `setup_macos.sh` | The macOS equivalent, and additionally builds MIPS binutils from checksum-pinned source into `build-toolchain/`, since there is no formula worth relying on. |
+| `build_macos.sh` | As `build_linux.sh`, then bundles and ad-hoc signs the `.app`. |
+| `build_macos_dependencies.sh` | Builds SDL2, FreeType and libpng from pinned source against the bundle's deployment target, for a redistributable build. Homebrew's copies can require a newer macOS than the app targets. |
+| `package_macos.py` | Copies a built bundle's non-system dylibs into `Contents/Frameworks`, rewrites their install names, derives `LSMinimumSystemVersion` from what is actually shipped, and signs from the inside out. Run by `build_macos.sh`. |
+| `generate_game.py` | Verifies a dump (converting byte order if needed), then runs the whole phase 01/02/05 pipeline over it: disassemble, assemble, verify, recompile the game, recompile the audio microcode. Runs natively on Linux and macOS and through WSL on Windows. |
+| `patch_macos.py` | Adds the `<stdlib.h>` that the pinned hlsl++ needs for `labs`, which only Apple's libc notices is missing. Idempotent, and chained into `patch_rt64.py`. |
+| `toolchain.py` | Finds `mips-linux-gnu-readelf`: natively where there is one, through WSL on Windows. |
 
 ## Testing and diagnosis
 

@@ -21,8 +21,12 @@
 #include <vector>
 
 #include <SDL.h>
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
 #   include <SDL_syswm.h>
+#endif
+#if defined(__APPLE__)
+#   include <SDL_metal.h>
+#   include <pthread.h>
 #endif
 
 #include <ultramodern/ultramodern.hpp>
@@ -148,6 +152,21 @@ void refresh_players() {
 #endif
 
 void poll_input() {
+#if defined(__APPLE__)
+    // On macOS this must not run anywhere but the main thread. Draining SDL's
+    // event queue pumps Cocoa, and AppKit is main-thread-only -- doing it from
+    // another thread is undefined, and in practice deadlocks or aborts.
+    //
+    // This function has two callers. update_gfx() is the main loop body and is
+    // on the main thread; osContStartReadData reaches it from the game thread,
+    // wanting a fresh pad reading before the game looks at one. The second
+    // caller is the problem, and the fix is for it to do nothing: the pad state
+    // it wanted was refreshed by the main thread microseconds ago, and
+    // get_input() reads that snapshot either way.
+    if (!pthread_main_np()) {
+        return;
+    }
+#endif
 #if WR64_WITH_FRONTEND
     // recompinput::handle_events() is the library's own polling loop, and it
     // has to be the only thing draining SDL's event queue: a hand-rolled loop
@@ -1106,6 +1125,13 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     int width = 320 * 4;
     int height = 240 * 4;
     Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#if defined(__APPLE__)
+    // RT64 draws through Metal here, and SDL has to know that when it makes the
+    // window: this flag is what gives it a layer-backed view to hang a
+    // CAMetalLayer off. Asking for the layer later, on a window made without
+    // it, fails.
+    flags |= SDL_WINDOW_METAL;
+#endif
 
     SDL_Rect display{};
     if (fullscreen && SDL_GetDisplayBounds(0, &display) == 0) {
@@ -1149,15 +1175,33 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     // The renderer does not exist yet; this only sets what it will read.
     wr64::display::crop_to_content();
 
-#if defined(_WIN32)
+    // What the renderer is handed differs per platform. src/renderer.cpp is the
+    // other end of this and says what each one is.
+#if defined(_WIN32) || defined(__APPLE__)
     SDL_SysWMinfo wm_info;
     SDL_VERSION(&wm_info.version);
     if (SDL_GetWindowWMInfo(g_window, &wm_info) != SDL_TRUE) {
         std::fprintf(stderr, "SDL_GetWindowWMInfo failed: %s\n", SDL_GetError());
         return {};
     }
+#endif
+
+#if defined(_WIN32)
     return ultramodern::renderer::WindowHandle{ wm_info.info.win.window, GetCurrentThreadId() };
+#elif defined(__APPLE__)
+    // plume wants the CAMetalLayer, not the NSView SDL wraps it in. Handing it
+    // the view compiles -- both are void* -- and then fails inside Metal when
+    // the swap chain tries to use it as a layer.
+    SDL_MetalView view = SDL_Metal_CreateView(g_window);
+    if (view == nullptr) {
+        std::fprintf(stderr, "SDL_Metal_CreateView failed: %s\n", SDL_GetError());
+        return {};
+    }
+    return ultramodern::renderer::WindowHandle{ wm_info.info.cocoa.window,
+                                                SDL_Metal_GetLayer(view) };
 #else
+    // Linux: RT64 is built expecting an SDL window, so the handle is the window
+    // itself, unwrapped. X11 is not involved either way.
     return g_window;
 #endif
 }

@@ -76,7 +76,23 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
                          bool developer_mode) {
     RT64::Application::Core core{};
 
+    // What "the window" is depends on the platform, in both directions at once:
+    // ultramodern's WindowHandle and plume's RenderWindow are each defined per
+    // platform, and it is those two definitions that have to meet here.
+    //
+    //   Windows  an HWND, in a struct with the thread that owns it.
+    //   Linux    the SDL_Window* itself, because RT64 is built with
+    //            RT64_SDL_WINDOW_VULKAN -- see the note in CMakeLists.txt.
+    //   macOS    an { NSWindow, CAMetalLayer } pair, both made in
+    //            src/callbacks.cpp when the window is created.
+#if defined(__APPLE__)
+    core.window.window = window_handle.window;
+    core.window.view = window_handle.view;
+#elif defined(_WIN32)
     core.window = window_handle.window;
+#else
+    core.window = window_handle;
+#endif
     core.RDRAM = rdram;
     core.DMEM = dmem_.data();
     core.IMEM = imem_.data();
@@ -127,7 +143,15 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
     (void)developer_mode;
     app_->userConfig.developerMode = true;
 
-    const RT64::Application::SetupResult result = app_->setup(window_handle.thread_id);
+    // The thread id is a Windows concept: RT64 uses it to install a message hook
+    // on the thread that owns the window. Nothing reads it on the other
+    // platforms, and only the Windows WindowHandle carries one.
+#if defined(_WIN32)
+    const uint32_t window_thread_id = window_handle.thread_id;
+#else
+    const uint32_t window_thread_id = 0;
+#endif
+    const RT64::Application::SetupResult result = app_->setup(window_thread_id);
     setup_result = translate(result);
 
     if (result != RT64::Application::SetupResult::Success) {

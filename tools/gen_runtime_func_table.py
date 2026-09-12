@@ -26,6 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from toolchain import readelf_command
+
 REPO = Path(__file__).resolve().parent.parent
 GENERATED = REPO / "RecompiledFuncs"
 OUT = GENERATED / "runtime_funcs.inl"
@@ -83,7 +85,7 @@ def patched_functions():
 
 def symbol_addresses():
     out = subprocess.run(
-        ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf", "-sW", ELF],
+        readelf_command() + ["-sW", ELF],
         capture_output=True, text=True, cwd=REPO).stdout
     addresses = {}
     for line in out.splitlines():

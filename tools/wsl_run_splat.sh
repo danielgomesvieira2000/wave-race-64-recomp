@@ -8,8 +8,13 @@
 # step. Our own config gets derived from it once we know what it produces.
 set -euo pipefail
 
-VENV="$HOME/wr64venv"
-REPO="/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64"
+# Derived rather than hardcoded: these scripts also run natively on Linux and
+# macOS, where the checkout is not under /mnt/c.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The in-tree .venv the setup scripts make, unless one is named explicitly.
+# $HOME/wr64venv is still honoured for checkouts set up before this.
+VENV="${WR64_VENV:-$REPO/.venv}"
+if [ ! -d "$VENV" ] && [ -d "$HOME/wr64venv" ]; then VENV="$HOME/wr64venv"; fi
 DECOMP="$REPO/reference/wr64-decomp"
 
 cd "$DECOMP"

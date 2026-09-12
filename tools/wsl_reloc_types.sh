@@ -8,7 +8,7 @@
 # rather than guessed at.
 set -euo pipefail
 
-cd /mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "=== relocation types across the whole ELF ==="
 mips-linux-gnu-readelf -rW wr64.elf | awk '$3 ~ /^R_MIPS/ { print $3 }' | sort | uniq -c | sort -rn

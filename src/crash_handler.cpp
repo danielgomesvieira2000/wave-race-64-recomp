@@ -451,8 +451,42 @@ void install_crash_handler() {
 
 #else
 
+// Off Windows there is no dbghelp, and nothing here has an equivalent worth
+// writing yet: a fault produces a core dump that a debugger reads properly,
+// which is more than the Windows path can offer. What the rest of the port
+// needs from this file is the *symbols* -- every one of these is called
+// unconditionally from code that is not itself platform-gated, so a missing
+// definition is a link error rather than a missing feature.
+//
+// The two that still say something useful say it. describe_code_address prints
+// the raw address, which is what the Windows version prints when the symbol
+// lookup fails anyway, and wr64_report_lookup_miss reports the recompiled
+// function that could not be found -- see tools/patch_librecomp.py, which
+// injects the call. The hang watchdog is the one real loss; it exists to catch
+// recompiled microcode that spins forever, and rebuilding it on POSIX timers
+// is work for the day that actually happens on Linux or macOS.
+
+#include <cstdio>
+
 namespace wr64 {
+
 void install_crash_handler() {}
+
+void describe_code_address(const char* label, void* address) {
+    std::fprintf(stderr, "[wr64] %s: %p
+", label, address);
+}
+
+void watch_for_hang(const char*, int) {}
+void watch_done() {}
+
 }  // namespace wr64
+
+extern "C" void wr64_report_lookup_miss(unsigned int addr, void* return_address) {
+    std::fprintf(stderr, "[wr64] function lookup failed at 0x%08X (caller %p)
+",
+                 addr, return_address);
+    std::fflush(stderr);
+}
 
 #endif

@@ -34,7 +34,7 @@ from pathlib import Path
 
 import yaml
 
-DECOMP = Path("/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64/reference/wr64-decomp")
+DECOMP = Path(__file__).resolve().parent.parent / "reference" / "wr64-decomp"
 CONFIG = DECOMP / "wr64.us.rev1.asm.yaml"
 ASM_ROOT = DECOMP / "asm-all/us/rev1"
 ROM_NAME = "baserom.us.rev1.z64"

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-DECOMP = Path("/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64/reference/wr64-decomp")
+DECOMP = Path(__file__).resolve().parent.parent / "reference" / "wr64-decomp"
 CONFIG = DECOMP / "wr64.us.rev1.asm.yaml"
 LD = DECOMP / "linker_scripts/us/rev1/waverace64.asmonly.ld"
 ELF = DECOMP / "build/waverace64.us.rev1.elf"

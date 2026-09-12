@@ -388,6 +388,12 @@ def main():
     import patch_rt64_eventfilter
     patch_rt64_eventfilter.main()
 
+    # A missing include in the pinned hlsl++ that only macOS notices. Applied
+    # on every platform so there is one patch step to document and one tree
+    # state to reason about, whichever machine the build is on.
+    import patch_macos
+    patch_macos.main()
+
     print("Rebuild to pick it up.")
 
 

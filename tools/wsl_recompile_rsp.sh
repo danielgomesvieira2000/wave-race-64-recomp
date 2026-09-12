@@ -10,7 +10,9 @@
 # from the cartridge), so it has to be rerunnable from nothing.
 set -euo pipefail
 
-REPO="/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64"
+# Derived rather than hardcoded: these scripts also run natively on Linux and
+# macOS, where the checkout is not under /mnt/c.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOL="$REPO/lib/N64ModernRuntime/N64Recomp/build-linux/RSPRecomp"
 
 if [ ! -x "$TOOL" ]; then

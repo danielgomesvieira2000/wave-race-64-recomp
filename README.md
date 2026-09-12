@@ -36,12 +36,21 @@ which are loaded from your dump each time it runs. What it does contain is the
 game's *code*, recompiled -- that is what a recompiled port is. See
 [Licensing](#licensing) before redistributing it.
 
-**Build it yourself.** [docs/BUILDING.md](docs/BUILDING.md) takes you from
-installing the toolchain on Windows to the first race.
+**Build it yourself,** on Windows, Linux or macOS.
+[docs/BUILDING.md](docs/BUILDING.md) takes you from installing the toolchain to
+the first race. Linux and macOS have a script each that does the whole thing
+from a clean clone:
 
-Settings, saves and mods live in `%LOCALAPPDATA%\WaveRace64Recomp`. Started by
-double-click, the program writes its log to `wr64.log` there; attach that file to
-a bug report.
+```sh
+bash tools/setup_linux.sh --install      # or tools/setup_macos.sh
+bash tools/build_linux.sh "/path/to/Wave Race 64 (USA) (Rev A).z64"
+```
+
+Settings, saves and mods live in `%LOCALAPPDATA%\WaveRace64Recomp` on Windows,
+`~/.local/share/WaveRace64Recomp` on Linux and
+`~/Library/Application Support/WaveRace64Recomp` on macOS. Started by
+double-click, the program writes its log to `wr64.log` there; attach that file
+to a bug report.
 
 ## What it does
 

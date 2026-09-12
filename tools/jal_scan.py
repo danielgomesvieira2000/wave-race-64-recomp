@@ -32,9 +32,11 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from toolchain import readelf_command
+
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "recomp" / "jal_targets.txt"
-READELF = ["wsl", "-d", "Ubuntu", "--", "mips-linux-gnu-readelf"]
+READELF = readelf_command()
 
 # Sections that load here overlap one another, so calls inside this window are
 # only meaningful within the calling section.

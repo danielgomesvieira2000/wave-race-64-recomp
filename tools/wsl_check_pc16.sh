@@ -11,7 +11,7 @@
 # when it resolves within the same section.
 set -euo pipefail
 
-cd /mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 mips-linux-gnu-readelf -rW wr64.elf | awk '
     /^Relocation section/ {

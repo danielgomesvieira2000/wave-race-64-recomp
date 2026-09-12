@@ -1,5 +1,13 @@
 ﻿cmake_minimum_required(VERSION 3.20)
 
+# The deployment target has to be set before project(): it is what the compiler
+# check itself is run with, and RT64's Metal shader build reads it too. 15.0 is
+# what the macOS build was validated against; override it with -DWR64_MACOS_TARGET
+# or by setting CMAKE_OSX_DEPLOYMENT_TARGET directly.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
+endif()
+
 project(WaveRace64Recomp
     VERSION 0.8.1
     DESCRIPTION "Native PC port of Wave Race 64 via static recompilation"
@@ -49,6 +57,22 @@ endif()
 # ---------------------------------------------------------------------------
 set(WR64_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 
+# RT64's Metal backend and recompui's Apple support file are Objective-C++.
+# CMake only compiles those if the languages are enabled, and enabling them in
+# a subdirectory is too late for the ones added below.
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+endif()
+
+# SDL2. On Windows it comes from the copy RT64 vendors under
+# contrib/mupen64plus-win32-deps; everywhere else it is a system package, and
+# this project needs it in its own scope because src/callbacks.cpp includes
+# SDL.h and creates the window. RT64 and RecompFrontend each run their own
+# find_package in their own directories.
+if(NOT WIN32)
+    find_package(SDL2 REQUIRED)
+endif()
+
 if(WR64_WITH_RUNTIME)
     if(NOT EXISTS "${WR64_LIB_DIR}/RT64/CMakeLists.txt")
         message(FATAL_ERROR
@@ -56,6 +80,20 @@ if(WR64_WITH_RUNTIME)
     endif()
 
     set(RT64_STATIC ON CACHE BOOL "" FORCE)
+
+    # On Linux this one option decides a type, not a preference. plume's
+    # RenderWindow is an X11 { Display*, Window } pair by default, but
+    # ultramodern's Linux WindowHandle is an SDL_Window* -- the two do not
+    # meet, and the port has nothing to hand the renderer. Turning it on makes
+    # plume's RenderWindow an SDL_Window* as well, which also takes X11 out of
+    # the build entirely so it works under Wayland.
+    #
+    # It is deliberately not set on macOS: there plume and ultramodern already
+    # agree on { window, view }, and RT64 ignores this option off Linux anyway.
+    if(UNIX AND NOT APPLE)
+        set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
+    endif()
+
     add_subdirectory("${WR64_LIB_DIR}/RT64" EXCLUDE_FROM_ALL)
     add_subdirectory("${WR64_LIB_DIR}/N64ModernRuntime" EXCLUDE_FROM_ALL)
 endif()
@@ -81,16 +119,24 @@ if(WR64_WITH_FRONTEND)
     # FetchContent would have set had it fetched SDL2 itself. This project takes
     # SDL2 from the copy RT64 already vendors -- two SDL2s in one process is not
     # a thing that ends well -- so the variable is pointed at that instead.
-    set(sdl2_SOURCE_DIR
-        "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3")
+    # Off Windows the frontend already falls back to find_package(SDL2), so the
+    # variable must stay unset there or it points at a Windows import library.
+    if(WIN32)
+        set(sdl2_SOURCE_DIR
+            "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3")
 
-    # SDL 2.26's SDL_endian.h defines _m_prefetch as a workaround for an old
-    # Clang bug, guarded only by __PRFCHWINTRIN_H. Current Clang has _m_prefetch
-    # as a builtin, so that definition is now an error rather than a fix. RT64
-    # already defines the guard for its own targets; the frontend is a separate
-    # directory scope and does not inherit it, so it is set here for everything
-    # added below.
-    add_compile_definitions(__PRFCHWINTRIN_H)
+        # SDL 2.26's SDL_endian.h defines _m_prefetch as a workaround for an old
+        # Clang bug, guarded only by __PRFCHWINTRIN_H. Current Clang has
+        # _m_prefetch as a builtin, so that definition is now an error rather
+        # than a fix. RT64 already defines the guard for its own targets; the
+        # frontend is a separate directory scope and does not inherit it, so it
+        # is set here for everything added below.
+        #
+        # This is a fact about the vendored SDL 2.26, not about the compiler, so
+        # it must not be defined off Windows: there it would hide Clang's own
+        # prfchwintrin.h from every translation unit that wants _m_prefetch.
+        add_compile_definitions(__PRFCHWINTRIN_H)
+    endif()
 
     # recompui compiles its own HLSL through RT64's build_vertex_shader and
     # build_pixel_shader. Those functions are global, but the variables they
@@ -100,8 +146,28 @@ if(WR64_WITH_FRONTEND)
     # shader step then "succeeds" while producing nothing, and the failure
     # surfaces one step later as an empty file. Re-declaring them here is what
     # makes the functions usable from outside RT64.
+    #
+    # The compiler itself is a different binary on each platform, and the two
+    # Unix ones need their own libdxcompiler on the library path to run at all.
+    # RT64 vendors all of them under contrib/dxc; this mirrors the selection
+    # RT64 makes for itself in lib/RT64/CMakeLists.txt.
     set(WR64_RT64_DIR "${WR64_LIB_DIR}/RT64")
-    set(DXC "${WR64_RT64_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        set(WR64_DXC_ARCH arm64)
+    else()
+        set(WR64_DXC_ARCH x64)
+    endif()
+    if(WIN32)
+        set(DXC "${WR64_RT64_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+    elseif(APPLE)
+        set(DXC "${CMAKE_COMMAND}" -E env
+            "DYLD_LIBRARY_PATH=${WR64_RT64_DIR}/src/contrib/dxc/lib/${WR64_DXC_ARCH}"
+            "${WR64_RT64_DIR}/src/contrib/dxc/bin/${WR64_DXC_ARCH}/dxc-macos")
+    else()
+        set(DXC "${CMAKE_COMMAND}" -E env
+            "LD_LIBRARY_PATH=${WR64_RT64_DIR}/src/contrib/dxc/lib/${WR64_DXC_ARCH}"
+            "${WR64_RT64_DIR}/src/contrib/dxc/bin/${WR64_DXC_ARCH}/dxc-linux")
+    endif()
     set(DXC_COMMON_OPTS "-I${WR64_RT64_DIR}/src")
     set(DXC_DXIL_OPTS "-Wno-ignored-attributes")
     set(DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
@@ -145,12 +211,19 @@ if(WR64_WITH_RECOMPILED)
         # intrinsics -- _mm_shuffle_epi8 and _mm_blendv_epi8 have no portable
         # fallback there. Neither is enabled by default, so this one file needs
         # them explicitly. Both predate every x86-64 CPU capable of running RT64.
-        if(MSVC)
-            set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
-                COMPILE_OPTIONS "/clang:-mssse3;/clang:-msse4.1")
-        else()
-            set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
-                COMPILE_OPTIONS "-mssse3;-msse4.1")
+        #
+        # On arm64 -- Apple Silicon -- there is no such flag and asking for one
+        # is a hard error. librecomp reaches the same intrinsics through the
+        # sse2neon header bundled with the runtime instead; the include path for
+        # it is added to the target below.
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i.86)$")
+            if(MSVC)
+                set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
+                    COMPILE_OPTIONS "/clang:-mssse3;/clang:-msse4.1")
+            else()
+                set_source_files_properties("${WR64_RSP_SOURCE}" PROPERTIES
+                    COMPILE_OPTIONS "-mssse3;-msse4.1")
+            endif()
         endif()
     endif()
 
@@ -164,6 +237,9 @@ if(WR64_WITH_RECOMPILED)
         # The recompiled RSP microcode reaches ultramodern's headers through
         # librecomp/rsp.hpp, so this target needs them too.
         "${WR64_LIB_DIR}/N64ModernRuntime/ultramodern/include"
+        # sse2neon, which is how librecomp's RSP vector unit compiles on arm64.
+        # Harmless on x86: nothing includes it there.
+        "${WR64_LIB_DIR}/N64ModernRuntime/thirdparty/sse2neon"
         "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs")
 
     # Recompiled code is machine-generated: its warnings are noise, and it must
@@ -209,8 +285,40 @@ endif()
 
 add_executable(WaveRace64Recomp ${WR64_SOURCES})
 
+# On macOS the product is an application bundle, not a bare executable: it is
+# what the player double-clicks, it is what carries the assets, and it is what
+# can be signed. Everything staged below goes into Contents/Resources instead of
+# the directory beside the binary because of it.
+if(APPLE)
+    set_target_properties(WaveRace64Recomp PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "Wave Race 64 Recompiled"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.waverace64.recomp"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+endif()
+
+# Where the frontend's assets are staged, and where the port looks for them at
+# run time. These have to agree; see executable_directory() in src/main.cpp.
+if(APPLE)
+    set(WR64_ASSET_DIR "$<TARGET_BUNDLE_CONTENT_DIR:WaveRace64Recomp>/Resources/assets")
+else()
+    set(WR64_ASSET_DIR "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets")
+endif()
+
 target_include_directories(WaveRace64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+# src/callbacks.cpp creates the window and reads the event queue, so the port
+# links SDL2 itself rather than relying on it arriving through RT64.
+if(NOT WIN32)
+    if(TARGET SDL2::SDL2)
+        target_link_libraries(WaveRace64Recomp PRIVATE SDL2::SDL2)
+    else()
+        target_include_directories(WaveRace64Recomp PRIVATE ${SDL2_INCLUDE_DIRS})
+        target_link_libraries(WaveRace64Recomp PRIVATE ${SDL2_LIBRARIES})
+    endif()
+endif()
 
 if(WR64_WITH_RUNTIME)
     target_link_libraries(WaveRace64Recomp PRIVATE rt64 ultramodern librecomp)
@@ -229,9 +337,26 @@ if(WR64_WITH_RUNTIME)
     target_compile_definitions(WaveRace64Recomp PRIVATE
         HLSL_CPU
         FFX_GCC
-        IMGUI_IMPL_VULKAN_NO_PROTOTYPES
-        NOMINMAX
-        __PRFCHWINTRIN_H)
+        IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
+
+    if(WIN32)
+        target_compile_definitions(WaveRace64Recomp PRIVATE
+            NOMINMAX
+            __PRFCHWINTRIN_H)
+    endif()
+
+    # Same problem, worse consequence. RT64 defines these two for its own
+    # directory when it is built for an SDL window, and they are what
+    # plume_render_interface_types.h reads to decide that RenderWindow is an
+    # SDL_Window*. Without them here, src/renderer.cpp compiles against the X11
+    # { Display*, Window } definition instead, and the port and the renderer
+    # disagree about the type of the thing being passed between them -- which
+    # the linker is under no obligation to notice.
+    if(UNIX AND NOT APPLE)
+        target_compile_definitions(WaveRace64Recomp PRIVATE
+            PLUME_SDL_VULKAN_ENABLED
+            RT64_SDL_WINDOW_VULKAN)
+    endif()
 
     target_include_directories(WaveRace64Recomp PRIVATE
         # The extended GBI header the display-list rewriter builds its commands with.
@@ -243,7 +368,9 @@ if(WR64_WITH_RUNTIME)
         "${WR64_LIB_DIR}/RT64/src/contrib/hlslpp/include"
         "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-core/src/api"
         "${WR64_LIB_DIR}/RT64/src/contrib/nativefiledialog-extended/src/include"
-        "${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include"
+        # The vendored SDL2 is the Windows one only; elsewhere SDL2 arrives
+        # through the imported target or SDL2_INCLUDE_DIRS above.
+        $<$<BOOL:${WIN32}>:${WR64_LIB_DIR}/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include>
         "${WR64_LIB_DIR}/N64ModernRuntime/N64Recomp/include"
         "${WR64_LIB_DIR}/N64ModernRuntime/librecomp/include"
         "${WR64_LIB_DIR}/N64ModernRuntime/ultramodern/include"
@@ -306,23 +433,23 @@ if(WR64_WITH_FRONTEND)
     set(WR64_RMLUI_ASSETS
         "${WR64_LIB_DIR}/RecompFrontend/recompui/lib/RmlUi/Samples/assets")
     add_custom_command(TARGET WaveRace64Recomp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${WR64_ASSET_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/recomp.rcss"
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Regular.ttf"
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Bold.ttf"
                 "${WR64_RMLUI_ASSETS}/LatoLatin-Italic.ttf"
                 "${WR64_RMLUI_ASSETS}/NotoEmoji-Regular.ttf"
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets"
+                "${WR64_ASSET_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/icons"
+                "${WR64_ASSET_DIR}/icons"
         COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/promptfont"
+                "${WR64_ASSET_DIR}/promptfont"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/promptfont/promptfont.ttf"
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/promptfont/LICENSE.txt"
-                "$<TARGET_FILE_DIR:WaveRace64Recomp>/assets/promptfont"
+                "${WR64_ASSET_DIR}/promptfont"
         COMMENT "Staging the frontend's stylesheet and fonts")
 endif()
 

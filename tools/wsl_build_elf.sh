@@ -10,7 +10,9 @@
 # of silently producing a short ELF.
 set -euo pipefail
 
-REPO="/mnt/c/Users/Daniel/claude-projects/n64recomp_waverace64"
+# Derived rather than hardcoded: these scripts also run natively on Linux and
+# macOS, where the checkout is not under /mnt/c.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DECOMP="$REPO/reference/wr64-decomp"
 LD_DIR="linker_scripts/us/rev1"
 LD_SCRIPT="$LD_DIR/waverace64.asmonly.ld"
@@ -38,7 +40,11 @@ if [ ! -f "$LD_SCRIPT" ]; then
 fi
 
 # ---------------------------------------------------------------- objects ----
-mapfile -t OBJECTS < <(grep -oE "build/[^ )]*\.o" "$LD_SCRIPT" | sort -u)
+# read in a loop rather than with mapfile: macOS ships bash 3.2, which has no
+# mapfile, and this script is now run natively there as well as under WSL.
+OBJECTS=()
+while IFS= read -r obj; do OBJECTS+=("$obj"); done \
+    < <(grep -oE "build/[^ )]*\.o" "$LD_SCRIPT" | sort -u)
 echo "objects referenced by the linker script: ${#OBJECTS[@]}"
 
 built=0
@@ -49,9 +55,13 @@ for obj in "${OBJECTS[@]}"; do
     mkdir -p "$(dirname "$obj")"
 
     if [ -f "$stem.s" ]; then
-        if ! cpp -P -undef -Wundef -std=c99 -nostdinc $DEFINES $IINC \
-                 -I "$(dirname "$stem")" "$stem.s" 2>/dev/null \
-             | $AS $ASFLAGS $IINC -I "$(dirname "$stem")" -o "$obj" 2>/dev/null; then
+        # clang -E rather than cpp: macOS has no standalone cpp, and -x c is
+        # needed because clang would otherwise treat a .s file as assembly and
+        # preprocess it under different rules. Errors are no longer sent to
+        # /dev/null: a failure here used to report only "FAILED to assemble".
+        if ! clang -E -x c -P -undef -Wundef -std=c99 -nostdinc $DEFINES $IINC \
+                 -I "$(dirname "$stem")" "$stem.s" \
+             | $AS $ASFLAGS $IINC -I "$(dirname "$stem")" -o "$obj"; then
             echo "  FAILED to assemble $stem.s" >&2
             failed=$((failed + 1))
             continue
