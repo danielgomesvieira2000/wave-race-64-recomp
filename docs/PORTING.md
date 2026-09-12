@@ -548,6 +548,33 @@ is worst in a game like this one, where steering is analogue throughout.
 Keep the ±80 range inside the port if the scripted-input files and the game's own
 constants are written in it, and divide by it once, at the callback boundary.
 
+### Creating a config tab invalidates every tab reference you are holding
+
+**Symptom:** adding a settings tab crashes the launcher at startup, inside
+`Config::add_option_change_callback` -- on a callback you did not touch, for an
+option that has existed and worked for months. The stack names
+`_Try_emplace` on a string-keyed map, which reads like a bad option id.
+
+It is not the option id. `create_graphics_tab()`, `create_sound_tab()` and
+`create_config_tab()` all append to one vector of tabs and return a reference
+into it, so creating a tab can reallocate that vector and leave every reference
+handed out earlier dangling. The natural way to write this --
+
+```c++
+auto& graphics = recompui::config::create_graphics_tab();
+graphics.add_enum_option("water_quality", ...);
+auto& water = recompui::config::create_config_tab("Water", "water", true);
+water.add_enum_option("water_style", ...);
+graphics.add_option_change_callback("fov", ...);   // graphics is dangling
+```
+
+-- puts the new tab in the middle of the block that configures the old one, and
+the crash lands on the *next* use of the older reference, which is why it points
+away from the change that caused it.
+
+**Create each tab, finish configuring it, then create the next.** A tab added
+last is also a tab whose reference nothing outlives.
+
 ### A setting the frontend defines is not a setting the frontend applies
 
 **Symptom: a slider in the settings menu does nothing.** recompui's Sound tab

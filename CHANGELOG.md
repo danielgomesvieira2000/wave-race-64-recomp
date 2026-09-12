@@ -17,6 +17,18 @@ notice changes.
   producing a double-clickable, ad-hoc signed `.app`. The macOS support comes
   from [PR #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
   which was built and played on an M3 Max.
+- **A modern water renderer**, in Graphics -> Water, with **Original the
+  default**. It keeps the cartridge's waves and physics exactly as they are and
+  changes only how that surface is shaded: sun and sky lighting, colour that
+  deepens with the water, refraction, persistent wakes and shoreline wash, with
+  reflections and spray on High. A Water tab carries style, brightness, tint,
+  clarity, ripple detail and spray. From
+  [PR #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2)
+  by elliotttate, verified here on Windows and D3D12 -- which that branch had
+  not been. Expect the time spent drawing a frame to roughly double when it is
+  on; see [docs/WATER.md](docs/WATER.md).
+- An intermittent crash on exit is fixed: the runtime was freeing its thread
+  queues and RDRAM without waiting for the workers still reading them.
 - Release packaging for both: `tools/package_release.py` writes a `.tar.gz` on
   Linux and a `.zip` of the signed bundle on macOS, beside the Windows
   `package_release.ps1`. `tools/build_macos_dependencies.sh` builds SDL2,

@@ -4,8 +4,9 @@
 
 | | |
 |---|---|
-| [BUILDING.md](BUILDING.md) | From an empty Windows machine to the first race: the toolchain, the dump, splat, N64Recomp, the submodule patches, CMake. |
+| [BUILDING.md](BUILDING.md) | From an empty Windows, Linux or macOS machine to the first race: the toolchain, the dump, splat, N64Recomp, the submodule patches, CMake. |
 | [HUD-INSPECTOR.md](HUD-INSPECTOR.md) | The debug menu on **F1** — how to use it to find and fix something drawn in the wrong place, and a recipe for putting the same tool in another N64 port. |
+| [WATER.md](WATER.md) | The modern water renderer: what each setting does and what it costs, and a recipe for a shading replacement that leaves a game's own simulation alone. Off by default. |
 | [../examples/mods/README.md](../examples/mods/README.md) | Making a mod: the `.nrm` format, `mod.json`, and how to build a texture pack. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | The rules, chiefly about keeping the game's data out of this repository. |
 | [../CHANGELOG.md](../CHANGELOG.md) | What changed in each release. |
