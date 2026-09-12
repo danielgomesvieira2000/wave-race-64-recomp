@@ -352,18 +352,45 @@ void init() {
     // choice and because that is where the reader looking for it will be. The
     // things that shape how it looks, rather than whether it runs, get their own
     // tab below: five settings crowded into Graphics would bury Field of View.
+    graphics.add_option_change_callback(
+        "fov",
+        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+           recomp::config::OptionChangeContext) {
+            if (const double* degrees = std::get_if<double>(&value)) {
+                wr64::dlrewrite::set_field_of_view(*degrees);
+            }
+        });
+
+    // Every water setting, in one tab, immediately after Graphics. The master
+    // switch used to sit in the Graphics tab with the rest here, which meant
+    // the Water tab did nothing until you found an option in another tab.
     //
-    // High by default, which is what the water was tuned against. This default
-    // is the one that decides what a new profile gets -- the Load callback runs
-    // before the first frame and overwrites the one in src/water.cpp. Original
-    // is a true bypass rather than a degraded mode: it is what the cartridge
-    // draws, and it is one step away for anyone whose machine wants it.
-    // The enum ids below are the lower-case ones the fork this renderer came
-    // from used, and they are deliberately not the display names. They are what
-    // is written into graphics.json and water.json, so a settings file written
-    // by either build is read correctly by the other -- and an id that matches
-    // nothing does not fail loudly, it quietly resolves to some other entry.
-    graphics.add_enum_option(
+    // The ordering rule this has to respect: create_config_tab appends to a
+    // vector of tabs and returns a reference into it, so creating a tab can
+    // reallocate that vector and leave every reference an earlier
+    // create_*_tab returned dangling. Configure each tab *completely* before
+    // creating the next one, and never touch an earlier reference again.
+    // Getting that wrong crashed the launcher inside the graphics tab's own
+    // fov callback -- an option this change did not touch -- with a stack
+    // that named the callback rather than the tab that had moved.
+    //
+    // Everything below the first option does nothing while it is Original.
+    auto& water = recompui::config::create_config_tab("Water", "water", true);
+
+    // The master switch, first, because everything under it only shapes what it
+    // turns on. High by default, which is what the water was tuned against; this
+    // default is the one that decides what a new profile gets, since the Load
+    // callback runs before the first frame and overwrites the one in
+    // src/water.cpp. Original is a true bypass rather than a degraded mode -- it
+    // is what the cartridge draws -- and it is one step away for anyone whose
+    // machine wants it.
+    //
+    // The enum ids here and below are the lower-case ones the fork this renderer
+    // came from used, and they are deliberately not the display names. They are
+    // what gets written into water.json, so a settings file written by either
+    // build is read correctly by the other -- and an id that matches nothing
+    // does not fail loudly, it quietly resolves to some other entry.
+    water.add_enum_option(
         "water_quality", "Water",
         "<recomp-color primary>Original</recomp-color> is the game's own water. "
         "<recomp-color primary>Modern</recomp-color> keeps the cartridge's waves and physics "
@@ -380,7 +407,7 @@ void init() {
             { 2u, "high", "High" },
         },
         2u);
-    graphics.add_option_change_callback(
+    water.add_option_change_callback(
         "water_quality",
         [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
            recomp::config::OptionChangeContext context) {
@@ -392,30 +419,6 @@ void init() {
             }
         });
 
-    graphics.add_option_change_callback(
-        "fov",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            if (const double* degrees = std::get_if<double>(&value)) {
-                wr64::dlrewrite::set_field_of_view(*degrees);
-            }
-        });
-
-    // The Water tab, immediately after Graphics because that is where it
-    // belongs: the Graphics entry decides whether the renderer runs and
-    // everything here shapes how it looks.
-    //
-    // The ordering rule this has to respect: create_config_tab appends to a
-    // vector of tabs and returns a reference into it, so creating a tab can
-    // reallocate that vector and leave every reference an earlier
-    // create_*_tab returned dangling. Configure each tab *completely* before
-    // creating the next one, and never touch an earlier reference again.
-    // Getting that wrong crashed the launcher inside the graphics tab's own
-    // fov callback -- an option this change did not touch -- with a stack
-    // that named the callback rather than the tab that had moved.
-    //
-    // Everything below does nothing while Water is Original.
-    auto& water = recompui::config::create_config_tab("Water", "water", true);
     water.add_enum_option(
         "water_style", "Water style",
         "<recomp-color primary>Modern</recomp-color> is richer and darker. "

@@ -20,7 +20,7 @@ namespace wr64::water {
 namespace {
 // High and Aqua by default, which is what the fork this came from shipped and
 // what the water was tuned against. It is not free -- expect the time spent
-// drawing a frame to roughly double, see docs/WATER.md -- and Graphics -> Water
+// drawing a frame to roughly double, see docs/WATER.md -- and the Water tab
 // steps it down to Modern or all the way to Original, which is a true bypass.
 //
 // This default is the one in src/frontend.cpp, not this one: the config's Load

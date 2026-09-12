@@ -17,8 +17,8 @@ notice changes.
   producing a double-clickable, ad-hoc signed `.app`. The macOS support comes
   from [PR #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
   which was built and played on an M3 Max.
-- **A modern water renderer**, in Graphics -> Water, defaulting to **High with
-  the Aqua style** -- what the fork it came from shipped and what the water was
+- **A modern water renderer**, in its own **Water** tab beside Graphics,
+  defaulting to **High with the Aqua style** -- what the fork it came from shipped and what the water was
   tuned against. **Original** is one step away and is a true bypass. It keeps the cartridge's waves and physics exactly as they are and
   changes only how that surface is shaded: sun and sky lighting, colour that
   deepens with the water, refraction, persistent wakes and shoreline wash, with

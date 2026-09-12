@@ -14,7 +14,7 @@ the fork built it and where this repository differs.
 **High with the Aqua style is the default**, on every platform -- what the fork
 this came from shipped, and what the water was tuned against. It is not free:
 expect the time spent drawing a frame to roughly double, see [What it
-costs](#what-it-costs). **Original** is one step away in Graphics -> Water and is
+costs](#what-it-costs). **Original** is the first entry in the Water tab and is
 a true bypass, not a degraded mode -- on that setting the renderer is not
 engaged at all and the water is exactly the cartridge's.
 
@@ -30,7 +30,8 @@ that branch explicitly had not.
 
 ### The settings
 
-**Graphics → Water** decides whether it runs at all.
+Everything lives in the **Water** tab, which sits beside Graphics. Its first
+setting, **Water**, decides whether the renderer runs at all.
 
 | | What it does |
 |---|---|
@@ -38,9 +39,8 @@ that branch explicitly had not.
 | **Modern** | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
 | **High** *(default)* | Modern, plus screen-space reflections of scenery in view, and fine airborne spray. |
 
-The **Water** tab shapes how that renderer looks. If it appears to do nothing,
-check the setting above first: every entry in it shapes the modern renderer, and
-none of them has any effect while Water is Original.
+Everything below it shapes how that renderer looks, and none of it has any
+effect while **Water** is Original.
 
 | | |
 |---|---|
@@ -243,7 +243,7 @@ it" and "none of it".
 | `include/wr64/water_shore.h` | shoreline segments, from the game's own bounded collision planes |
 | `patches/water.cpp` | the two game hooks |
 | `src/overlays.cpp` | registers them by address |
-| `src/frontend.cpp` | the Graphics entry and the Water tab |
+| `src/frontend.cpp` | the Water tab and every setting in it |
 | `src/callbacks.cpp` | the F9/F10 event watch |
 | `src/dlrewrite.cpp` | emits the material into the display list, around the four water draws |
 | `assets/water/profiles.json` | per-course parameters |

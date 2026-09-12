@@ -319,7 +319,8 @@ the smaller anchored patches, so their anchors are found in unmodified text.
 |---|---|---|---|
 | Delivery | `patch_water.py`, 36 lines, no idempotency check | `patch_rt64_water.py`, `git apply --reverse --check` plus a marker | a second run must be a no-op, and a partially applied tree must be reported rather than patched again |
 | Patch ordering | water before `patch_texture_packs.py` | water last in the `patch_rt64.py` chain | it touches files this repository's own patches anchor into |
-| Enum ids | lower-case (`"high"`, `"aqua"`) | **same** — adopted after a mismatch | ids are what land in `graphics.json`; an id matching nothing resolves silently to another entry |
+| Enum ids | lower-case (`"high"`, `"aqua"`) | **same** — adopted after a mismatch | ids are what land in the settings file; an id matching nothing resolves silently to another entry |
+| Settings layout | `water_quality` in Graphics, the rest in a Water tab | all six in the Water tab, beside Graphics | a tab whose every entry depends on a setting in *another* tab reads as a tab that does nothing. Moving it also moves where it is stored, from `graphics.json` to `water.json`, so a value saved by the fork's layout is not carried over |
 | `material()` | as written | + `WR64_WATER_MATERIAL_TRACE` | see *the bug* below |
 | `patches/water.cpp` | 59 lines | 46 lines | test fixtures and texture-capture removed |
 | Default quality | `High` | `High` | initially set to `Original` here for frame cost; changed back on request |
