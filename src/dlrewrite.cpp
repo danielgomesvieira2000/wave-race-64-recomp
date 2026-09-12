@@ -449,6 +449,10 @@ struct Extent {
     }
 };
 
+// Counts frames for the per-vertex water dump; the Walker cannot hold it
+// because it is rebuilt every frame.
+int g_vertex_frame = 0;
+
 struct Walker {
     uint8_t* rdram;
     uint32_t segments[16] = {};
@@ -1216,10 +1220,64 @@ struct Walker {
         if (segment != kWaterSegment && segment != kSkySegment) return;
         if (lattice_blocks.size() >= 512) return;
         const uint32_t addr = physical(w1);
+        const uint32_t count = (w0 >> 9) & 0x7Fu;
         lattice_blocks.push_back({ static_cast<uint8_t>(segment), signed_half(addr),
                                    signed_half(addr + 2), signed_half(addr + 4),
-                                   (w0 >> 9) & 0x7Fu });
+                                   count });
+        dump_vertices(segment, addr, count);
     }
+
+    // Every water vertex of a frame, for a bounded run of frames.
+    //
+    // This exists to settle one question that per-block summaries cannot: when
+    // the lattice carries, do the heights travel with it, or is each vertex
+    // resampled from a world-fixed field at its new position? The two leave
+    // different marks in the same data. Heights that travel with the lattice
+    // leave y_i unchanged across the carry; heights sampled from a world-fixed
+    // field leave y_i(t+1) equal to y_(i+k)(t), shifted along the index by how
+    // far the lattice moved. tools/lattice_shift.py looks for that shift.
+    //
+    // It matters because per-index interpolation is sound in the first case and
+    // wrong in the second, and the water renderer this port ships assumes the
+    // second while docs/GAME-INTERNALS.md concluded the first.
+    void dump_vertices(uint32_t segment, uint32_t addr, uint32_t count) {
+        static std::FILE* f = [] () -> std::FILE* {
+            const char* path = std::getenv("WR64_LATTICE_VERTS");
+            if (path == nullptr) return nullptr;
+            std::FILE* out = std::fopen(path, "w");
+            if (out != nullptr) {
+                std::fprintf(out, "# Every water vertex, per frame. See "
+                                  "tools/lattice_shift.py.\nframe,block,index,x,y,z\n");
+            }
+            return out;
+        }();
+        if (f == nullptr || segment != kWaterSegment) return;
+        static const int wanted = [] {
+            const char* p = std::getenv("WR64_LATTICE_VERT_FRAMES");
+            const int n = p != nullptr ? std::atoi(p) : 0;
+            return n > 0 ? n : 8;
+        }();
+        // Frames before this are the boot and title screens, where the water
+        // is flat and the camera is still -- nothing to learn from.
+        static const int delay = [] {
+            const char* p = std::getenv("WR64_LATTICE_VERT_DELAY");
+            const int n = p != nullptr ? std::atoi(p) : 0;
+            return n > 0 ? n : 1200;
+        }();
+        if (g_vertex_frame < delay || g_vertex_frame > delay + wanted) return;
+        // 16 bytes each: s16 x, y, z, flag, then texture coordinates and colour.
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint32_t v = addr + i * 16;
+            std::fprintf(f, "%d,%u,%u,%d,%d,%d\n", g_vertex_frame, vertex_block, i,
+                         signed_half(v), signed_half(v + 2), signed_half(v + 4));
+        }
+        ++vertex_block;
+    }
+
+    // The Walker is constructed fresh every frame, so the block counter resets
+    // per frame, which is what we want, and the frame counter has to live
+    // outside it -- see g_vertex_frame.
+    uint32_t vertex_block = 0;
 
     void collect_lattice(uint32_t physical_addr, int depth) {
         uint32_t cursor = physical_addr;
@@ -2051,6 +2109,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     // water_material() below reads whatever this call selected. A list with no
     // matching snapshot leaves the material empty, which is the same as
     // Original: unknown tasks keep the game's own water.
+    if (std::getenv("WR64_LATTICE_VERTS") != nullptr) ++g_vertex_frame;
+
     wr64::water::begin_frame(list_vaddr);
 
     wr64::inspector::begin_frame(state);
@@ -2080,6 +2140,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     static const bool water_interp_off = std::getenv("WR64_NO_WATER_INTERP") != nullptr;
     w.water_interp = !water_interp_off;
     static const bool lattice_trace = std::getenv("WR64_LATTICE") != nullptr ||
+                                     std::getenv("WR64_LATTICE_VERTS") != nullptr ||
                                       std::getenv("WR64_WATER_LATTICE") != nullptr;
     w.lattice_trace = lattice_trace;
     w.anchors = !anchors_disabled &&

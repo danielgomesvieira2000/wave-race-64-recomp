@@ -626,6 +626,46 @@ much longer view already exists -- what is limited is the drawing, not the
 simulation, so a renderer can extend the water without inventing waves and
 without disagreeing with the physics.
 
+#### Does index *i* keep its meaning? Measured per vertex
+
+The per-block summaries above say the lattice carries rigidly. The fork this
+port's water renderer came from concluded the opposite -- that the lattice
+recenters and per-index pairing blends unrelated water -- and built world-XZ
+resampling on that basis. Both cannot be right, and `WR64_LATTICE_VERTS` plus
+`tools/lattice_shift.py` settle it with every vertex rather than each block's
+first.
+
+The test: if heights travel with the lattice, vertex *i* keeps its height across
+a carry. If they are resampled from the world-fixed field, they shift along the
+index by however far the lattice moved. Searching both row and column shifts --
+a block is a row, the index is a column, and a one-dimensional search over the
+flattened order is blind to a row shift -- over sixteen consecutive race frames
+on Dolphin Park:
+
+| | |
+|---|---|
+| Vertices per frame | 500 |
+| Frames where the lattice moved | **16 of 16** -- it never stands still in a race |
+| Movement per frame | x by 32 or 64, z by 54-56 |
+| Best shift | `(0,0)` in 9 frames, `(0,-1)` in 6, `(1,0)` in 1 |
+| Height spread within a frame | 77 world units |
+| Mean error at the best shift | **5.6 units, 7% of the spread** |
+
+**Index *i* largely does keep its meaning.** Zero shift wins more often than any
+other, and the residual left at the best shift is 7% of the height spread rather
+than the ~50% a mis-pairing would leave. The column shift that wins on the
+frames carrying -32 in x is the lattice stepping one column, which is exactly
+what a rigid carry looks like.
+
+So the earlier conclusion stands, with a number attached to it that it did not
+have: per-index interpolation is sound to within about 7% of the wave spread,
+and that residual is the wave animation itself rather than a mis-pairing. It is
+not zero, which is the honest qualification -- the fork's resampling is solving
+a real but smaller problem than claimed, not an imaginary one.
+
+**One capture, one course, sixteen frames.** Worth repeating across courses and
+over a longer run before anything is changed on the strength of it.
+
 ### Stunt mode's rings
 
 Stunt mode runs in `gGameState` **`0x28`**, the same state as a race, so a
