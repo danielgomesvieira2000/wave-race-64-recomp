@@ -41,9 +41,19 @@ install=0
 if command -v dpkg-query > /dev/null; then
     missing=()
     for p in "${PACKAGES[@]}"; do
-        if ! dpkg-query -W -f='${Status}' "$p" 2> /dev/null | grep -q "install ok installed"; then
-            missing+=("$p")
+        if dpkg-query -W -f='${Status}' "$p" 2> /dev/null | grep -q "install ok installed"; then
+            continue
         fi
+        # A versioned compiler counts. Debian and Ubuntu install clang-21 and
+        # friends without the unversioned metapackage, and that is a complete
+        # toolchain -- build_linux.sh finds it by version.
+        if [ "$p" = clang ] && ls /usr/bin/clang++-[0-9]* > /dev/null 2>&1; then
+            continue
+        fi
+        if [ "$p" = lld ] && ls /usr/bin/lld-[0-9]* > /dev/null 2>&1; then
+            continue
+        fi
+        missing+=("$p")
     done
 
     if [ ${#missing[@]} -eq 0 ]; then

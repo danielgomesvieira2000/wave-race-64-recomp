@@ -71,7 +71,7 @@ Tested on Ubuntu 26.04 x86-64. The packages, and what each is for:
 
 | Package | Needed by |
 |---|---|
-| `clang`, `lld` | the port. Not GCC -- see above |
+| `clang`, `lld` | the port. Not GCC -- see above. A versioned `clang-21` counts: Debian and Ubuntu ship those without the unversioned metapackage, and `build_linux.sh` picks the highest it finds. `WR64_CC`/`WR64_CXX` override the choice |
 | `cmake`, `ninja-build`, `pkg-config` | the build |
 | `libsdl2-dev` | the window, the pad, the audio device |
 | `libfreetype-dev` | RmlUi's font engine, under `recompui` |

@@ -24,12 +24,44 @@ fi
 BUILD_DIR="${WR64_BUILD_DIR:-build-linux}"
 JOBS="${WR64_JOBS:-$(nproc)}"
 
-for tool in clang clang++ cmake ninja python3; do
+for tool in cmake ninja python3; do
     command -v "$tool" > /dev/null || {
         echo "$tool is not on PATH. Run: bash tools/setup_linux.sh" >&2
         exit 1
     }
 done
+
+# Which Clang. Debian and Ubuntu install it as clang-21, clang-18 and so on,
+# and the unversioned clang/clang++ names come from a separate metapackage that
+# is often absent -- so looking only for "clang" reports a missing compiler on a
+# machine that has several. Take an explicit choice first, then the plain names,
+# then the highest version number present.
+if [ -n "${WR64_CC:-}" ] && [ -n "${WR64_CXX:-}" ]; then
+    CC="$WR64_CC"
+    CXX="$WR64_CXX"
+elif command -v clang > /dev/null && command -v clang++ > /dev/null; then
+    CC=clang
+    CXX=clang++
+else
+    CC=""
+    for candidate in $(ls /usr/bin/clang-[0-9]* 2> /dev/null | sort -V -r); do
+        version="${candidate##*/clang-}"
+        case "$version" in
+            *[!0-9]*) continue ;;   # clang-format-21, clang-tidy-21, and friends
+        esac
+        if [ -x "/usr/bin/clang++-$version" ]; then
+            CC="$candidate"
+            CXX="/usr/bin/clang++-$version"
+            break
+        fi
+    done
+    if [ -z "$CC" ]; then
+        echo "No Clang found. Install one -- apt install clang -- or set WR64_CC" >&2
+        echo "and WR64_CXX to the compiler you want to use." >&2
+        exit 1
+    fi
+fi
+echo "compiler: $CC / $CXX"
 
 # --------------------------------------------------------------- patches ----
 # Every one of these is idempotent and every one is required: the port links
@@ -63,7 +95,7 @@ fi
 echo
 echo "=== configure ==="
 cmake -S . -B "$BUILD_DIR" -G Ninja \
-    -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DWR64_WITH_RUNTIME=ON -DWR64_WITH_RECOMPILED=ON -DWR64_WITH_FRONTEND=ON
