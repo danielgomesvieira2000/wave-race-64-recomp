@@ -352,9 +352,9 @@ struct Tags {
         by_identity["tex:0x08025c88"] = Class::Stretch;
         by_identity["tex:0x080267f0"] = Class::Auto;
         by_identity["tex:0x08027748"] = Class::Stretch;
-        by_identity["tex:0x08028470"] = Class::Spill;
-        by_identity["tex:0x0802a7f0"] = Class::Spill;
-        by_identity["tex:0x0802c0f0"] = Class::Spill;
+        by_identity["tex:0x08028470"] = Class::Auto;
+        by_identity["tex:0x0802a7f0"] = Class::Auto;
+        by_identity["tex:0x0802c0f0"] = Class::Auto;
         // ---- end promoted ----
     }
 

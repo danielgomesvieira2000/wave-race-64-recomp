@@ -44,7 +44,7 @@ effect while **Water** is Original.
 
 | | |
 |---|---|
-| **Water style** | **Modern** is richer and darker. **Aqua** *(default)* is the same rendering with a lighter teal and clearer shallows. **Classic** keeps the cartridge's own colours, transparency, fog and broad highlights and adds only the effects. |
+| **Water style** | Listed least to most departure from the cartridge. **Classic** keeps its own colours, transparency, fog and broad highlights and adds only the effects. **Modern** is richer and darker. **Aqua** *(default)* is Modern with a lighter teal and clearer shallows. |
 | **Water brightness / Aqua tint / Water clarity** | Aqua only, and hidden under the other two styles. 50% is the default look in each. Clarity is how far you see into the shallows. |
 | **Surface ripples** | Soft / **Normal** / Strong. Fine detail added on top of the game's waves, never replacing them. |
 | **Spray particles** | The *added* airborne spray. Off keeps the surface foam, the wakes and the game's own splashes. |
@@ -57,7 +57,7 @@ frame; they do not persist and they are not settings.
 | Variable | Values |
 |---|---|
 | `WR64_WATER` | `original`, `modern`, `high` |
-| `WR64_WATER_STYLE` | `modern`, `classic`, `aqua` |
+| `WR64_WATER_STYLE` | `classic`, `modern`, `aqua` |
 | `WR64_WATER_RIPPLES` | `soft`, `normal`, `strong` |
 | `WR64_WATER_SPRAY` | `off` / `0`, anything else is on |
 | `WR64_WATER_DEBUG` | `0`-`14`, the diagnostic views |

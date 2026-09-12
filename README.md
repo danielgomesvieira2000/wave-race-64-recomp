@@ -28,13 +28,17 @@ Nintendo.
 
 ## Getting started
 
-**Download.** The release for Windows x64 is on the
-[Releases](../../releases) page: unzip, run `WaveRace64Recomp.exe`, pick your
-dump in the launcher. That is all. The zip contains the program, the three DLLs
-it needs, and the menu's fonts and icons; it contains none of the game's assets,
-which are loaded from your dump each time it runs. What it does contain is the
-game's *code*, recompiled -- that is what a recompiled port is. See
-[Licensing](#licensing) before redistributing it.
+**Download.** Windows x64 and Linux x86-64 builds are on the
+[Releases](../../releases) page. Unzip or untar, run it, pick your dump in the
+launcher. That is all. Each archive contains the program, the libraries it
+cannot start without, and the menu's fonts and icons; none contains any of the
+game's assets, which are loaded from your dump each time it runs. What they do
+contain is the game's *code*, recompiled -- that is what a recompiled port is.
+See [Licensing](#licensing) before redistributing it.
+
+There is **no macOS binary**: it builds, and is played by the person who wrote
+that support, but nobody here has a Mac to build or sign one on. Build it
+yourself with the two commands below.
 
 **Build it yourself,** on Windows, Linux or macOS.
 [docs/BUILDING.md](docs/BUILDING.md) takes you from installing the toolchain to
@@ -68,6 +72,13 @@ running natively:
   rate. Physics, camera and timers are untouched.
 - **Field of View**, 45 to 110 degrees. The game draws at 45; higher shows more
   of the world without stretching anything.
+- **Modern water**, in the Water tab, which keeps the cartridge's waves, physics
+  and timing and changes only how that surface is shaded: sun and sky lighting,
+  colour that deepens with the water, refraction, persistent wakes, shoreline
+  wash, and on High reflections and airborne spray. It costs roughly double the
+  time spent drawing a frame, so **Original** is there and is a true bypass.
+  Written by [Elliott Tate](https://github.com/elliotttate); see
+  [Credits](#credits).
 - **Draw Distance**, up to 4x. There is no global draw distance in this game --
   the far plane is already twenty times further out than anything drawn, and each
   kind of object is culled by its own code. This is one setting over the limits
@@ -205,20 +216,35 @@ done.
 
 ## Credits
 
+### Upstream
+
 The recompilation toolchain and runtime are by Mr-Wiseguy and the N64Recomp
 contributors; RT64 is by Dario and the RT64 contributors. The function names this
 project leans on come from the Wave Race 64 decompilation by LLONSIT and
 contributors. Earlier recompilation attempts by WACOMalt and chronic8000 showed
 what to expect.
 
-**Controller rumble is built on work by
-[Elliott Tate](https://github.com/elliotttate).** The addresses this port reads a
-race from -- the craft's speed, its vertical velocity, whether it is airborne,
-how wet the hull is, collisions, laps, buoys, misses, power, the countdown --
-were identified in his fork and offered to this project in
-[pull request #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
-where they drive a much larger feedback system than this one. They are
-re-verified here against a scripted race, and recorded in
-[docs/GAME-INTERNALS.md](docs/GAME-INTERNALS.md) section 7 so the next port does
-not have to find them again. That pull request also carries native macOS support
-and a modern water renderer, neither of which is in this repository.
+### Elliott Tate
+
+Three substantial parts of this port come from
+[Elliott Tate](https://github.com/elliotttate), offered to this project in
+[pull request #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2)
+and built and played by him on an Apple M3 Max.
+
+- **The modern water renderer.** All of it: the RT64 renderer, the interpolation
+  that survives the game recentering its water lattice, the depth handling, the
+  wake and foam fields, the shoreline intersection, the spray, the ten course
+  profiles and the shaders. This repository moved it onto its own display-list
+  rewriter, delivered it as an idempotent patch script, fixed two faults that
+  only appear outside macOS, and wrote it up -- but the renderer is his.
+  See [docs/WATER-IMPLEMENTATION.md](docs/WATER-IMPLEMENTATION.md), which
+  separates what he built from what changed here.
+- **Native macOS support.** The Metal window handle, the Apple paths, the bundle
+  layout, the dylib bundling and signing, and the dependency build. It is
+  untested by this project's maintainers and rests on his validation.
+- **Controller rumble**, and the addresses this port reads a race from: the
+  craft's speed, its vertical velocity, whether it is airborne, how wet the hull
+  is, collisions, laps, buoys, misses, power, the countdown. They drive a larger
+  feedback system in his fork than here. They are re-verified against a scripted
+  race and recorded in [docs/GAME-INTERNALS.md](docs/GAME-INTERNALS.md)
+  section 7, so the next port does not have to find them again.

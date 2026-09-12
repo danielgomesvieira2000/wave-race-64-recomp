@@ -9,7 +9,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(WaveRace64Recomp
-    VERSION 0.8.1
+    VERSION 0.9.0
     DESCRIPTION "Native PC port of Wave Race 64 via static recompilation"
     LANGUAGES C CXX)
 
@@ -321,6 +321,15 @@ endif()
 target_include_directories(WaveRace64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+# The version, from the one place it is declared. It was previously written out
+# by hand in three places -- project(), the runtime's Version struct and the
+# --version banner -- and the banner had been left at 0.4.0 for five releases.
+target_compile_definitions(WaveRace64Recomp PRIVATE
+    WR64_VERSION="${PROJECT_VERSION}"
+    WR64_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    WR64_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    WR64_VERSION_PATCH=${PROJECT_VERSION_PATCH})
+
 # src/callbacks.cpp creates the window and reads the event queue, so the port
 # links SDL2 itself rather than relying on it arriving through RT64.
 if(NOT WIN32)
@@ -337,6 +346,17 @@ if(WR64_WITH_RUNTIME)
     if(WIN32)
         # dbghelp resolves the crash handler's addresses to function names.
         target_link_libraries(WaveRace64Recomp PRIVATE dbghelp)
+
+        # LNK4099: a library has debug info pointing at a .pdb that is not
+        # here. RmlUi links the prebuilt freetype under
+        # recompui/lib/freetype-windows-binaries, whose objects name
+        # "C:/freetype/objs/x64/Release Static/freetype.pdb" -- the path it had
+        # on whoever's machine built it. lld-link reports that once per object
+        # and then *exits 1*, so the executable is produced and the build is
+        # still called a failure, which fails a release script for a warning
+        # about symbols nobody has. Suppressed by number rather than globally so
+        # a real link warning still stops the build.
+        target_link_options(WaveRace64Recomp PRIVATE /ignore:4099)
     endif()
     target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_RUNTIME=1)
 

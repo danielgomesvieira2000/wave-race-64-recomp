@@ -8,40 +8,51 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [0.9.0](docs/releases/0.9.0.md) — Linux, macOS, and modern water
 
 - **Linux and macOS builds.** The port builds and runs from the same tree on all
-  three platforms. `tools/setup_linux.sh` and `tools/build_linux.sh` take a Linux
-  machine from a clean clone to a running game in two commands, and
-  `tools/setup_macos.sh` / `tools/build_macos.sh` do the same on Apple Silicon,
-  producing a double-clickable, ad-hoc signed `.app`. The macOS support comes
-  from [PR #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2),
-  which was built and played on an M3 Max.
+  three platforms. `tools/setup_linux.sh --install` then `tools/build_linux.sh`
+  takes a Linux machine from a clean clone to a running game; the macOS pair does
+  the same on Apple Silicon, producing a double-clickable, ad-hoc signed `.app`.
+  Verified on Ubuntu 26.04 with Clang 21. **macOS is untested by this project** —
+  it is [Elliott Tate](https://github.com/elliotttate)'s work, built and played
+  by him on an M3 Max.
 - **A modern water renderer**, in its own **Water** tab beside Graphics,
-  defaulting to **High with the Aqua style** -- what the fork it came from shipped and what the water was
-  tuned against. **Original** is one step away and is a true bypass. It keeps the cartridge's waves and physics exactly as they are and
-  changes only how that surface is shaded: sun and sky lighting, colour that
-  deepens with the water, refraction, persistent wakes and shoreline wash, with
-  reflections and spray on High. A Water tab carries style, brightness, tint,
-  clarity, ripple detail and spray. From
-  [PR #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2)
-  by elliotttate, verified here on Windows and D3D12 -- which that branch had
-  not been. Expect the time spent drawing a frame to roughly double at anything
-  above Original; see [docs/WATER.md](docs/WATER.md).
-- An intermittent crash on exit is fixed: the runtime was freeing its thread
-  queues and RDRAM without waiting for the workers still reading them.
-- Release packaging for both: `tools/package_release.py` writes a `.tar.gz` on
-  Linux and a `.zip` of the signed bundle on macOS, beside the Windows
-  `package_release.ps1`. `tools/build_macos_dependencies.sh` builds SDL2,
-  FreeType and libpng from checksum-pinned source against the bundle's
+  defaulting to **High with the Aqua style**. It keeps the cartridge's waves,
+  physics and timing exactly as they are and changes only how that surface is
+  shaded: sun and sky lighting, colour that deepens with the water, refraction,
+  persistent wakes, shoreline wash, and on High reflections of the scenery in
+  view and fine airborne spray. **Water style** runs Classic, Modern, Aqua;
+  brightness, tint and clarity shape Aqua; ripples and spray are separate.
+  **Original** is a true bypass. `F9` compares the two from the same camera,
+  `F10` cycles the diagnostics.
+  Also Elliott Tate's, from
+  [pull request #2](https://github.com/danielgomesvieira2000/wave-race-64-recomp/pull/2)
+  — verified here on Windows and D3D12, which that branch had not been.
+  Expect the time spent drawing a frame to roughly double above Original; see
+  [docs/WATER.md](docs/WATER.md).
+- Release packaging for the new platforms: `tools/package_release.py` writes a
+  `.tar.gz` on Linux and a `.zip` of the signed bundle on macOS, beside the
+  Windows `package_release.ps1`. `tools/build_macos_dependencies.sh` builds
+  SDL2, FreeType and libpng from checksum-pinned source against the bundle's
   deployment target, so a published `.app` does not demand a newer macOS than it
   claims to.
 - Settings and saves follow each platform's convention:
   `~/Library/Application Support/WaveRace64Recomp` on macOS,
   `$XDG_DATA_HOME/WaveRace64Recomp` on Linux.
+- An intermittent crash on exit is fixed: the runtime was releasing its thread
+  queues and RDRAM without waiting for the workers still reading them.
+- **`--version` prints the actual version.** It had said 0.4.0 since 0.4.0; the
+  version now comes from the single place it is declared.
+- Three more 2D elements placed correctly, bringing the built-in table to 41
+  entries.
 - The `tools/` scripts no longer assume a checkout path or a WSL host. They
-  derive the repository root from their own location, and find MIPS binutils
-  natively where it exists.
+  derive the repository root from their own location, find MIPS binutils
+  natively where it exists, and accept a versioned `clang-21` where Debian and
+  Ubuntu ship no unversioned one.
+- Two new reference documents: [docs/WATER.md](docs/WATER.md), and
+  [docs/WATER-IMPLEMENTATION.md](docs/WATER-IMPLEMENTATION.md), which describes
+  the fork's implementation in full and states exactly what differs here.
 
 ## [0.8.1](docs/releases/0.8.1.md) — Draw Distance marked experimental
 

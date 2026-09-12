@@ -421,14 +421,21 @@ void init() {
 
     water.add_enum_option(
         "water_style", "Water style",
+        "<recomp-color primary>Classic</recomp-color> keeps the cartridge's own colours, "
+        "transparency, fog and broad highlights, and adds only the effects. "
         "<recomp-color primary>Modern</recomp-color> is richer and darker. "
-        "<recomp-color primary>Aqua</recomp-color> keeps the same rendering with a lighter teal "
-        "and clearer shallows. <recomp-color primary>Classic</recomp-color> keeps the "
-        "cartridge's own colours, transparency, fog and broad highlights, and adds only the "
-        "effects. Does nothing while Water is Original.",
+        "<recomp-color primary>Aqua</recomp-color> keeps the same rendering as Modern with a "
+        "lighter teal and clearer shallows. Does nothing while Water is Original.",
+        // Listed Classic, Modern, Aqua -- least to most departure from the
+        // cartridge. The order here is the order on screen: recompui builds the
+        // control by walking this vector and maps the chosen position back
+        // through options[i].value, so the values stay bound to their meanings
+        // however the list is arranged. They must keep matching
+        // wr64::water::Style, which is why they are not renumbered, and the
+        // hidden dependencies below name values rather than positions.
         std::vector<recomp::config::ConfigOptionEnumOption>{
-            { 0u, "modern", "Modern" },
             { 1u, "classic", "Classic" },
+            { 0u, "modern", "Modern" },
             { 2u, "aqua", "Aqua" },
         },
         2u);
