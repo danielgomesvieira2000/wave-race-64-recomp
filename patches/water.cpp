@@ -10,6 +10,7 @@
 #include "recomp.h"
 
 #include "wr64/water.h"
+#include "wr64/waterfield.h"
 
 extern "C" void SysMain_SendGfxTaskSetMesg(uint8_t* rdram, recomp_context* ctx);
 extern "C" void func_8009345C(uint8_t* rdram, recomp_context* ctx);
@@ -40,6 +41,13 @@ void water_race_init_hook(uint8_t* rdram, recomp_context* ctx) {
 void water_task_submit_hook(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t display_list = MEM_W(0x30, ctx->r4);
     water::publish_frame(rdram, display_list);
+
+    // The wave field, dumped for offline decoding. Off unless armed, and it
+    // happens here because calling the game's own height query needs a valid
+    // context on the game thread, which is exactly what this hook has.
+    waterfield::maybe_dump(rdram, ctx, MEM_W(0, int32_t(0x80151960)),
+                           MEM_W(0, int32_t(0x800D8170)));
+
     SysMain_SendGfxTaskSetMesg(rdram, ctx);
 }
 

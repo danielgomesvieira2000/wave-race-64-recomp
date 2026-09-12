@@ -502,12 +502,104 @@ apparent steps -- 32 and 55 -- finds no adjacent pair anywhere. Scanning for
 **mirrored linear ramps** from 0.2266 to 0.3297 in steps of 0.00147 that merely
 contain neighbouring values; 0.2787 is not in either.
 
-So unlike the buoys' limit, this is not a number sitting in memory waiting to be
-scaled. It is derived per frame, and changing it means intervening inside
-`func_80050204` -- 1,458 lines of recompiled C -- rather than writing a word.
-**That is why the water was left alone**, and it is the honest difference between
-this and the buoy cull: one is a comparison against a stored value, the other is
-generated geometry.
+So unlike the buoys' limit, the *spacing* is not a number sitting in memory
+waiting to be scaled. It is derived per frame, and changing it means intervening
+inside `func_80050204` -- 1,458 lines of recompiled C -- rather than writing a
+word.
+
+**That conclusion was right about the spacing and wrong about the water.** The
+heights are not generated per frame either: they come out of a world-fixed
+wrapping field in RDRAM that covers thousands of units and can be read at any
+point, which the next section documents. What the 500 vertices limit is how much
+of that field gets *drawn*, not how much of it exists.
+
+### The wave field: where the water actually comes from
+
+**The water is not procedural and it is not a surface built per course. It is a
+world-fixed, wrapping, triangular lattice of 64-unit cells held in RDRAM**, and
+everything else -- the drawn mesh, the buoyancy, the craft contact -- reads from
+it.
+
+| | |
+|---|---|
+| Array | `D_80162420`, at `0x80162420` |
+| Shape | **384 rows x 128 columns**, entries of `{ s16 height, s16 age }` |
+| Size | 196,608 bytes, so it ends at exactly `0x80192420` |
+| Cell | 64 world units, on a **triangular** (oblique) lattice |
+| Height | the s16 at entry offset 0, used as **`s16 >> 8`** -- whole world units, floored |
+| Wrap | `% 24576` on both axial coordinates, which is 384 x 64 |
+
+That the array ends exactly where `func_80050204`'s split-screen test reads
+(`0x80192420`), with `gWaterLevel` immediately after at `0x80192458`, is the
+first confirmation the shape is right.
+
+**The indexing**, read out of `func_8004D30C` at `0x8004D30C`-`0x8004D3FC` and
+matching the decompiled `func_8004F3D4` exactly:
+
+```c
+v   = (s32)(z * 1.1547005f) % 24576;        // 2/sqrt(3), from z alone
+u   = (s32)(z * 0.57735026f + x) % 24576;   // 1/sqrt(3), sheared by x
+cv  = v >> 6;   cu = u >> 6;                // arithmetic shifts
+row = (cv + (cu & ~0x7F) + 0x600) % 384;
+col =  cu & 0x7F;
+height = (s16)field[row * 128 + col] >> 8;
+```
+
+Three things in that are worth pausing on.
+
+**The row absorbs the high bits of `u`.** The array is only 128 columns wide, so
+`(cu & ~0x7F)` folds every 128 columns of `u` into the row index. A sheared 2D
+space is packed into 384x128 by that fold, which is why the row depends on the
+*column* coordinate at all.
+
+**`+ 0x600` is 4 x 384**, a bias to keep the sum positive before the modulo. C's
+`%` keeps the sign of the dividend, so without it a negative world coordinate
+would index behind the array.
+
+**The height is shifted, not scaled.** `func_8004F3D4` writes `arg2 * 256` into
+the s16, so the stored unit is 1/256 -- but every reader takes `s16 >> 8`, which
+floors to a whole world unit and discards the fraction. Reading it as `h/256.0`
+looks almost right and is wrong by the discarded fraction; measured against the
+game's own query, that mistake cost a **median error of exactly 0.4950 world
+units**, which is the mean of a uniformly distributed discarded fraction. It is
+the kind of error that looks like an imperfect decode rather than a wrong one.
+
+**Which cell, of the two:** `func_8004D30C` compares the two fractional parts
+(`0x8004D410`-`0x8004D424`) and branches on `frac v > frac u`, which is the
+diagonal `frac u == frac v` splitting each rhombus into two triangles.
+`func_8004F3D4`'s two candidate cells -- `(cu, cv+1)` and `(cu+1, cv)` -- are
+the off-diagonal corner of each half, which is the same split seen from the
+writing side. The reader then forms a plane from up to three corners; the corner
+values and the split are established, the exact weights are not yet transcribed.
+
+#### How this was checked, and what it is for
+
+`WR64_WATER_FIELD=<prefix>` dumps the array and, in the same frame, probes
+**the game's own height query** -- `func_8004D30C(x, z)`, called through the
+recompiled code from the graphics-task hook -- on a grid of thousands of points.
+`tools/decode_water_field.py` then decodes the array and compares. Reading the
+code gives a model; reproducing the game's own answers is what makes the model
+something geometry can be built from.
+
+Where it stands: on lattice-aligned probes the decode agrees to a median of
+**0.089 world units**, against a field spanning about 90. Probes placed inside
+cells still differ by about a unit, which is the interpolation weights that have
+not been transcribed yet.
+
+One trap worth recording. Probing "on a cell corner" is the hardest place to
+test a truncating index: computing the world position of a corner in floats and
+handing it back produces `u = 1535.9999`, which truncates into the neighbouring
+cell. The first round of this measurement placed every probe on a boundary and
+produced small errors everywhere, which read as a broken decode and was a broken
+measurement. Probe cell *interiors* and compare, or accept that the boundary
+cases will disagree.
+
+**Why this matters for draw distance.** The field is roughly 8,192 world units
+across in `u` before it folds, and `func_8004D30C` will answer for any point in
+it. The game *draws* 500 vertices reaching 922 units. The surface data for a
+much longer view already exists -- what is limited is the drawing, not the
+simulation, so a renderer can extend the water without inventing waves and
+without disagreeing with the physics.
 
 ### Stunt mode's rings
 

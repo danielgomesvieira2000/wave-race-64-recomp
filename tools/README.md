@@ -64,6 +64,12 @@ Each of these is the whole thing from a clean clone, in the order
 | `patch_macos.py` | Adds the `<stdlib.h>` that the pinned hlsl++ needs for `labs`, which only Apple's libc notices is missing. Idempotent, and chained into `patch_rt64.py`. |
 | `toolchain.py` | Finds `mips-linux-gnu-readelf`: natively where there is one, through WSL on Windows. |
 
+## Reverse engineering
+
+| Script | Purpose |
+|---|---|
+| `decode_water_field.py` | Decodes the game's wave field (`D_80162420`, 384x128 cells of `{s16 height, s16 age}` on a 64-unit triangular lattice) and checks the decode against the game's own height query, which `WR64_WATER_FIELD` probes on a grid of thousands of points in the same frame. Reading the code gives a model; reproducing the game's own answers is what makes it usable. `--image` writes a PGM of the field. See [../docs/GAME-INTERNALS.md](../docs/GAME-INTERNALS.md), *The wave field*. |
+
 ## Testing and diagnosis
 
 | Script | Purpose |
