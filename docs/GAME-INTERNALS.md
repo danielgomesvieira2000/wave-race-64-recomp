@@ -628,43 +628,58 @@ without disagreeing with the physics.
 
 #### Does index *i* keep its meaning? Measured per vertex
 
-The per-block summaries above say the lattice carries rigidly. The fork this
-port's water renderer came from concluded the opposite -- that the lattice
-recenters and per-index pairing blends unrelated water -- and built world-XZ
-resampling on that basis. Both cannot be right, and `WR64_LATTICE_VERTS` plus
+The per-block summaries above say the lattice carries rigidly, and concluded
+from that that index *i* keeps its meaning. The fork this port's water renderer
+came from concluded the opposite -- that pairing by index blends unrelated water
+-- and built world-XZ resampling on it. `WR64_LATTICE_VERTS` and
 `tools/lattice_shift.py` settle it with every vertex rather than each block's
-first.
+first, and **the fork is right**.
 
 The test: if heights travel with the lattice, vertex *i* keeps its height across
 a carry. If they are resampled from the world-fixed field, they shift along the
-index by however far the lattice moved. Searching both row and column shifts --
-a block is a row, the index is a column, and a one-dimensional search over the
-flattened order is blind to a row shift -- over sixteen consecutive race frames
-on Dolphin Park:
+index by however far the lattice moved. Two details decide whether the test says
+anything at all.
 
-| | |
-|---|---|
-| Vertices per frame | 500 |
-| Frames where the lattice moved | **16 of 16** -- it never stands still in a race |
-| Movement per frame | x by 32 or 64, z by 54-56 |
-| Best shift | `(0,0)` in 9 frames, `(0,-1)` in 6, `(1,0)` in 1 |
-| Height spread within a frame | 77 world units |
-| Mean error at the best shift | **5.6 units, 7% of the spread** |
+**The search has to be two-dimensional.** A block is a row of the lattice and
+the index is a column, so a search over the flattened vertex order finds a
+column shift and is blind to a row shift -- a carry of one column *and* one row
+reads as no shift.
 
-**Index *i* largely does keep its meaning.** Zero shift wins more often than any
-other, and the residual left at the best shift is 7% of the height spread rather
-than the ~50% a mis-pairing would leave. The column shift that wins on the
-frames carrying -32 in x is the lattice stepping one column, which is exactly
-what a rigid carry looks like.
+**Only some frames can answer.** An index shift can express the carry only when
+the lattice moved a whole number of columns along x and did not move in z. A
+mixed carry of 32 in x and 55 in z is not a whole number of spacings in either
+axis, so no shift fits and that frame says nothing either way. On the frames
+that do qualify, compare the error at the best shift against the error at no
+shift:
 
-So the earlier conclusion stands, with a number attached to it that it did not
-have: per-index interpolation is sound to within about 7% of the wave spread,
-and that residual is the wave animation itself rather than a mis-pairing. It is
-not zero, which is the honest qualification -- the fork's resampling is solving
-a real but smaller problem than claimed, not an imaginary one.
+| Course | Frames | Qualifying | Error, no shift | Error, best shift | |
+|---|---:|---:|---:|---:|---|
+| Dolphin Park | 120 | **69** | 3.204 | 2.301 | **28% lower** |
+| course 1 | 16 | 4 | 2.954 | 1.784 | 40% lower |
+| course 2 | 121 | 2 | 3.500 | 1.722 | 51% lower |
 
-**One capture, one course, sixteen frames.** Worth repeating across courses and
-over a longer run before anything is changed on the strength of it.
+**Shifting the index reduces the error substantially, on every course.** The
+heights are attached to world position, not to the index: the lattice carries
+its *positions* rigidly, but the heights it samples come from the world-fixed
+field underneath it, so vertex *i* is a different piece of water after a carry.
+Pairing by index blends water from two places, and a renderer that interpolates
+per index interpolates between unrelated samples.
+
+It only *looks* harmless because most frames carry diagonally, where no integer
+shift fits and the comparison cannot separate the two accounts. The residual at
+the best shift is also small in absolute terms -- 3 to 7% of the height spread
+-- but that is a property of the field being smooth, not of the pairing being
+right.
+
+**A correction worth recording.** The first capture of this was sixteen frames
+on one course, of which exactly **one** qualified, and that frame showed a 9%
+improvement -- noise. It was written up as confirming the rigid-carry
+conclusion. Repeating on another course produced the opposite verdict, and
+capturing 120 frames instead of 16 turned the original course's single frame
+into 69 and reversed it too. The lesson is in the shape of the data, not the
+subject: when a test only applies to some frames, the number that matters is how
+many qualified, and a verdict from one of them is not a verdict. The tool now
+refuses to conclude from fewer than three.
 
 ### Stunt mode's rings
 
@@ -908,15 +923,24 @@ were taken with the camera at rest. Measured over 2,172 race frames instead
 
 Three things follow, and the third is the one that matters.
 
-**It is a rigid carry, not a recentring.** Every block moves by the same step in
-every frame measured, so index *i* still names the same lattice slot, and the
-correspondence a renderer pairs on is intact.
+**It is a rigid carry, not a recentring** -- every block moves by the same step
+in every frame measured, so index *i* still names the same lattice *slot*.
 
-**The wave pattern is carried with it.** A 60-unit carry changes about as many
-heights as standing still does (15.1 against 12.2 of 50). Were the surface
-sampled from a world-fixed wave field, moving it 64 units would have changed
-nearly all of them. The heights travel with the lattice; what changes frame to
-frame is the animation on top.
+**That is not the same as index *i* meaning the same water**, which is what a
+renderer pairs on, and it was read that way here for too long. The slot moves
+through a world-fixed field, so it samples a different height after a carry. See
+*Does index i keep its meaning?* below, which measures it per vertex and comes
+out the other way.
+
+**The wave pattern looks as though it is carried with it.** A 60-unit carry
+changes about as many block-first heights as standing still does (15.1 against
+12.2 of 50), which was read as the heights travelling with the lattice.
+
+They do not. The field *is* world-fixed -- it is `D_80162420`, documented below
+-- and the reason a carry changes so few of these heights is that they are
+floored to whole world units by the `>> 8` every reader applies, so a smooth
+field reads the same either side of a 64-unit step in most places. Fifty block
+firsts is also a thin sample of five hundred vertices.
 
 **The positions are quantized and the camera's motion is not.** The step is
 almost always a multiple of 32 world units -- 64, 32, 96, 128 -- while the

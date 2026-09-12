@@ -1247,7 +1247,8 @@ struct Walker {
             std::FILE* out = std::fopen(path, "w");
             if (out != nullptr) {
                 std::fprintf(out, "# Every water vertex, per frame. See "
-                                  "tools/lattice_shift.py.\nframe,block,index,x,y,z\n");
+                                  "tools/lattice_shift.py.\n"
+                                  "frame,course,block,index,x,y,z\n");
             }
             return out;
         }();
@@ -1257,18 +1258,40 @@ struct Walker {
             const int n = p != nullptr ? std::atoi(p) : 0;
             return n > 0 ? n : 8;
         }();
-        // Frames before this are the boot and title screens, where the water
-        // is flat and the camera is still -- nothing to learn from.
-        static const int delay = [] {
-            const char* p = std::getenv("WR64_LATTICE_VERT_DELAY");
-            const int n = p != nullptr ? std::atoi(p) : 0;
-            return n > 0 ? n : 1200;
+        // Which course this is, so a capture can be told apart from another
+        // course's afterwards, and so a run can wait for one.
+        const uint32_t course = words(0x000D8170)[0];
+
+        // WR64_LATTICE_VERT_COURSE waits for a course rather than a frame
+        // number, which is how a capture is taken on a course the menus are not
+        // being driven to -- the attract demo picks its own. Without it the
+        // frame delay applies, skipping the boot and title screens where the
+        // water is flat and the camera still.
+        static const long wanted_course = [] {
+            const char* p = std::getenv("WR64_LATTICE_VERT_COURSE");
+            return p != nullptr ? std::strtol(p, nullptr, 10) : -1;
         }();
-        if (g_vertex_frame < delay || g_vertex_frame > delay + wanted) return;
+        static int first_frame = -1;
+        if (wanted_course >= 0) {
+            if (first_frame < 0) {
+                if (int32_t(course) != int32_t(wanted_course)) return;
+                first_frame = g_vertex_frame;
+            }
+            if (g_vertex_frame > first_frame + wanted) return;
+        }
+        else {
+            static const int delay = [] {
+                const char* p = std::getenv("WR64_LATTICE_VERT_DELAY");
+                const int n = p != nullptr ? std::atoi(p) : 0;
+                return n > 0 ? n : 1200;
+            }();
+            if (g_vertex_frame < delay || g_vertex_frame > delay + wanted) return;
+        }
         // 16 bytes each: s16 x, y, z, flag, then texture coordinates and colour.
         for (uint32_t i = 0; i < count; ++i) {
             const uint32_t v = addr + i * 16;
-            std::fprintf(f, "%d,%u,%u,%d,%d,%d\n", g_vertex_frame, vertex_block, i,
+            std::fprintf(f, "%d,%u,%u,%u,%d,%d,%d\n", g_vertex_frame, course,
+                         vertex_block, i,
                          signed_half(v), signed_half(v + 2), signed_half(v + 4));
         }
         ++vertex_block;

@@ -34,7 +34,7 @@ from collections import defaultdict
 from pathlib import Path
 
 
-def load(path: Path):
+def load(path: Path, courses: set):
     """frame -> {(block, index): (x, y, z)}.
 
     The lattice is two-dimensional -- a block is a row of it, the index is the
@@ -48,10 +48,16 @@ def load(path: Path):
         if not line or line.startswith("#") or line.startswith("frame,"):
             continue
         parts = line.split(",")
-        if len(parts) != 6:
+        # 7 columns since the course was added; 6 is the older layout.
+        if len(parts) == 7:
+            frame, course, block, index, x, y, z = (int(v) for v in parts)
+        elif len(parts) == 6:
+            frame, block, index, x, y, z = (int(v) for v in parts)
+            course = -1
+        else:
             continue          # the run is killed mid-write; the last line is short
-        frame, block, index, x, y, z = (int(v) for v in parts)
         frames[frame][(block, index)] = (x, y, z)
+        courses.add(course)
     return frames
 
 
@@ -85,11 +91,14 @@ def main():
                         help="largest row/column shift to consider (default 3)")
     args = parser.parse_args()
 
-    frames = load(args.csv)
+    courses = set()
+    frames = load(args.csv, courses)
     if len(frames) < 2:
         sys.exit(f"{args.csv}: need at least two frames, found {len(frames)}")
 
     order = sorted(frames)
+    named = ", ".join(str(c) for c in sorted(courses) if c >= 0) or "unlabelled"
+    print(f"course {named}")
     print(f"{len(order)} frames, {len(frames[order[0]])} vertices in the first\n")
     print(f"  {'frame':>6} {'verts':>6} {'moved x':>8} {'moved z':>8} "
           f"{'best row,col':>13} {'err@best':>9} {'err@0':>9}")
@@ -97,6 +106,7 @@ def main():
     zero_wins = 0
     shifted_wins = 0
     best_errors = []
+    clean_frames = []
     for a, b in zip(order, order[1:]):
         prev, cur = frames[a], frames[b]
         if not prev or not cur:
@@ -107,6 +117,7 @@ def main():
         err, drow, dcol = best_shift(prev, cur, args.limit)
         best_errors.append(err)
         err0, _, _ = best_shift(prev, cur, 0)
+        clean_frames.append((dx, dz, err0, err))
         moved = dx != 0 or dz != 0
         if moved:
             if (drow, dcol) == (0, 0):
@@ -117,10 +128,30 @@ def main():
               f"{f'({drow},{dcol})':>13} {err:>9.3f} {err0:>9.3f}"
               f"{'' if moved else '   (still)'}")
 
-    # The question is not only *which* shift fits best but whether any shift
-    # fits at all. Scale the residual against how much the heights vary in the
-    # first place: a best-case error that is a large fraction of the spread
-    # means no index mapping preserves the surface, whatever the best shift is.
+    # Counting which shift "wins" is too crude, and the fraction-of-spread test
+    # is misleading: a smooth field gives a small residual whether the pairing is
+    # right or not.
+    #
+    # The frames that decide it are the ones where the lattice carried a whole
+    # number of columns along x and did not move in z. Only there can an index
+    # shift express the carry at all; a mixed carry of 32 in x and 55 in z is
+    # not a whole number of spacings in either axis, so no shift fits and the
+    # comparison says nothing. On those clean frames, compare the error at the
+    # best shift against the error at no shift:
+    #
+    #   heights carried with the lattice -> shifting cannot help, the two match
+    #   heights from a world-fixed field -> shifting helps, and by a lot
+    clean = [(e0, eb) for moved_x, moved_z, e0, eb in clean_frames
+             if moved_z == 0 and abs(moved_x) >= 63]
+    if clean:
+        mean0 = sum(e0 for e0, _ in clean) / len(clean)
+        meanb = sum(eb for _, eb in clean) / len(clean)
+        print(f"  whole-column carries with no z movement: {len(clean)} frames")
+        print(f"    error at no shift    {mean0:.3f}")
+        print(f"    error at best shift  {meanb:.3f}"
+              f"   ({100.0 * (mean0 - meanb) / mean0:.0f}% lower)")
+
+    # Scale the residual against how much the heights vary in the first place.
     spread = 0.0
     for frame in order:
         ys = [y for _x, y, _z in frames[frame].values()]
@@ -136,21 +167,25 @@ def main():
     if zero_wins + shifted_wins == 0:
         print("  The lattice never moved in this capture, so nothing is settled.")
         print("  Capture more frames, or capture while the camera is moving.")
-    elif spread and mean_best > 0.15 * spread:
-        print("  VERDICT: neither. No index mapping preserves the heights -- the best")
-        print("  shift still leaves a large fraction of the height spread as error, on")
-        print("  every frame. The surface genuinely changes from frame to frame, so")
-        print("  pairing by index blends different water however the indices are")
-        print("  aligned. A renderer that interpolates per index is interpolating")
-        print("  between unrelated samples.")
-    elif shifted_wins > zero_wins:
-        print(f"  VERDICT: resampled. {shifted_wins} of {zero_wins + shifted_wins}")
-        print("  carrying frames match best at a nonzero index shift, which is what a")
-        print("  world-fixed field sampled by a moving lattice looks like.")
+    elif len(clean) < 3:
+        print(f"  VERDICT: undecided. Only {len(clean)} frame(s) carried a whole number")
+        print("  of columns without moving in z, which is too few to conclude from --")
+        print("  a single frame's 9% is noise. Capture more frames: how many qualify")
+        print("  depends on which way the camera happens to be travelling.")
+    elif (mean0 - meanb) > 0.15 * mean0:
+        print("  VERDICT: resampled. On the frames where an index shift *can* express")
+        print("  the carry, shifting cuts the error substantially -- the heights are")
+        print("  attached to world position, not to the index. Pairing by index blends")
+        print("  different water; it only looks harmless on mixed carries, where no")
+        print("  integer shift fits and the comparison cannot tell the two apart.")
+    elif clean:
+        print("  VERDICT: carried. On whole-column carries, shifting the index does not")
+        print("  reduce the error, so the heights travel with the lattice and index i")
+        print("  keeps its meaning.")
     else:
-        print(f"  VERDICT: carried. {zero_wins} of {zero_wins + shifted_wins} carrying")
-        print("  frames match best at shift zero, and the residual is small, so index i")
-        print("  keeps its meaning and pairing by index is sound.")
+        print("  VERDICT: undecided. No frame in this capture carried a whole number of")
+        print("  columns without also moving in z, which is the only case that")
+        print("  separates the two. Capture more frames.")
 
 
 if __name__ == "__main__":
