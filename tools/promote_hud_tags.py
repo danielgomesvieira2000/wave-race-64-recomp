@@ -182,13 +182,13 @@ def main():
     if updated == text:
         print(f"  {TARGET.name} already up to date")
     else:
-        TARGET.write_text(updated, encoding="utf-8")
+        TARGET.write_bytes(updated.encode("utf-8"))   # LF on every platform
         print(f"  {TARGET.name} updated -- review the diff and commit")
 
     if args.clear:
         for name in CLASSES:
             doc[name] = []
-        source.write_text(json.dumps(doc, indent=4) + "\n", encoding="utf-8")
+        source.write_bytes((json.dumps(doc, indent=4) + "\n").encode("utf-8"))
         print(f"  {source} emptied")
 
     print("\nRebuild to pick it up.")

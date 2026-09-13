@@ -369,7 +369,7 @@ struct Tags {
         by_identity["tex:0x01036b98"] = Class::Auto;
         by_identity["tex:0x0103d8d8"] = Class::Right;
         by_identity["tex:0x0103ddd8"] = Class::Right;
-        by_identity["tex:0x0103e2d8"] = Class::Right;
+        by_identity["tex:0x0103e2d8"] = Class::Auto;
         by_identity["tex:0x0103e7d8"] = Class::Right;
         by_identity["tex:0x0103ecd8"] = Class::Right;
         by_identity["tex:0x0103f1d8"] = Class::Right;
