@@ -8,7 +8,7 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [1.0.0](docs/releases/1.0.0.md) — Full release
 
 - **The dolphin in the opening sequence moves smoothly** with interpolation on.
   Its fins and tail were drawn apart from its body for a frame at a time; its
