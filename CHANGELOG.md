@@ -8,7 +8,7 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [0.9.3](docs/releases/0.9.3.md) — Every buoy, all the way out
 
 - **Draw Distance is Original or Extended.** Extended is what Maximum was: the
   course to the far plane and the sea to the horizon. A saved Far, Very far or
