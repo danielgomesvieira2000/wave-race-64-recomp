@@ -44,6 +44,30 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TITLE = "Wave Race 64: Recompiled"
 
 
+def window_of_process(pid, title):
+    """The visible top-level window with this title that belongs to process pid, or 0."""
+    user32 = ctypes.windll.user32
+    found = []
+    enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def visit(hwnd, _):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        owner = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value != pid:
+            return True
+        buffer = ctypes.create_unicode_buffer(512)
+        user32.GetWindowTextW(hwnd, buffer, 512)
+        if buffer.value == title:
+            found.append(hwnd)
+            return False
+        return True
+
+    user32.EnumWindows(enum_proc(visit), 0)
+    return found[0] if found else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("outdir")
@@ -71,15 +95,19 @@ def main():
         f.write(str(int(time.time() * 1000)))
     proc = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT)
 
+    # The window is found by the process that owns it, not by title alone: with a
+    # second copy of the game already open -- the person at the machine playing --
+    # a lookup by title returns whichever window the system lists first, and the
+    # capture silently records the wrong game.
     hwnd = 0
     while time.perf_counter() - launched < 60 and proc.poll() is None:
-        hwnd = ctypes.windll.user32.FindWindowW(None, TITLE)
+        hwnd = window_of_process(proc.pid, TITLE)
         if hwnd:
             break
         time.sleep(0.2)
     if not hwnd:
         proc.kill()
-        sys.exit("no window titled '%s' appeared" % TITLE)
+        sys.exit("no window titled '%s' appeared for process %d" % (TITLE, proc.pid))
 
     frames = queue.Queue()
     done = threading.Event()

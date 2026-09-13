@@ -1571,13 +1571,16 @@ And one thing that turns a wrong pair into several: the rigid body refuses to
 but it still **records** the jump as the velocity, and the next frame's match
 predicts from it. Two things follow:
 
-- **An unpaired transform costs nothing by itself.** It is drawn at its current
-  matrix, so an object that is not moving looks no different. The plain count of
-  unpaired transforms is the wrong number to chase; the number worth watching is
-  unpaired transforms whose matrix appears nowhere in the previous frame. Measured
-  in a race here: 100-200 world transforms a frame, 2-3 unpaired, 1-2 of those
-  moving or new. Whole-frame pairing failures do happen, but at scene cuts, where
-  nothing should be interpolated anyway.
+- **An unpaired transform costs nothing by itself -- unless it is part of a
+  model.** It is drawn at its current matrix, so an object on its own that is not
+  moving looks no different, and the plain count of unpaired transforms is the
+  wrong number to chase. But a *part* of a moving model drawn at its current
+  matrix is a frame's motion away from the parts that glide, and on the next
+  frame it restarts from zero velocity, which RT64's velocity check treats as a
+  jump, so it snaps again. That is how riders came apart; see *Riders that come
+  apart* below. Measured in a race here: 100-200 world transforms a frame, 2-3
+  unpaired. Whole-frame pairing failures happen at scene cuts, where nothing
+  should be interpolated anyway.
 - **Geometry the game rebuilds every frame under an unchanging matrix is held
   still.** The matrix pairs perfectly, RT64 computes no motion, and the object
   steps at the game's rate while the world glides past it. This is the sky and the
@@ -1836,10 +1839,12 @@ back. Frame rate over a 2P race is identical either way.
 **What was believed before, and why it was wrong** -- kept because each looked
 convincing:
 
-- **"Two racers of the same model hash alike and swap limbs."** The call hashes
-  are real, but with the cameras paired correctly no object in the 2P race
-  frames moved more than 63 units between frames. The racers were never
-  mispaired.
+- **"Two racers of the same model hash alike and swap limbs."** Not the burst:
+  with the cameras paired correctly no object in the 2P intro moved more than 63
+  units between frames. But that intro is riders standing still, and taking it
+  as proof the riders were fine was its own mistake: racing, their parts *were*
+  mispaired, which is a separate defect with a separate fix -- *Riders that come
+  apart*, below.
 - **"At a camera cut the screen-space term pairs objects across the course,
   then the rigid body carries the wrong velocity for fifteen frames."** Those
   pairs are real and are in the log -- a one-player start showed 46 of 137
@@ -1849,12 +1854,13 @@ convincing:
 - **Identities for fixed sites and racer limbs.** Buoys given ids from their
   exact position, and each racer's list inlined so every limb got an id from its
   matrix address, cut logged object jumps over 100 units from 631 to 4. Nothing
-  changed on screen. Removed.
+  about the burst changed. The buoy ids were removed; the limb ids came back
+  later as the fix for the riders.
 - **Vertex interpolation.** Running with `WR64_NO_SKY_INTERP=1
   WR64_NO_WATER_INTERP=1` leaves the burst untouched.
 - **Unpaired transforms as such.** `WR64_PAIRING` shows a two-player start at
   34.8 transforms a frame unpaired and moving, against 0.0-0.7 in steady racing.
-  An unpaired transform is drawn at its current matrix and cannot tear anything.
+  Those were course objects at the cut, not the flicker.
 - **An id on every top-level matrix.** Improved that counter tenfold and changed
   nothing on screen. With `G_EX_ORDER_LINEAR` it was worse: transform matching
   runs only for `G_EX_ID_AUTO` or an explicit id with `G_EX_ORDER_AUTO`, so
@@ -1868,6 +1874,57 @@ convincing:
 The general lesson is this document's own, learned three times: **a counter
 improving while the symptom does not is the counter measuring something else.**
 Capture the symptom first, and let a picture confirm the mechanism.
+
+
+### Riders that come apart
+
+**Symptom:** a rider's model does not hold together between game frames. In a
+race, an arm, a leg or a piece of the craft jumps ahead of the body every few
+frames; on the watercraft select screen, parts jump each time the selection
+changes. Separate from the 2P burst above, and still there after it was fixed.
+
+**Mechanism**, found by grouping the pairing log's transforms into riders by
+position and following their parts frame by frame through the attract demo
+(`tools/pairing_log.py --models`):
+
+1. A rider is 18 (or 23) parts, each its own matrix and draw call. RT64 pairs
+   them with the heuristic: same draw signature, nearest position.
+2. **A part loses its pair.** Of the moving parts left unpaired, 36 had their
+   own previous pose taken by another part -- a mirrored twin shares the
+   signature and stands a few units away -- and 14 had it under a different
+   draw call. On the select screen, the new rider's part meshes differ from the
+   old one's, and 2 to 11 of 18 parts went unpaired at every switch.
+3. **The unpaired part is drawn at its new place** while the rest glide: at 20
+   game frames a second shown at 60, up to two thirds of a 50-unit move away.
+4. **The next frame it snaps again.** Its rigid body starts from zero velocity,
+   and RT64's check (`RigidBody::updateLinear`) divides the new speed by how
+   well the new direction matches the old one -- zero, clamped to 1e-6 -- so the
+   translation is not interpolated.
+
+Every snapped fast part in the demo followed one of two causes: the frame before
+it was unpaired (290), or the velocity check fired on a continuous pair (222).
+
+**Fix**, in the display-list rewriter: each part's matrix load gets a group with
+an explicit id made from the **matrix's segmented address** -- the only stable
+identity, since the table is fixed while the list a rider is drawn from moves --
+and `G_EX_ORDER_LINEAR`, so RT64 pairs the part with itself before and instead of
+its heuristic. The translation is `G_EX_COMPONENT_INTERPOLATE`, not `AUTO`, so no
+part of a body decides on its own not to glide. A part that moved more than 150
+units in one game frame, and every part of a model in the frame one of its parts
+first appears, is drawn at its new pose instead. The loads are found in both
+forms the game uses: inside a model list in segment 2 (races; the list is
+inlined), and at the top level followed by a call to a segment 8 mesh (the select
+screen). `WR64_NO_MODEL_IDS=1` switches it off.
+
+**Measured**: attract demo, 79,362 identity pairs, 0 snapped; watercraft select,
+8 switches, unpaired or snapped parts in 16 frames before and 0 after, save 2
+deliberate whole-model steps onto the 23-part rider. Frame rate over a 2P race
+unchanged. **Confirmed in play, in races and on the select screen.**
+[TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) has the recipe.
+
+**What hid it**: the first round of this work tried exactly these identities,
+and they were removed because a 2P intro showed no part moving more than 63
+units. The riders stand still in that intro. Measure a defect where it is seen.
 
 ---
 
@@ -1885,7 +1942,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
 | **Spaced 3D frames** (`WR64_3D_TRACE_EVERY`) | The same trace with its frames spread over the run rather than consecutive. Consecutive frames answer what the renderer can pair between them; spaced frames answer whether an object is submitted at all from a distance, which is the question behind every report of things popping in. Diffing the display lists called in each frame separates "the game never submitted it" from "something downstream dropped it", and the modelview translation logged before each call gives the object's world position, so a culled set can be plotted rather than guessed at. |
 | **Lattice trace** (`WR64_LATTICE`) | Whether a mesh the game rebuilds every frame can be paired between frames at all. For each frame, and for each rebuilt mesh (the water through segment 3, the sky through segment 6), it writes how many vertex blocks moved in X or Z since the previous frame, how many moved only in height, the largest step in each, and **how many moved by the same step as the first** -- which is what separates a mesh being carried whole from one re-assigning its slots. A handful of frames of identical vertices proves nothing: with the camera parked, a mesh built around the camera is indistinguishable from a fixed one. |
-| **Pairing log** (`WR64_PAIRING_LOG`, via `tools/patch_rt64.py`; read with `tools/pairing_log.py`) | Which previous camera each camera was paired with, and on which framebuffer and screen region; which previous transform each world transform was paired with and how far apart -- with a wall-clock time per frame to line it up with a capture. The two-second counter cannot give any of it: an unpaired transform costs nothing, and the defects are wrong pairs. Its camera lines are what named the 2P burst. **[docs/TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) is the manual and the recipe.** |
+| **Pairing log** (`WR64_PAIRING_LOG`, via `tools/patch_rt64.py`; read with `tools/pairing_log.py`) | Which previous camera each camera was paired with, and on which framebuffer and screen region; which previous transform each world transform was paired with and how far apart -- with a wall-clock time per frame to line it up with a capture. The two-second counter cannot give any of it: an unpaired transform costs nothing, and the defects are wrong pairs. Its camera lines are what named the 2P burst; `--models`, grouping transforms into models by position, is what showed riders' parts snapping. **[docs/TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) is the manual and the recipe.** |
 | **Rectangle log** (`WR64_RECT_LOG`, via `tools/patch_rt64_rectlog.py`) | Where every rectangle actually lands on the widened framebuffer, in RT64's own arithmetic: the game's coordinates, the origins and aspect flag the port set, the framebuffer width and scissor, and the resulting position. The port can say what it emitted and a screenshot can say what showed; only this says what the renderer did in between. |
 | **Race trace** (`WR64_HAPTICS_TRACE`) | Every frame of every race as a CSV row -- speed, vertical velocity, airborne, wetness, impact, lap, buoy, misses, power, countdown -- with the feedback events each frame produced. Written to check that a set of RDRAM addresses really means what it is supposed to: the countdown counts down, speed rises under throttle, misses appear where the HUD says MISS. A value that looks plausible in one frame is not evidence; a column that behaves across a race is. |
 | **Audio queue statistics** (`WR64_AUDIO_STATS`) | Whether the crackle is samples arriving late. Every two seconds: how many buffers the game produced and how big they were, the queue depth at its trough and average, the device period they have to cover, and -- the number it exists for -- how many frames of silence SDL had to insert. The device consumes at the sample rate whether or not anything is queued, so `elapsed x rate` minus the frames handed over (less the change in queue depth) is the shortfall, measured rather than inferred. It also prints what the machine's default device actually runs at, which `SDL_OpenAudioDevice` hides when `SDL_AUDIO_ALLOW_ANY_CHANGE` is unset: the spec it hands back mirrors the request no matter what the hardware does. |
@@ -1896,7 +1953,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. Buttons prefixed `2:` are player two's, and a script that uses them makes a second controller present, so `tools/scripts/race-2p.txt` reaches a 2P VS race with no second pad. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
 | **Frame capture** (`tools/capture_frames.py`, `tools/contact_sheet.py`) | Every frame the window presents, 30-40 a second, through Windows Graphics Capture -- so a terminal on top of the game does not end up in the picture, which it silently does with the desktop grab above. A defect of RT64's generated frames shows as an **alternation between consecutive captures**. It is what finally showed the 2P burst after three rounds of argument from logs; the contact sheet crops one split-screen view so the alternation is readable. |
-| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_NO_SCENE_REGIONS`, `WR64_PAIRING_MAX_JUMP=0`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
+| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_NO_SCENE_REGIONS`, `WR64_NO_MODEL_IDS`, `WR64_PAIRING_MAX_JUMP=0`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
 
 ---
 

@@ -48,6 +48,16 @@
 //    well, and an explicit transform id so the pairing they depend on cannot
 //    be lost to a tie. See the sky and water sections below.
 //
+// 5. Character models. RT64 pairs a rider's parts by draw signature and nearest
+//    position, mirrored parts share a signature, and a part left without a pair
+//    is drawn apart from its body and then snaps from zero velocity. Every part's
+//    matrix load is given a group with an id from the matrix's address, linear
+//    ordering and the translation always interpolated, so RT64 pairs each part
+//    with itself. In a race the parts load inside a segment 2 model list, which
+//    is inlined to reach them; on the watercraft select screen they load in the
+//    frame's own list before a call to a segment 8 mesh. See the character
+//    models section below. WR64_NO_MODEL_IDS=1 switches it off.
+//
 // How the list is read. The game builds one top-level list per frame with
 // every matrix load inline, and calls its model and HUD lists from it. This
 // walks the top-level list, copying each command, following branches in
@@ -105,6 +115,7 @@
 #include "wr64/water.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -1052,6 +1063,251 @@ struct Walker {
             vertex_interp_group(G_EX_ID_AUTO);
             sky = SkySection::Done;
         }
+    }
+
+    // ---- character models -------------------------------------------------
+    //
+    // A rider and craft are one call at the top level to a list the game builds
+    // every frame in segment 2, loading eighteen absolute matrices -- one per
+    // part -- from a fixed table in segment 3 (GAME-INTERNALS.md, "The racers").
+    // RT64 pairs each part with a previous part by the draw call's signature and
+    // the nearest position, and a rider's mirrored parts share a signature: the
+    // pairing log showed a part's own previous pose taken by its twin, or found
+    // under a different draw call when the game's state batching changed. The
+    // part left without a pair is drawn at its newer position for a frame, and
+    // on the next frame RT64 starts it from zero velocity, which its velocity
+    // check always treats as a jump and snaps. Across the attract demo a moving
+    // rider had one part snapped a frame's motion ahead of the rest every few
+    // frames: at 20 game frames a second shown at 60, up to two thirds of 50
+    // units on a 100-unit model.
+    //
+    // So each part is paired by identity. The call is inlined -- its commands
+    // copied into the scratch list, nested calls left as calls -- and a group is
+    // set before each of its matrix loads with an id made from the matrix's
+    // segmented address and linear ordering, which RT64 pairs by identity before
+    // and instead of its heuristic. The address is the identity because it is
+    // the only thing measured to stay put: the list a rider is drawn from moved
+    // between segment 2 slots mid-run, the matrix table did not.
+    //
+    // The same group asks for the translation to be interpolated always
+    // (G_EX_COMPONENT_INTERPOLATE) rather than decided by RT64's velocity check
+    // per part: a part paired by identity is the same part, and letting eighteen
+    // parts of one body each decide for themselves whether to glide is what pulls
+    // a body apart. The exception is a part that moved further than any part of
+    // a rider can in one game frame -- a respawn, or the table being handed to
+    // another rider -- which is given G_EX_COMPONENT_SKIP and drawn at its new
+    // place, as a teleport should be. Rotation, scale and the rest stay at RT64's
+    // defaults.
+    //
+    // Only a perspective call to a segment 2 list that loads at least four
+    // modelview matrices is treated so. WR64_NO_MODEL_IDS=1 switches it off.
+
+    static constexpr float kModelTeleport = 150.0f;   // world units in one game frame
+
+    bool models_on = true;
+    uint32_t models_inlined = 0;
+    uint32_t model_loads = 0;
+    uint32_t model_teleports = 0;
+    uint32_t model_steps = 0;       // runs of parts drawn in one step because a part was new
+    std::unordered_map<uint32_t, std::array<float, 3>>* model_prev = nullptr;   // last frame, by matrix address
+    std::unordered_map<uint32_t, std::array<float, 3>>* model_cur = nullptr;    // this frame
+
+    static uint32_t model_id(uint32_t matrix_segmented) {
+        uint64_t h = 0xCBF29CE484222325ull;
+        for (uint32_t v : { matrix_segmented, 0x4D4F444Cu }) {
+            for (int i = 0; i < 4; ++i) {
+                h ^= (v >> (8 * i)) & 0xFF;
+                h *= 0x100000001B3ull;
+            }
+        }
+        // Top bit set: clear of G_EX_ID_IGNORE (0) and of the sky's and
+        // water's ids (0x57A0000x); never G_EX_ID_AUTO (~0).
+        const uint32_t id = static_cast<uint32_t>(h ^ (h >> 32)) | 0x80000000u;
+        return id == G_EX_ID_AUTO ? 0xFFFFFFFEu : id;
+    }
+
+    // RT64's defaults in every field but the id, the ordering and the
+    // translation; with G_EX_ID_AUTO it puts the defaults back entirely.
+    void model_group(uint32_t id, uint32_t position) {
+        const bool on = id != G_EX_ID_AUTO;
+        if (GfxCommand* cmd = reserve(2)) {
+            gEXMatrixGroup(cmd, id, G_EX_INTERPOLATE_DECOMPOSE, G_EX_NOPUSH, 0,
+                           on ? position : G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,
+                           G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,
+                           G_EX_COMPONENT_SKIP, G_EX_COMPONENT_AUTO,
+                           on ? G_EX_ORDER_LINEAR : G_EX_ORDER_AUTO, G_EX_EDIT_NONE,
+                           G_EX_ASPECT_AUTO, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_AUTO);
+        }
+    }
+
+    // How many modelview matrices a list loads, following branches but not
+    // calls; the nested calls of a model draw vertices only.
+    int list_modelview_loads(uint32_t physical_addr) const {
+        int loads = 0;
+        uint32_t cursor = physical_addr;
+        for (uint32_t steps = 0; steps < 4096; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
+            cursor += 8;
+            if (op == kOpEndDisplayList) break;
+            if (op == kOpDisplayList) {
+                if (((c[0] >> 16) & 0xFF) != 0) cursor = physical(c[1]);
+                continue;
+            }
+            if (op == kOpMtx && !(((c[0] >> 16) & 0xFF) & kMtxProjection)) ++loads;
+        }
+        return loads;
+    }
+
+    bool model_call(uint32_t segmented) const {
+        return models_on && model_cur != nullptr && (segmented >> 24) == 0x02 &&
+               have_projection && projection_is_perspective &&
+               list_modelview_loads(physical(segmented)) >= 4;
+    }
+
+    // The group for one part's matrix load: the part's identity, its translation
+    // interpolated unless it moved further than a part can in one game frame.
+    void model_part_group(uint32_t matrix_segmented, bool step = false) {
+        const Mat4 m = read_matrix(physical(matrix_segmented));
+        const std::array<float, 3> here = { m.m[3][0], m.m[3][1], m.m[3][2] };
+        uint32_t position = step ? G_EX_COMPONENT_SKIP : G_EX_COMPONENT_INTERPOLATE;
+        const auto before = model_prev->find(matrix_segmented);
+        if (before != model_prev->end()) {
+            const float dx = here[0] - before->second[0];
+            const float dy = here[1] - before->second[1];
+            const float dz = here[2] - before->second[2];
+            if (dx * dx + dy * dy + dz * dz > kModelTeleport * kModelTeleport) {
+                position = G_EX_COMPONENT_SKIP;
+                ++model_teleports;
+            }
+        }
+        (*model_cur)[matrix_segmented] = here;
+        model_group(model_id(matrix_segmented), position);
+        ++model_loads;
+    }
+
+    // The same parts can be drawn from the frame's own list rather than from a
+    // model list: on the watercraft select screen each part's matrix is loaded at
+    // the top level, from the same table, and followed at once by a call to its
+    // mesh in segment 8, the character bank. There the part meshes change when
+    // the selection does -- a different rider -- so their draw calls no longer
+    // match the previous frame's, 2 to 11 of 18 parts went unpaired at every
+    // switch, and snapped the frame after. Called for every top-level modelview
+    // matrix command, before it is written out; `cursor` is the command after it.
+    //
+    // Switching to a rider whose model has more parts brings parts that were not
+    // drawn the frame before (18 to 23 on this screen). A new part has no pose to
+    // glide from and is drawn where it is, while the others glide: measured, 5
+    // parts up to two thirds of a 44-unit move away from the body for two
+    // generated frames. So when any part of a run of parts is new, the whole run
+    // takes its new pose at once for that frame -- one step, in one piece.
+    bool top_part_group_open = false;
+    bool top_part_run_steps = false;
+
+    // Whether the matrix load just before `cursor` is a character part: a plain
+    // modelview load whose next drawing command is a call into segment 8.
+    bool loads_part(uint32_t params, uint32_t cursor) const {
+        if (!(params & kMtxLoad) || (params & kMtxPush) || (params & kMtxProjection)) return false;
+        for (int i = 0; i < 8; ++i, cursor += 8) {
+            const uint32_t* c = words(cursor);
+            const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
+            if (op == kOpDisplayList) {
+                return ((c[0] >> 16) & 0xFF) == 0 && (c[1] >> 24) == 0x08;
+            }
+            if (op == kOpMtx || op == kOpVtx || op == kOpPopMtx || op == kOpEndDisplayList ||
+                is_rect(op)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    // Whether the run of part loads starting at the load at `load_cursor` has
+    // any part whose matrix was not loaded last frame. Walks the frame's list
+    // forward, over calls and following branches, until a modelview load that
+    // is not a part, a projection load or the end.
+    bool part_run_has_new_part(uint32_t load_cursor) const {
+        uint32_t cursor = load_cursor;
+        for (uint32_t steps = 0; steps < 2048; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
+            const uint32_t w0 = c[0], w1 = c[1];
+            cursor += 8;
+            if (op == kOpEndDisplayList) return false;
+            if (op == kOpDisplayList && ((w0 >> 16) & 0xFF) != 0) {
+                cursor = physical(w1);
+                continue;
+            }
+            if (op != kOpMtx) continue;
+            const uint32_t params = (w0 >> 16) & 0xFF;
+            if (!loads_part(params, cursor)) return false;
+            if (model_prev->find(w1) == model_prev->end()) return true;
+        }
+        return false;
+    }
+
+    void top_level_matrix(uint32_t w0, uint32_t w1, uint32_t cursor) {
+        const uint32_t params = (w0 >> 16) & 0xFF;
+        const bool part = models_on && model_cur != nullptr && have_projection &&
+                          projection_is_perspective && loads_part(params, cursor);
+        if (part) {
+            if (!top_part_group_open) {
+                top_part_run_steps = part_run_has_new_part(cursor - 8);
+                if (top_part_run_steps) ++model_steps;
+            }
+            model_part_group(w1, top_part_run_steps);
+            top_part_group_open = true;
+        }
+        else {
+            top_part_close();
+        }
+    }
+
+    void top_part_close() {
+        if (top_part_group_open) {
+            model_group(G_EX_ID_AUTO, G_EX_COMPONENT_AUTO);
+            top_part_group_open = false;
+        }
+    }
+
+    // Copies the list in place of the call, a group before each matrix load,
+    // and puts RT64's defaults back after it. The walk's modelview tracking
+    // follows the loads as it would have had the game made them at the top
+    // level.
+    void inline_model(uint32_t segmented) {
+        uint32_t cursor = physical(segmented);
+        ++models_inlined;
+        for (uint32_t steps = 0; steps < 4096 && !overflow; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint32_t w0 = c[0];
+            const uint32_t w1 = c[1];
+            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
+            cursor += 8;
+            if (op == kOpEndDisplayList) break;
+            if (op == kOpDisplayList) {
+                if (((w0 >> 16) & 0xFF) != 0) {
+                    cursor = physical(w1);
+                    continue;
+                }
+                emit(w0, w1);
+                continue;
+            }
+            if (op == kOpMtx) {
+                const uint32_t params = (w0 >> 16) & 0xFF;
+                if (!(params & kMtxProjection)) {
+                    model_part_group(w1);
+                }
+                on_matrix(w0, w1);
+            }
+            else if (op == kOpPopMtx) {
+                if (modelview_depth > 0) --modelview_depth;
+            }
+            else if (op == kOpSetTextureImage) {
+                texture = w1;
+            }
+            emit(w0, w1);
+        }
+        model_group(G_EX_ID_AUTO, G_EX_COMPONENT_AUTO);
     }
 
     // ---- the water ------------------------------------------------------
@@ -2584,6 +2840,15 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     w.sky_interp = !sky_interp_off;
     static const bool water_interp_off = std::getenv("WR64_NO_WATER_INTERP") != nullptr;
     w.water_interp = !water_interp_off;
+    // Character models: each part's translation last frame and this, by matrix
+    // address, swapped after every list. See Walker::inline_model.
+    static const bool models_off = std::getenv("WR64_NO_MODEL_IDS") != nullptr;
+    static std::unordered_map<uint32_t, std::array<float, 3>> model_positions[2];
+    static int model_flip = 0;
+    w.models_on = !models_off;
+    w.model_prev = &model_positions[model_flip];
+    w.model_cur = &model_positions[model_flip ^ 1];
+    w.model_cur->clear();
     static const bool lattice_trace = std::getenv("WR64_LATTICE") != nullptr ||
                                      std::getenv("WR64_LATTICE_VERTS") != nullptr ||
                                       std::getenv("WR64_WATER_LATTICE") != nullptr;
@@ -2642,6 +2907,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             w.leave_class(false);
             w.curtain(false);
             w.sky_close();
+            w.top_part_close();
             w.emit(w0, w1);
             break;
         }
@@ -2662,6 +2928,13 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 const Extent e = w.scan(w.physical(w1), 0, mv, depth, rects);
                 if (!e.empty()) w.classify_draw(e, w1);
                 if (!rects.empty()) w.classify_rect(rects, w1, {});
+            }
+            // A character model's list is copied in place of the call, so each of
+            // its parts can be paired by identity. See Walker::inline_model.
+            if (w.model_call(w1)) {
+                w.top_part_close();
+                w.inline_model(w1);
+                continue;
             }
             // Screen-space geometry drawn from a static list: a projection
             // built at an aspect of one, and a viewport inside the called list
@@ -2798,6 +3071,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 w.seen_ortho = true;
             }
             w.sky_matrix(params);
+            if (!(params & kMtxProjection)) w.top_level_matrix(w0, w1, cursor);
 
             // Draw distance and field of view, applied to the world's own
             // frustum. Only in a race frame, and only to a perspective
@@ -2830,6 +3104,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
         w.emit(w0, w1);
     }
+
+    model_flip ^= 1;
 
     if (w.overflow) {
         static bool reported = false;
@@ -2913,6 +3189,24 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                                  " (state 0x%02X)\n", w.released_sections, state);
             std::fflush(stderr);
         }
+    }
+
+    // Character models are reported the first time a list inlines any, and a
+    // teleport whenever one happens, so the log says the treatment reached the
+    // riders and when it deliberately let one jump.
+    static bool reported_models = false;
+    static uint32_t reported_models_state = 0xFFFFFFFFu;
+    if (w.model_loads > 0 && (!reported_models || state != reported_models_state)) {
+        reported_models = true;
+        reported_models_state = state;
+        std::fprintf(stderr, "[wr64] character models: %u part matrices paired by identity, %u lists inlined"
+                             " (state 0x%02X)\n", w.model_loads, w.models_inlined, state);
+        std::fflush(stderr);
+    }
+    if (w.model_teleports > 0) {
+        std::fprintf(stderr, "[wr64] character models: %u parts moved more than %.0f units and were not"
+                             " interpolated (state 0x%02X)\n", w.model_teleports, Walker::kModelTeleport, state);
+        std::fflush(stderr);
     }
 
     static uint32_t lists = 0;

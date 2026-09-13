@@ -176,6 +176,62 @@ def scenes(path, lo, hi, max_frames):
         print("  frame %d %s: fb %s %s  <-  fb %s %s  (difference %.1f)" % (fr, kind, cfb, show(cur), pfb, show(prev), diff))
 
 
+U_POS = re.compile(r"cur=([-\d.]+),([-\d.]+),([-\d.]+)")
+
+
+def models(frames, max_frames):
+    """Group each frame's transforms into models -- clusters of at least 12 within
+    45 units of one another, which is what a rider's 18 or 23 parts are -- and
+    report, for models that moved, parts left unpaired or snapped (lerp=0 on a
+    move over a unit). Either one is a part drawn apart from the rest of its body
+    on generated frames."""
+    import math
+    flagged = 0
+    moving_models = 0
+    identity = 0
+    parts = 0
+    shown = 0
+    for fr in frames:
+        items = [("T", p.cur, p.jump, p.lerp, p.path) for p in fr.pairs]
+        for line in fr.unpaired:
+            m = U_POS.search(line)
+            if m:
+                items.append(("U", tuple(float(m.group(i)) for i in (1, 2, 3)), 0.0, False, "none"))
+        left = list(range(len(items)))
+        while left:
+            seed = left.pop(0)
+            group = [seed]
+            changed = True
+            while changed:
+                changed = False
+                for j in list(left):
+                    if any(math.dist(items[j][1], items[g][1]) < 45 for g in group):
+                        group.append(j)
+                        left.remove(j)
+                        changed = True
+            if len(group) < 12:
+                continue
+            g = [items[i] for i in group]
+            jumps = sorted(it[2] for it in g if it[0] == "T")
+            if not jumps or jumps[len(jumps) // 2] < 3.0:
+                continue
+            moving_models += 1
+            parts += len(g)
+            identity += sum(1 for it in g if it[4] == "id")
+            unpaired = sum(1 for it in g if it[0] == "U")
+            snapped = sum(1 for it in g if it[0] == "T" and not it[3] and it[2] > 1.0)
+            if unpaired or snapped:
+                flagged += 1
+                if shown < max_frames:
+                    shown += 1
+                    wall = " wall=%d" % fr.wall if fr.wall is not None else ""
+                    print("  frame %d%s: model of %d parts moving %.1f a frame: %d unpaired, %d snapped, %d by identity"
+                          % (fr.number, wall, len(g), jumps[len(jumps) // 2], unpaired, snapped,
+                             sum(1 for it in g if it[4] == "id")))
+    print("%d moving models over %d frames; %d with a part unpaired or snapped; %d of %d parts paired by identity"
+          % (moving_models, len(frames), flagged, identity, parts))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log")
@@ -184,6 +240,7 @@ def main():
     ap.add_argument("--lines", action="store_true", help="print the offending log lines in full")
     ap.add_argument("--calls", action="store_true", help="group the pairs by draw-call hash")
     ap.add_argument("--scenes", action="store_true", help="report how cameras were paired between frames")
+    ap.add_argument("--models", action="store_true", help="report how the parts of multi-part models (riders) were paired")
     ap.add_argument("--max-frames", type=int, default=40, help="how many offending frames to list")
     args = ap.parse_args()
 
@@ -195,6 +252,10 @@ def main():
 
     if args.scenes:
         scenes(args.log, lo, hi, args.max_frames)
+        return
+
+    if args.models:
+        models(read(args.log, lo, hi), args.max_frames)
         return
 
     frames = read(args.log, lo, hi)

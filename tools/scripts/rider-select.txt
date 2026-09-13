@@ -1,0 +1,25 @@
+# Reach the watercraft select screen and switch between riders, repeatedly.
+#
+# Written to reproduce interpolation on the rider model at the moment the
+# selection changes. The menu walk is race.txt's: Start on the title, then
+# Championship, Normal, Warm Up, which lands on the select screen (state
+# RIDER_SELECT, 0x0A) at about 19.5 seconds. From there the stick moves the
+# selection right and left, a second and a half apart, and nothing confirms it.
+#
+# Same format as race.txt; see src/testdrive.cpp.
+
+3.0    3.5   START          # Start (title screen)
+7.0    7.5   START          # Start (main menu: Championship)
+11.0   11.5  START          # Start (Normal)
+15.0   15.5  START          # Start (Warm Up)
+19.0   19.5  START          # Start (to the select screen)
+
+# Switch riders: right four times, then left four times.
+24.0   24.3  -       70  0  # right
+25.5   25.8  -       70  0  # right
+27.0   27.3  -       70  0  # right
+28.5   28.8  -       70  0  # right
+30.0   30.3  -      -70  0  # left
+31.5   31.8  -      -70  0  # left
+33.0   33.3  -      -70  0  # left
+34.5   34.8  -      -70  0  # left

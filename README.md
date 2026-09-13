@@ -69,8 +69,9 @@ running natively:
 - **High frame rate.** The game keeps its own update rate -- 30 Hz in a race, 20
   in the menus and Time Trial, by its own choice -- and RT64 interpolates each
   object's movement between game frames, so it presents at your display's refresh
-  rate. Physics, camera and timers are untouched. The port keeps each split-screen
-  view on its own camera between frames and refuses any pairing of objects no
+  rate. Physics, camera and timers are untouched. The port pairs every part of
+  every rider with itself between frames so the models hold together, keeps each
+  split-screen view on its own camera, and refuses any pairing of objects no
   object could have made.
 - **Field of View**, 45 to 110 degrees. The game draws at 45; higher shows more
   of the world without stretching anything.

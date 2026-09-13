@@ -262,14 +262,25 @@ nothing a player could see. The second round started from the picture.
    rate identical over a 2P race.
 6. *Kept from round one:* a 150-unit limit on object pairs, which refuses the
    glides the log shows but none of which was caught on screen.
+7. *The riders, reported next.* After the camera fix the riders' own
+   interpolation had not improved. Grouping the log's transforms into riders
+   while racing showed a part left unpaired -- its previous pose taken by a
+   mirrored twin, or under a changed draw call -- drawn apart from the body,
+   then snapping from zero velocity. Round one's identities by matrix address
+   came back, with the translation always interpolated, a teleport guard, the
+   select screen's top-level part loads covered, and a whole-model step when a
+   rider gains parts. Attract demo: 79,362 part pairs, 0 snapped. Select screen:
+   16 frames with a part out of place over 8 switches, then 0. Confirmed in play
+   in races and on the select screen.
 
 Documented in `docs/TRANSFORM-PAIRING.md` (manual and recipe), `PORTING.md` §7
 (the mechanism and the wrong turns) and `GAME-INTERNALS.md` §6 (split-screen
 regions, the racers' matrices).
 
-**Gate:** a captured 2P VS start shows no alternation in either view, and a
-race at maximum draw distance shows no sliding at the display's rate. *The
-first half is met; the second has not been caught on screen either way.*
+**Gate:** a captured 2P VS start shows no alternation in either view; riders
+hold together racing and on the select screen; and a race at maximum draw
+distance shows no sliding at the display's rate. *The first two are met; the
+third has not been caught on screen either way.*
 
 ## Standing constraints
 

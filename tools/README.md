@@ -75,7 +75,7 @@ Each of these is the whole thing from a clean clone, in the order
 | Script | Purpose |
 |---|---|
 | `capture_window.ps1` | Photographs the running port at intervals, in physical pixels. |
-| `pairing_log.py` | Reads the pairing log RT64 writes under `WR64_PAIRING_LOG`. By default the object pairs: the jump distribution and the frames with a pair further apart than a limit. `--scenes`: camera pairs that crossed framebuffer slots or screen regions, the 2P burst's signature. `--calls`: object pairs by draw-call hash. See [../docs/TRANSFORM-PAIRING.md](../docs/TRANSFORM-PAIRING.md). |
+| `pairing_log.py` | Reads the pairing log RT64 writes under `WR64_PAIRING_LOG`. By default the object pairs: the jump distribution and the frames with a pair further apart than a limit. `--scenes`: camera pairs that crossed framebuffer slots or screen regions, the 2P burst's signature. `--models`: transforms grouped into models by position, with frames where a moving model had a part unpaired or snapped -- a rider coming apart (a model's count can include one adjacent non-part, such as a shadow). `--calls`: object pairs by draw-call hash. See [../docs/TRANSFORM-PAIRING.md](../docs/TRANSFORM-PAIRING.md). |
 | `capture_frames.py` | Launches the port and saves every frame its window presents between two times, even with another window on top -- Windows Graphics Capture, not a desktop grab. 30-40 frames a second at half size, named by milliseconds since launch, with the launch time recorded to line up with the pairing log. `--env` sets variables for one run. Windows only; `pip install windows-capture opencv-python`. |
 | `contact_sheet.py` | Tiles a span of captured frames into one labelled image, optionally cropped -- to one split-screen view, say -- so consecutive frames can be compared at a glance. Needs Pillow. |
 | `instrument_funcs.py` | Traces when specific recompiled functions run. |
@@ -83,4 +83,4 @@ Each of these is the whole thing from a clean clone, in the order
 | `wsl_diag_asm.sh` | Explains why assembling splat's output fails, when it does. |
 | `wsl_reloc_types.sh` | Lists which relocation types the assembled ELF contains. |
 | `probe_delta.py`, `probe_layout.py`, `probe_piecewise.py` | Phase 01 measurements of how the Rev A segment map relates to the v1.0 dump, kept for the record. |
-| `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race, `race-2p.txt` both players into a 2P VS race. Buttons prefixed `2:` are player two's. |
+| `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race, `race-2p.txt` both players into a 2P VS race, `rider-select.txt` to the watercraft select screen to switch riders back and forth. Buttons prefixed `2:` are player two's. |

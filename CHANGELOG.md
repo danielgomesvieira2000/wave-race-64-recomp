@@ -22,6 +22,19 @@ notice changes.
   frame shows the flicker gone -- and back with `WR64_NO_SCENE_REGIONS=1`. Frame
   rate unchanged.
 
+- **Riders hold together.** In a race, a part of a rider -- an arm, a leg, a
+  piece of the craft -- used to jump ahead of the body every few frames, and on
+  the watercraft select screen parts jumped whenever the selection changed.
+  RT64 was pairing a rider's parts between frames by guesswork: a part's
+  previous pose was taken by its mirrored twin, or lost when the mesh changed,
+  and the part left over was drawn apart from the body and then snapped again.
+  Each part is now paired with itself, by its matrix's address, and always
+  glides with the rest; a part that teleports, or a model that gains parts on a
+  switch, takes its new pose in one piece. Measured over the attract demo:
+  79,362 part pairs, none snapped; on the select screen, 16 frames with a part
+  out of place over eight switches before, none after. Frame rate unchanged.
+  `WR64_NO_MODEL_IDS=1` switches it off.
+
 - **Objects no longer pair across the course.** RT64 would interpolate a buoy
   from one thousands of units away if nothing nearer was free; 2,252 such glides
   in 28 seconds of the attract demo. A pair further apart than 150 world units

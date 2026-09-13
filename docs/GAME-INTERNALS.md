@@ -871,6 +871,21 @@ Two things about identity follow, and both were measured rather than assumed:
   here -- should key on the matrix's segmented address, not on the list or on
   the load's ordinal within it.
 
+**The same table on the watercraft select screen, drawn differently.** Traced in
+state `0x0A` (`WR64_3D_TRACE_STATE=0A`, `tools/scripts/rider-select.txt`):
+
+| | |
+|---|---|
+| Where the part matrices are loaded | **the frame's own list**, plain loads at modelview depth 0 -- no segment 2 model list |
+| Addresses | the same table, `0x0300E108` + part * `0x100` |
+| After each load | a call straight to the part's mesh in **segment 8**, e.g. `0x080208A8` |
+| Parts | **18 or 23**, depending on the rider selected -- switching to a 23-part rider brings 5 parts that were not drawn the frame before |
+| While switching | the model moves 30-50 units a frame |
+
+The part meshes, and so their draw calls, change with the rider while the
+matrix addresses do not, which makes the address the only identity that
+survives a switch.
+
 A racer's **spray** is separate: a cloud of a few dozen single-matrix draws
 around the craft, each rebuilt every frame, moving 15-75 units a frame and
 shuffling among themselves. They are particles, not parts, and nothing keys them.

@@ -371,10 +371,10 @@ namespace RT64 {
 # ---- the pairing log, and the jump limit -----------------------------------
 #
 # The counters above say how many transforms found no pair. The log says which
-# pair each one found, which is the number that matters: an unpaired transform
-# is drawn where it is and cannot tear anything, but a transform paired with
-# the wrong previous transform is interpolated from wherever that other object
-# was. WR64_PAIRING_LOG names a file; nothing is written without it.
+# pair each one found, which is the number that matters: a transform paired
+# with the wrong previous transform is interpolated from wherever that other
+# object was, and a part of a moving model left unpaired is drawn apart from
+# the rest. WR64_PAIRING_LOG names a file; nothing is written without it.
 #
 # One line per transform per interpolated frame:
 #
