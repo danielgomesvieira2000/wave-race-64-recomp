@@ -99,6 +99,8 @@ void report_pairing() {
 // reads it; code_4C750.c and codeseg/B97B0.c write it).
 constexpr uint32_t kFrameDividerAddress = 0x800D461Cu;
 
+extern "C" void wr64_buoys_frame_end(uint8_t* rdram);
+
 void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     osViSwapBuffer_recomp(rdram, ctx);
 
@@ -123,6 +125,9 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     // that other transform had been. Written here it is written once per frame,
     // on the thread that reads it, always before the next cull.
     wr64::drawdistance::apply(rdram);
+
+    // With WR64_BUOY_TRACE, how full the frame's display list got. patches/buoys.cpp.
+    wr64_buoys_frame_end(rdram);
 
     using clock = std::chrono::steady_clock;
     static clock::time_point window_start = clock::now();

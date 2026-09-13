@@ -8,6 +8,17 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## Unreleased
+
+- **Course buoys reach further at a raised Draw Distance.** The game draws at
+  most 32 of the yellow and red L and R buoys per view and chooses them in table
+  order, not by distance, so at Maximum buoys as close as 2,000 units were left
+  out -- or drawn in the wrong place -- and popped in as others left the view.
+  The slots now go to the nearest buoys, and a one-player race gets 64. Over a
+  race at Maximum the nearest buoy left out moved from 2,032 units to 11,243.
+  `WR64_BUOY_ORIGINAL=1` restores the game's behaviour. Building from source:
+  regenerate the game sources to pick this up (`docs/BUILDING.md`).
+
 ## [0.9.2](docs/releases/0.9.2.md) — Better water options
 
 - **A clearer Water tab.** Water quality is now **Original / Enhanced / Best**,

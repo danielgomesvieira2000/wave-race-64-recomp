@@ -110,3 +110,21 @@ ignored = [
     # in place before the call returns rather than after a queue wait.
     "game_dma_copy"
 ]
+
+# The course buoys: give the slots to the nearest, and allow 64 in one player.
+#
+# func_8006E674 hands its visible buoys, in table order, one of 32 matrix slots
+# per view and stops at the 32nd; at a raised Draw Distance more than 32 are
+# visible, and the rest pop in or are drawn through a stale slot. Hook text is
+# pasted into the generated C before the instruction at before_vram, so each
+# declares the port function it calls. See patches/buoys.cpp.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006EF10
+text = "{ void wr64_buoys_before_slots(uint8_t* rdram, recomp_context* ctx); wr64_buoys_before_slots(rdram, ctx); }"
+
+# Replaces the result of `slti $at, $t5, 0x20` just before its branch.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006F020
+text = "{ int32_t wr64_buoys_slot_limit(uint8_t* rdram); ctx->r1 = SIGNED(ctx->r13) < wr64_buoys_slot_limit(rdram) ? 1 : 0; }"

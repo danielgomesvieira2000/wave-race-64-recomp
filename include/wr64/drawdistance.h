@@ -64,6 +64,11 @@
 //
 // It is one kind on one course, against the 49 of 57 that `+0xA4` governs.
 //
+// **The buoys have a second limit: 32 matrix slots a view**, handed out in table
+// order. At Maximum up to 120 are inside the distance, and the game left buoys
+// as near as 2,032 without a slot. patches/buoys.cpp gives the slots to the
+// nearest and allows 64 in a one-player race; see docs/GAME-INTERNALS.md.
+//
 // **A trap worth recording, because it nearly cost a measured result.** It is
 // tempting to argue such a kind is not distance-culled at all but *selected*,
 // the way the direction arrows below are, and there is evidence for it: in 52%

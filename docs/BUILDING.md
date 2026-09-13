@@ -96,7 +96,10 @@ bash tools/build_linux.sh "/path/to/Wave Race 64 (USA) (Rev A).z64"
 ```
 
 The dump argument is needed on the first build only; after that
-`bash tools/build_linux.sh` rebuilds from source alone. RT64 renders through
+`bash tools/build_linux.sh` rebuilds from source alone. **Pass it again when
+`recomp/wr64.toml` changes** (on any platform, `python tools/generate_game.py
+<dump>`): its hooks go into the generated sources, so an older `RecompiledFuncs/`
+still builds but without them -- the course buoy fix is one. RT64 renders through
 Vulkan here, so a working Vulkan driver is not optional -- `vulkaninfo --summary`
 should name your GPU.
 

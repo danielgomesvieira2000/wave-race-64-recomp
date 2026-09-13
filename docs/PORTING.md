@@ -205,6 +205,38 @@ sites. That mistake reported 775 unresolved targets where there were 24.
 
 ---
 
+### Changing what one instruction does: a hook, then the whole pipeline
+
+**Symptom: a game limit is one constant deep inside a large recompiled
+function**, such as the buoy slot count at `0x8006F01C` in the 3,755-line
+`func_8006E674`, and replacing the function means transcribing all of it.
+
+N64Recomp pastes C text into its output before any instruction:
+
+```toml
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006F020
+text = "{ int32_t wr64_buoys_slot_limit(uint8_t* rdram); ctx->r1 = SIGNED(ctx->r13) < wr64_buoys_slot_limit(rdram) ? 1 : 0; }"
+```
+
+| Detail | Why |
+|---|---|
+| Declare the called function inside the hook's own braces | the generated files include only `recomp.h` and the recompiler's headers; a block-scope declaration needs no change to `recomp_include` |
+| Define it `extern "C"` in the port | the generated code is C |
+| Hook the instruction *after* the one to override, and overwrite its result register | the hook runs before its instruction; `ctx->r1` is `$at` |
+| Never hook a delay-slot instruction | the generated branch has already been emitted around it |
+| `[[patches.instruction]]` also exists | it swaps a word for a constant; a hook can decide per call |
+
+**Regenerating is more than running the recompiler.** `tools/generate_game.py`
+runs `wsl_recompile.sh`, then `fix_overlay_relocs.py` and
+`gen_runtime_func_table.py`. Skip the two scripts and the build fails in
+`recomp_overlays.inl` with `expected expression`: relocation entries the
+recompiler leaves untyped (`.type =  }`), which the first script types or
+drops. Run all three after changing a hook. A checkout built before the hooks
+still builds, since the port functions are defined either way, but runs without
+them until its sources are regenerated.
+
 ## 4. Overlay dispatch
 
 **Symptom:** `No function found for jal target: 0x802C744C` at recompile time,
