@@ -335,7 +335,7 @@ the smaller anchored patches, so their anchors are found in unmodified text.
 | Clarity | Aqua only; absorption and visibility | Deep and Aqua; below 50% murk, above 50% the `optics.y` see-through weight rises to 1 in one-player. Same setting id `aqua_clarity` | the Aqua-only version could not make the water clear: the shader lights and darkens what it refracts ([WATER.md, Clarity](WATER.md#clarity)) |
 | Aqua brightness / tint | 0.65-1.35x; +-12-20% | 0.4-2.5x, exponential; +-30-55% | the first ranges compressed to roughly +-15% and +-5% on screen |
 | `patches/water.cpp` | 59 lines | 46 lines | test fixtures and texture-capture removed |
-| Default quality | `High` | `High` | initially set to `Original` here for frame cost; changed back on request |
+| Default quality | `High` | `Original` (`original`) | frame cost: the renderer is one setting away for a machine that has the headroom, and a machine without a GPU never reaches the title screen with it on |
 | `addFramebuffer` water precondition | none | `waterTransformsReady` | see *the crash* below |
 
 ## Dropped

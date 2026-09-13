@@ -66,8 +66,8 @@ running natively:
   own black overscan borders removed. **HUD Placement** in the Graphics tab
   chooses whether the race HUD is laid out across the frame or kept at 4:3 in the
   middle of it.
-- **High frame rate.** The game keeps its own update rate -- 30 Hz in a race, 20
-  in the menus and Time Trial, by its own choice -- and RT64 interpolates each
+- **High frame rate.** The game keeps its own update rate -- 20 frames a second in
+  races, menus and Time Trial alike, by its own choice -- and RT64 interpolates each
   object's movement between game frames, so it presents at your display's refresh
   rate. Physics, camera and timers are untouched. The port pairs every part of
   every rider with itself between frames so the models hold together, keeps each

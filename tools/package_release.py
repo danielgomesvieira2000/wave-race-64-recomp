@@ -44,6 +44,22 @@ FORBIDDEN_SUFFIXES = {".z64", ".n64", ".v64", ".rom", ".bin",
                       ".eep", ".sra", ".fla", ".mpk", ".srm"}
 
 DOCS = ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md"]
+LICENSE_MANIFEST = ROOT / "tools" / "third_party_licenses.txt"
+
+
+def copy_licenses(destination: Path):
+    """The license texts of everything third-party the release contains, from
+    tools/third_party_licenses.txt (shared with package_release.ps1). A missing
+    source stops packaging rather than shipping without it."""
+    destination.mkdir(parents=True, exist_ok=True)
+    for line in LICENSE_MANIFEST.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        name, source = line.split("\t", 1)
+        path = ROOT / source
+        if not path.is_file():
+            fail(f"missing license text {source} ({LICENSE_MANIFEST.relative_to(ROOT)})")
+        shutil.copy2(path, destination / name)
 
 LINUX_LAUNCHER = """#!/usr/bin/env bash
 # Wave Race 64: Recompiled
@@ -197,6 +213,12 @@ def main():
         if not source.is_file():
             fail(f"missing {doc}")
         shutil.copy2(source, stage / source.name)
+    # Beside the docs on Linux; inside the bundle's Resources on macOS, where a
+    # signed .app is what the archive holds.
+    if system == "Linux":
+        copy_licenses(stage / "licenses")
+    else:
+        copy_licenses(stage / "WaveRace64Recomp.app" / "Contents" / "Resources" / "licenses")
 
     check_no_game_data(stage)
 

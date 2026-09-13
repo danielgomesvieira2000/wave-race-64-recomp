@@ -2013,10 +2013,8 @@ struct Walker {
                 // Widen the element by however much the frame was widened,
                 // about its centre. Pinning its own edges to the frame's
                 // edges instead was tried and reverted: it made no difference
-                // to the MAX POWER banner, whose last letter is clipped by
-                // the game's own rectangle rather than by the frame, and it
-                // undid the select screens' backgrounds, which this gets
-                // right.
+                // to the MAX POWER banner, and it undid the select screens'
+                // backgrounds, which this gets right.
                 if (GfxCommand* cmd = reserve(2)) {
                     gEXSetRectAlign(cmd, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE, 0, 0, 0, 0);
                 }

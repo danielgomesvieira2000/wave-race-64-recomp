@@ -11,12 +11,12 @@ project**](#putting-it-in-another-project).
 [WATER-IMPLEMENTATION.md](WATER-IMPLEMENTATION.md) is the full account of how
 the fork built it and where this repository differs.
 
-**Enhanced quality with the Deep style is the default**, on every platform, with
-Clarity at 85% -- the look chosen for release. It is not free: expect the time
-spent drawing a frame to rise noticeably, and to roughly double at Best, see
-[What it costs](#what-it-costs). **Original** is the first entry in the Water tab and is
-a true bypass, not a degraded mode -- on that setting the renderer is not
-engaged at all and the water is exactly the cartridge's.
+**Original is the default**, on every platform, and a true bypass rather than a
+degraded mode: the renderer is not engaged at all and the water is exactly the
+cartridge's. The modern renderer is one setting away, and opens with the Deep
+style and Clarity at 85%. It is not free: expect the time spent drawing a frame
+to rise noticeably at Enhanced and roughly double at Best, see
+[What it costs](#what-it-costs).
 
 The renderer comes from [PR #2][pr] by elliotttate, which built and played it on
 an Apple M3 Max. This tree has since verified it on Windows and D3D12, which
@@ -37,8 +37,8 @@ when it belongs to a different style.
 
 | Water quality | What it does |
 |---|---|
-| **Original** | The game's own water. The renderer is not engaged, nothing below has any effect, and every option below is greyed out. |
-| **Enhanced** *(default)* | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
+| **Original** *(default)* | The game's own water. The renderer is not engaged, nothing below has any effect, and every option below is greyed out. |
+| **Enhanced** | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
 | **Best** | Enhanced, plus screen-space reflections of scenery in view, and fine airborne spray. |
 
 | Option | Shown | What it does |

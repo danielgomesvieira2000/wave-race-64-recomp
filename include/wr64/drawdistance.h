@@ -51,8 +51,8 @@
 //
 // **Not reached by this, and why**
 //
-// One kind on course 2 -- display list `0x0102CE78` with texture `0x01015220`,
-// 53 positions -- is drawn out to about 5,100 and no further, and it did not
+// One kind on course 2 -- display list `0x0102CE78` with texture `0x01015220` --
+// was measured drawn out to about 5,100 and no further, and it did not
 // move when `+0xA4` doubled from 6,000 to 12,000: 5,108 against 5,083. So it
 // has a limit of its own. Where that limit lives was searched for and is still
 // unknown:

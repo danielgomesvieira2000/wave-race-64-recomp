@@ -45,7 +45,8 @@ or PowerShell does.
 | `gen_reimplemented_decls.py` | Declares the libultra functions the runtime reimplements. |
 | `gen_runtime_func_table.py` | Registers runtime-provided libultra functions in the address lookup. |
 | `fix_overlay_relocs.py` | Drops the relocation entries N64Recomp emits with no type. |
-| `package_release.ps1` | Stages a built Windows tree into a release folder and zips it. See the script for what it deliberately leaves out. |
+| `package_release.ps1` | Stages a built Windows tree into a release folder and zips it, with the third-party license texts in `licenses/`. See the script for what it deliberately leaves out. |
+| `third_party_licenses.txt` | The license texts every release ships in `licenses/`: a name and a path per line, read by both packaging scripts. Keep it in step with [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). |
 | `package_release.py` | The same for Linux (`.tar.gz`) and macOS (`.zip` of the signed bundle), picking the platform it is running on. Refuses to package a dump or a save, and refuses to overwrite an existing archive. |
 
 ## Per-platform build scripts

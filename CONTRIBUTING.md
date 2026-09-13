@@ -92,7 +92,7 @@ its origin stated in the pull request.
 
 | Situation | What to do |
 |---|---|
-| You need a library | add it as a submodule under `lib/`, and add a row to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) naming its role, license and license-text path |
+| You need a library | add it as a submodule under `lib/`, add a row to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) naming its role, license and license-text path, and add its license file to `tools/third_party_licenses.txt` so releases ship it |
 | The library publishes no license | it cannot be used |
 | You need a change inside an upstream submodule (N64ModernRuntime and the N64Recomp and RSPRecomp inside it, RT64, RecompFrontend) | write it as a script in `tools/` (`patch_rt64.py`, `patch_librecomp.py`, ...); the submodules stay pinned to upstream commits and are never committed with a dirty tree |
 | Upstream should have the change permanently | send it upstream as well, and say so in the pull request |

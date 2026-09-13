@@ -52,6 +52,18 @@ foreach ($f in $files) {
 }
 Copy-Item -Recurse "$BuildDir\assets" (Join-Path $stage "assets")
 
+# The license texts of everything third-party the release contains, into
+# licenses/. The list is tools/third_party_licenses.txt, shared with the Unix
+# script; a missing source stops packaging rather than shipping without it.
+$licenses = Join-Path $stage "licenses"
+New-Item -ItemType Directory -Force $licenses | Out-Null
+foreach ($line in Get-Content "tools\third_party_licenses.txt") {
+    if ($line -match '^\s*(#|$)') { continue }
+    $name, $source = $line -split "`t", 2
+    if (-not (Test-Path $source)) { throw "missing license text $source (tools/third_party_licenses.txt)" }
+    Copy-Item $source (Join-Path $licenses $name)
+}
+
 # Belt and braces: the staging folder must contain no dump and no save.
 $forbidden = Get-ChildItem -Recurse $stage | Where-Object {
     $_.Extension -in ".z64", ".n64", ".v64", ".rom", ".bin", ".eep", ".sra", ".fla"

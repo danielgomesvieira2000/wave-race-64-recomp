@@ -19,9 +19,16 @@ notice changes.
   default was being set after the settings file had already been written, so it
   never took effect.
 - Unused code, stale comments and out-of-date documentation removed or corrected.
-- **New defaults**, for a first run: Draw Distance **Extended**, Water Quality
-  **Enhanced** with the **Deep** style, Clarity **85%** and Aqua Brightness **80%**.
-  Settings already saved are kept.
+- **New defaults**, for a first run: Draw Distance **Extended**; Water Quality
+  **Original**, and when raised the **Deep** style with Clarity **85%** and Aqua
+  Brightness **80%**. Settings already saved are kept.
+- **Third-party notices completed**: every component compiled into or shipped
+  with a release is listed with its exact license, releases carry the license
+  texts in a `licenses/` folder, and the points still open -- RecompFrontend's
+  missing license, the DirectX Shader Compiler's terms, shaders RT64 adapted
+  from Shadertoy -- are stated.
+- **HUD placement** corrected for two race HUD elements, tagged in the HUD
+  inspector and promoted into the port.
 - **A sun editor in the F1 menu.** *Wave Race water: sun* sets the water's sun per
   course -- bearing, height and strength, with a button that aims it where the
   camera faces -- saves to `water_sun.json`, and `tools/promote_water_sun.py`

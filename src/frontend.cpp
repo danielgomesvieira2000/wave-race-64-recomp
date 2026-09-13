@@ -152,8 +152,8 @@ std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
 // only generates frames between two game frames when the buffer it just drew
 // is the one being presented, which under Console never happens for a game
 // that buffers at all -- so the menu's Display and Manual options changed
-// nothing, and the game was shown at its own rate: 20 frames per second in the
-// menus and in Time Trial, 30 in the championship.
+// nothing, and the game was shown at its own rate: 20 frames per second in races
+// and menus.
 //
 // PresentEarly shows each frame as soon as it is drawn, which is what the other
 // recompiled ports do. It takes two frames of latency off, and it is what lets
@@ -424,7 +424,10 @@ void init() {
     // nothing does not fail loudly, it quietly resolves to some other entry.
     //
 
-    // Enhanced and Deep by default, the look chosen for release. With a saved
+    // Original by default: the modern renderer costs frame time, and a machine
+    // without the headroom -- or without a GPU, where it is ten times slower --
+    // should not have to find the setting first. Deep is the style it opens with
+    // when raised. With a saved
     // water.json its Load callback sets the renderer before the first frame; on a
     // first run there is no file and no callback, so the defaults in
     // src/water.cpp apply -- keep the two the same.
@@ -441,7 +444,7 @@ void init() {
             { 1u, "modern", "Enhanced" },
             { 2u, "high", "Best" },
         },
-        1u);
+        0u);
     water.add_option_change_callback("water_quality", on_choice([](uint32_t choice) {
         wr64::water::set_quality(static_cast<wr64::water::Quality>(choice));
     }));

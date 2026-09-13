@@ -1,0 +1,51 @@
+# Third-party license texts shipped in every release, in its licenses/ folder.
+# <name in the release> <TAB> <source, relative to the repository root>
+# Read by tools/package_release.ps1 and tools/package_release.py; see THIRD_PARTY_NOTICES.md.
+# A source that does not exist stops packaging, so a submodule update that moves a file is caught.
+N64ModernRuntime-GPL-3.0.txt	lib/N64ModernRuntime/COPYING
+N64Recomp.txt	lib/N64ModernRuntime/N64Recomp/LICENSE
+RT64.txt	lib/RT64/LICENSE
+RmlUi.txt	lib/RecompFrontend/recompui/lib/RmlUi/LICENSE.txt
+RmlUi-containers-robin_hood-itlib.txt	lib/RecompFrontend/recompui/lib/RmlUi/Include/RmlUi/Core/Containers/LICENSE.txt
+lunasvg.txt	lib/RecompFrontend/recompui/lib/lunasvg/LICENSE
+plutovg.txt	lib/RecompFrontend/recompui/lib/lunasvg/plutovg/LICENSE
+plutovg-FTL.txt	lib/RecompFrontend/recompui/lib/lunasvg/plutovg/source/FTL.TXT
+FreeType-LICENSE.txt	lib/RecompFrontend/recompui/lib/freetype-windows-binaries/LICENSE.TXT
+FreeType-FTL.txt	lib/RecompFrontend/recompui/lib/freetype-windows-binaries/FTL.TXT
+GamepadMotionHelpers.txt	lib/RecompFrontend/lib/GamepadMotionHelpers/LICENSE
+SDL2.txt	lib/RT64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/COPYING.txt
+fmt.txt	lib/N64ModernRuntime/N64Recomp/lib/fmt/LICENSE
+rabbitizer.txt	lib/N64ModernRuntime/N64Recomp/lib/rabbitizer/LICENSE
+sljit.txt	lib/N64ModernRuntime/N64Recomp/lib/sljit/LICENSE
+miniz.txt	lib/N64ModernRuntime/thirdparty/miniz/LICENSE
+o1heap.txt	lib/N64ModernRuntime/thirdparty/o1heap/LICENSE
+plume.txt	lib/RT64/src/contrib/plume/LICENSE
+hlslpp.txt	lib/RT64/src/contrib/hlslpp/LICENSE
+imgui.txt	lib/RT64/src/contrib/imgui/LICENSE.txt
+implot.txt	lib/RT64/src/contrib/implot/LICENSE
+im3d.txt	lib/RT64/src/contrib/im3d/LICENSE
+nativefiledialog-extended.txt	lib/RT64/src/contrib/nativefiledialog-extended/LICENSE
+xxHash.txt	lib/RT64/src/contrib/xxHash/LICENSE
+zstd.txt	lib/RT64/src/contrib/zstd/LICENSE
+stb.txt	lib/RT64/src/contrib/stb/LICENSE
+ddspp.txt	lib/RT64/src/contrib/ddspp/LICENSE
+re-spirv.txt	lib/RT64/src/contrib/re-spirv/LICENSE
+SPIRV-Headers.txt	lib/RT64/src/contrib/re-spirv/external/SPIRV-Headers/LICENSE
+Vulkan-Headers.txt	lib/RT64/src/contrib/plume/contrib/Vulkan-Headers/LICENSE.md
+VulkanMemoryAllocator.txt	lib/RT64/src/contrib/plume/contrib/VulkanMemoryAllocator/LICENSE.txt
+volk.txt	lib/RT64/src/contrib/plume/contrib/volk/LICENSE.md
+D3D12MemoryAllocator.txt	lib/RT64/src/contrib/plume/contrib/D3D12MemoryAllocator/LICENSE.txt
+Lato-NotoEmoji-OFL-1.1.txt	lib/RecompFrontend/recompui/lib/RmlUi/Samples/assets/LICENSE.txt
+PromptFont-OFL-1.1.txt	assets/promptfont/LICENSE.txt
+ares-rsp.txt	licenses/ares-rsp.txt
+concurrentqueue.txt	licenses/concurrentqueue.txt
+dxc-llvm.txt	licenses/dxc-llvm.txt
+dxc-microsoft.txt	licenses/dxc-microsoft.txt
+dxc-mit.txt	licenses/dxc-mit.txt
+miniz-rt64.txt	licenses/miniz-rt64.txt
+nlohmann-json.txt	licenses/nlohmann-json.txt
+odashi-encoding.txt	licenses/odashi-encoding.txt
+slotmap.txt	licenses/slotmap.txt
+utf8conv.txt	licenses/utf8conv.txt
+Vulkan-Headers-Apache-2.0.txt	lib/RT64/src/contrib/plume/contrib/Vulkan-Headers/LICENSES/Apache-2.0.txt
+metal-cpp.txt	lib/RT64/src/contrib/plume/contrib/metal-cpp/LICENSE.txt

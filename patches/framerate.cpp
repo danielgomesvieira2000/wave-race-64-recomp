@@ -1,8 +1,9 @@
 // Phase 06: report the game's own frame rate, and what it is being shown at.
 //
 // The Framerate setting does not touch the game. Wave Race 64 keeps running at
-// the rates it chose for itself -- 20 frames per second in the menus and the
-// attract demo, 30 in a race, 60 for a moment at boot; it picks by writing a
+// the rates it chose for itself -- 20 frames per second in races, the menus and
+// the attract demo, 30 on the course select and results screens, 60 for a moment
+// at boot; it picks by writing a
 // divider the video interrupt handler counts against -- and RT64 draws the
 // frames in between by interpolating each object's transform from one game
 // frame to the next. So there are two rates to know when something looks
@@ -13,7 +14,7 @@
 // The first is measured here, at osViSwapBuffer: the game calls it exactly
 // once per frame it finishes, so counting calls over a couple of seconds is
 // the game's frame rate. The wrapper calls librecomp's implementation and
-// reports only when the rounded rate changes, so a race that stays at 30
+// reports only when the rounded rate changes, so a race that stays at 20
 // prints one line, and one that keeps dropping to 20 says so each time.
 //
 // It is registered at osViSwapBuffer's cartridge address in src/overlays.cpp,
@@ -150,8 +151,8 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     // Reported only when it differs from last time. The game's own target goes
     // beside it: the divider it counts retraces against, so 60 / divider is the
     // rate it asked for, and a measured rate below that is the port not keeping
-    // up rather than the game's choice. Time Trial, for one, asks for 20 -- the
-    // divider is 3 there -- where the championship asks for 30. (A window that
+    // up rather than the game's choice. A race asks for 20 -- the divider is 3
+    // there -- and the course select and results screens for 30. (A window that
     // straddles a change reads as some other number for one line.)
     // Normally only when it changes, so a steady rate is one line rather than
     // one every two seconds. WR64_FRAME_STATS prints every window instead,

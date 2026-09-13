@@ -460,7 +460,7 @@ against 5,000, a 9% overshoot. It is the same limit measured a frame late, not
 slack in it.
 
 **One thing it does not reach.** On course 2, display list `0x0102CE78` with
-texture `0x01015220` -- 746 sites -- is culled at about 5,100 and did not move
+texture `0x01015220` is culled at about 5,100 and did not move
 when `+0xA4` doubled: 5,108 at `x1` against 5,083 at `x2`. Its limit is
 somewhere else and has not been found.
 
@@ -903,8 +903,7 @@ pairing log's camera lines (`WR64_PAIRING_LOG`):
   views film the same riders from nearby for the first second and a half, which
   is why their cameras are easy to confuse.
 - **This race asks for 20 frames a second** (divider 3), measured in two runs,
-  and so did the one-player race `tools/scripts/race.txt` reaches. That is not
-  what the table under *Video timing* says for a race; see the note there.
+  like every race (*Video timing*).
 
 ### The racers: how a rider is drawn
 
@@ -1303,15 +1302,13 @@ decompilation's layout). The rate is `60 / divider`:
 | Screen | Divider | Rate |
 |---|---:|---:|
 | boot, briefly | 1 | 60 |
-| a race (championship, 2P) | 2 | 30 |
-| menus, attract demo, Time Trial | 3 | 20 |
+| course select, results | 2 | 30 |
+| races (championship, 2P VS, Time Trial), menus, attract demo | 3 | 20 |
 
-**Note, September 2026:** the port's frame-rate report measured a 2P VS race on
-Sunny Beach, and the race `tools/scripts/race.txt` reaches from the championship
-menu, both asking for **20** (divider 3) from the moment the race state began,
-with 30 only on the course select and the results screens. The race row above
-may describe a different moment of a race, or be wrong; it has not been
-re-checked against the decompilation.
+Races run at **20**: measured by the port's frame-rate report on a 2P VS race on
+Sunny Beach and on the championship race `tools/scripts/race.txt` reaches, from
+the moment the race state begins, and confirmed in play. This table once gave a
+race 30, which is only the course select and results screens around it.
 
 `osViSwapBuffer` is called exactly once per frame the game finishes, which makes
 it the right place to measure the rate the game is actually achieving against the

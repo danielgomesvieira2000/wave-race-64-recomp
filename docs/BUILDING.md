@@ -119,11 +119,10 @@ the menus, reaches the attract race at **16-20 fps**, and emits the ring --
 exercises the whole of the new path on Linux: the game-thread sampling through
 `func_8004D30C`, the publish and claim across threads, and the GBI emission.
 
-**Set water to Original before testing here.** The shipped default is Enhanced
-with the Deep style, and on llvmpipe the modern renderer is roughly ten times slower
-than the game's own path -- a run at the default reached main loop tick 1,000 in
-900 seconds where Original reached 10,000 in a fraction of that, and never got
-past the title screen. That is a fact about a software rasteriser, not about the
+**Keep water at Original when testing here**, which is the default. On llvmpipe
+the modern renderer is roughly ten times slower than the game's own path -- a run
+at Best reached main loop tick 1,000 in 900 seconds where Original reached 10,000
+in a fraction of that, and never got past the title screen. That is a fact about a software rasteriser, not about the
 renderer.
 
 Settings, saves and mods live in `$XDG_DATA_HOME/WaveRace64Recomp`, or
@@ -389,7 +388,9 @@ a race. Leave the variable unset and nothing is injected.
 ## Packaging a release
 
 One script per platform, each producing an archive under `dist/` plus its
-SHA-256. None of them will package a dump or a save -- they refuse to continue
+SHA-256. Each puts the license text of every third-party component the release
+contains into its `licenses/` folder, from `tools/third_party_licenses.txt`, and
+stops if one of those files is missing. None of them will package a dump or a save -- they refuse to continue
 if they find one where they are staging -- and the Unix one refuses to overwrite
 an archive that already exists, because a published checksum should not quietly
 start describing different bytes.
@@ -605,8 +606,8 @@ frames by interpolating each object's transform -- position, rotation and scale
 -- from one to the next. The game itself is untouched: Wave Race 64's physics,
 camera and timers run at the rate the cartridge chose, and that rate varies.
 The game writes a divider that its video-interrupt handler counts retraces
-against: 3 in the menus and the attract demo (20 frames per second), 2 in a
-race (30), 1 briefly at boot (60). RT64 measures it from the swaps and follows
+against: 3 in races, the menus and the attract demo (20 frames per second), 2 on
+the course select and results screens (30), 1 briefly at boot (60). RT64 measures it from the swaps and follows
 it as it changes.
 
 Nothing in the game had to be tagged for this. RT64 pairs each object's matrix
@@ -641,7 +642,7 @@ Two rates matter when something looks wrong, and the port prints both whenever
 the first changes:
 
 ```
-[wr64] the game is running at 30 frames per second; presenting at 60 (display 60 Hz)
+[wr64] the game is running at 20 frames per second (it asked for 20); presenting at 60 (display 60 Hz)
 ```
 
 The first is measured at `osViSwapBuffer`, which the game calls once per frame

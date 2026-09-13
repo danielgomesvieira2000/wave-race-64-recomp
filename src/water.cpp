@@ -19,15 +19,14 @@
 
 namespace wr64::water {
 namespace {
-// Modern (the menu's Enhanced) and the Modern style (the menu's Deep) by default,
-// with clarity at 85% and Aqua brightness at 80%: the look chosen for release.
-// It is not free -- see docs/WATER.md -- and the Water tab steps it up to Best or
-// down to Original, which is a true bypass.
+// Original by default, a true bypass; raised, it opens with the Modern style (the
+// menu's Deep), clarity at 85% and Aqua brightness at 80%. The renderer is not
+// free -- see docs/WATER.md.
 //
 // With saved settings, the config's Load callback runs before the first frame
 // and overwrites whatever is here. On a first run there is no water.json and no
 // callback, so these apply -- keep them equal to src/frontend.cpp's defaults.
-std::atomic<uint32_t> selected{uint32_t(Quality::Modern)};
+std::atomic<uint32_t> selected{uint32_t(Quality::Original)};
 std::atomic<uint32_t> selectedStyle{uint32_t(Style::Modern)};
 std::atomic<float> aquaBrightness{0.8f}, aquaTint{0.5f}, aquaClarity{0.85f};
 std::atomic<uint32_t> selectedRipples{uint32_t(RippleDetail::Normal)};
