@@ -878,9 +878,9 @@ Two lessons, in order of how much time they cost:
 
 - **A trace can prove a write landed and still say nothing about what it is
   heard as.** Separating one sound from another needs an ear in the loop at some
-  point. `WR64_AUDIO_MUTE` exists for that: it silences a whole player or a
-  single channel from the environment, so a candidate can be ruled out in one
-  race rather than one build.
+  point. `WR64_AUDIO_MUTE` exists for that: it silences whole sequence players
+  from the environment (`p0,p1`), so a candidate can be ruled out in one race
+  rather than one build.
 - **Do not assume the shape of the engine from one screen.** At the title only
   two players are ever enabled, which is what the first traces showed, and the
   rule "sequence ids from 3 up are music" was written from that. In a race a
@@ -1448,7 +1448,7 @@ GBI:
   segmented address alone is the kind of fault that survives all testing on one
   course and appears on another.
 
-### The four RT64 patches, and why each was needed
+### The first four RT64 patches, and why each was needed
 
 1. **The main-frame test.** RT64 decides whether a framebuffer is the game's main
    4:3 frame by comparing the scissor's shape to 4:3 within 10%. A game drawing
@@ -1881,7 +1881,7 @@ apart than 150 world units -- nothing in this game moves more than about 60
 between frames -- and the log shows no such pair after it.
 
 **Resolved.** The sliding is plainest in the opening sequence before the attract
-demo race, at maximum draw distance: rows of purple course-edge buoys, each
+demo race, at the draw distance then called Maximum: rows of purple course-edge buoys, each
 paired with the buoy one slot along as the table repacks, slide along the row.
 With the limit it is gone -- confirmed in play -- and the log of that sequence
 shows no pair over 150 units drawn. It took a while to see because the demo
@@ -2040,6 +2040,7 @@ Every one of these was written to answer a specific failure and then kept.
 |---|---|
 | **Vectored exception handler + dbghelp** (`src/crash_handler.cpp`) | Turns "it exits" into `SysMain_GfxFullSync + 0xF5 at funcs_13.c:7873`. The recompiled code is linked into the executable, so without symbol resolution every crash reports the same unhelpful module. |
 | **Lookup-miss hook** (`tools/patch_librecomp.py`) | A failed lookup prints only the address, then asserts and exits -- and an exit is not an exception, so the crash handler never sees it. The hook reports the *calling* function, source line and thread. It immediately contradicted a claim this project had made two commits earlier. |
+| **Other switches and traces** | `WR64_FOV` (a field of view scale over the setting), `WR64_FAR` (a far-plane multiplier; it reveals nothing in this game), `WR64_AUDIO_HEADROOM_MS` and `WR64_AUDIO_PERIOD` (the audio device's buffering), `WR64_MUSIC_TRACE`, `WR64_DRAW_DISTANCE_TRACE`, `WR64_BUOY_TRACE`, `WR64_WATER_FIELD_DELAY`, and the lattice traces `WR64_LATTICE`, `WR64_LATTICE_FRAMES`, `WR64_LATTICE_VERTS`, `WR64_LATTICE_VERT_COURSE`, `WR64_LATTICE_VERT_DELAY`, `WR64_LATTICE_VERT_FRAMES` (read by `tools/lattice_shift.py`). |
 | **Function-entry instrumentation** (`tools/instrument_funcs.py`) | Inserts a one-shot `printf` at named recompiled functions, or with `NAME@0xADDR` prints an RDRAM word on every call. Order answers "did it run"; a watched value answers "and did it stay valid". Safe only because re-running the recompiler erases the edits. |
 | **Stack scan on a crash** | The faulting thread, a stack, and the module behind every frame -- plus, when the fault is a jump into freed memory, the return addresses read off the stack, because nothing can unwind through a frame with no unwind data. It named a dangling SDL event filter in RT64 on the first hit. Two traps: `SymInitialize` must be called once per process, and the module must be printed whether or not the symbol resolves. See §7. |
 | **Hang watchdog** | A microcode that spins forever faults nothing, prints nothing and returns nothing. After a deadline, a persistent thread suspends the stuck thread, samples its instruction pointer repeatedly and resolves the distinct addresses to source lines. Sample repeatedly, not once: with everything inlined, one sample usually names a helper rather than the loop. (A thread *per call* here was real overhead on the thread that has to keep pace with the game.) |
@@ -2057,7 +2058,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. Buttons prefixed `2:` are player two's, and a script that uses them makes a second controller present, so `tools/scripts/race-2p.txt` reaches a 2P VS race with no second pad. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
 | **Frame capture** (`tools/capture_frames.py`, `tools/contact_sheet.py`) | Every frame the window presents, 30-40 a second, through Windows Graphics Capture -- so a terminal on top of the game does not end up in the picture, which it silently does with the desktop grab above. A defect of RT64's generated frames shows as an **alternation between consecutive captures**. It is what finally showed the 2P burst after three rounds of argument from logs; the contact sheet crops one split-screen view so the alternation is readable. |
-| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_NO_SCENE_REGIONS`, `WR64_NO_MODEL_IDS`, `WR64_PAIRING_MAX_JUMP=0`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
+| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_HUD_NO_ANCHORS`, `WR64_HUD_NOEMIT`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_NO_SCENE_REGIONS`, `WR64_NO_MODEL_IDS`, `WR64_PAIRING_MAX_JUMP=0`, `WR64_BUOY_ORIGINAL`, `WR64_NO_MUSIC_VOLUME`, `WR64_NO_HAPTICS`, `WR64_AUDIO_NO_RESAMPLE`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
 
 ---
 

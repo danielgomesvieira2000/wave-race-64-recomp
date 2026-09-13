@@ -114,7 +114,8 @@ constexpr int32_t kFarPlane = 16192;
 // to be off when this is off -- at Original nothing may be added to the frame.
 int32_t reach();
 
-// Called once per display list, from the thread that submits them.
+// Called once per game frame, from vi_swap_buffer_hook on the game thread
+// (patches/framerate.cpp), so each view's copy is written before its next cull.
 void apply(uint8_t* rdram);
 
 }  // namespace wr64::drawdistance

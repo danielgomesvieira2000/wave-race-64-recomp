@@ -21,19 +21,13 @@ namespace {
 // Where the ring stops: the same integer the course's own scenery cull reads, so
 // the sea reaches as far as the things standing in it.
 //
-// It reads the *game's* value, not the Draw Distance setting's. Both touch the
-// same field, but this runs on the game thread at task submission and
-// drawdistance::apply runs on the graphics thread when the list is rewritten, so
-// what is in the field here is whatever the game last put there: a run with the
-// setting at 12,000 measured a ring of 5,000. Making the water follow the
-// setting would mean reading the setting rather than the field, and it is not
-// obvious that it should -- the sea reaching further than the course is drawn
-// buys nothing, and the far bands are the expensive ones.
+// The field is read through the game's own pointer, so it is the copy of the
+// view drawn last; the Draw Distance setting is taken into account below.
 constexpr uint32_t kCoursePointer = 0x001C0C80;
 constexpr uint32_t kCullField = 0xA4;
 
-// gCameraPerspective, and the index of the one in use. The same addresses the
-// draw distance and the render-distance census read; see drawdistance.cpp.
+// gCameraPerspective, and the index of the one in use -- the addresses the
+// render-distance census reads.
 constexpr uint32_t kCameraIndex = 0x00223930;
 constexpr uint32_t kCameraBase = 0x00227C80;
 constexpr uint32_t kCameraStride = 0x10C;
@@ -129,10 +123,9 @@ void publish(uint8_t* rdram, recomp_context* ctx, uint32_t display_list) {
     if (!std::isfinite(cx) || !std::isfinite(cz)) return;
 
     // As far as the course is drawn, or as far as the player asked for,
-    // whichever is further. Reading the field alone is not enough: this runs on
-    // the game thread at task submission and drawdistance::apply runs on the
-    // graphics thread, so the field still holds the game's own number here even
-    // when the setting has raised it.
+    // whichever is further. Reading the field alone is not enough: at Original
+    // the setting writes nothing, and a raised value is only written once a
+    // course has settled (see drawdistance.cpp).
     float outer = static_cast<float>(std::max(cull, drawdistance::reach()));
     outer = std::clamp(outer, kMinOuter, kMaxOuter);
     if (outer <= kInnerRadius * 1.2f) return;

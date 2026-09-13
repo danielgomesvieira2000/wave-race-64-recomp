@@ -1,7 +1,9 @@
 # Mods
 
 A mod is a `.nrm`: a zip with a `mod.json` at its root and whatever content it
-carries. The game scans `%LOCALAPPDATA%\WaveRace64Recomp\mods` for them, and the
+carries. The game scans the `mods` folder in its settings directory for them --
+`%LOCALAPPDATA%\WaveRace64Recomp\mods` on Windows, `~/.local/share/WaveRace64Recomp/mods`
+on Linux, `~/Library/Application Support/WaveRace64Recomp/mods` on macOS -- and the
 **Mods** tab lists what it found, enables and reorders them, and reports the ones
 it could not open.
 

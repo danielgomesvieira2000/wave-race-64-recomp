@@ -27,9 +27,6 @@ namespace wr64 {
 // which case the pad and keyboard still work as usual.
 bool load_input_script();
 
-// True once a script is loaded and still has entries left to apply.
-bool input_script_active();
-
 // The buttons and stick the script asks for at the current moment. Merged with
 // the pad and keyboard rather than replacing them, so a run can be nudged by
 // hand while it plays.

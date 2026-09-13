@@ -123,10 +123,10 @@ void set_volume(double percent) {
     }
 }
 
-// WR64_AUDIO_MUTE silences whole players or single channels while a run plays,
-// so that what a slider should govern can be found by ear in one race instead of
-// guessed at from a trace. "p1" is sequence player one, "p0c14" is channel 14 of
-// player zero, and the list is comma separated: WR64_AUDIO_MUTE=p1,p0c13,p0c14.
+// WR64_AUDIO_MUTE silences whole sequence players while a run plays, so that
+// what a slider should govern can be found by ear in one race instead of
+// guessed at from a trace. "p1" is sequence player one, and the list is comma
+// separated: WR64_AUDIO_MUTE=p0,p1.
 //
 // It exists because the traces can prove a write lands and still not say what
 // the write is heard as: silencing channels 13 and 14 of the effects player put
@@ -142,17 +142,6 @@ bool muted_player(uint32_t player) {
         if (after == '\0' || after == ',') return true;   // "p1", not "p1c3"
     }
     return false;
-}
-
-bool muted_channel(uint32_t player, uint32_t channel) {
-    static const char* spec = std::getenv("WR64_AUDIO_MUTE");
-    if (spec == nullptr) return false;
-    char want[16];
-    std::snprintf(want, sizeof(want), "p%uc%u", player, channel);
-    const char* at = std::strstr(spec, want);
-    if (at == nullptr) return false;
-    const char after = at[std::strlen(want)];
-    return after == '\0' || after == ',';
 }
 
 void apply(uint8_t* rdram) {

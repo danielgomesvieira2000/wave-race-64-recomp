@@ -1,15 +1,13 @@
 # patches
 
-Replacement implementations of game functions, compiled with N64Recomp's
-single-file output mode.
+The port's C++ that stands in for, wraps or reaches into game functions. Every
+`.cpp` here is compiled into the executable (`CMakeLists.txt` globs them), in
+three ways:
 
-Linkers only search a static library for symbols they have not already
-resolved, so listing the patch object *before* the recompiled library makes the
-patched version win — without re-running the recompiler or rebuilding the
-generated C. During phase 04 that is the difference between seconds and minutes
-per iteration, several hundred times over.
+| How | Example | Where it is wired |
+|---|---|---|
+| **Replaces** a recompiled function: a strong definition wins over the generated weak `RECOMP_FUNC` at link time | `dma.cpp` | the function is listed under `ignored` in `recomp/wr64.toml`, so nothing is generated for it |
+| **Wraps** one, registered at the game function's address so calls reach the wrapper first | `framerate.cpp`, `water.cpp` | `src/overlays.cpp` |
+| **Is called from inside** one, by a `[[patches.hook]]` pasted into the generated C | `buoys.cpp` | `recomp/wr64.toml`; changing a hook means regenerating the game sources (`docs/BUILDING.md`) |
 
-Set this up in phase 02, before it is needed. The reference implementation is
-Zelda 64: Recompiled's `patches.toml` and its patch Makefile.
-
-Requires elf input mode. See docs/PLAN.md.
+`ui_funcs.h` is included by recompui through a fixed path.

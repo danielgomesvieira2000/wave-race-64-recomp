@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -156,10 +155,6 @@ bool load_input_script() {
     g_script_loaded = !g_script.empty();
     std::fprintf(stderr, "[wr64] input script: %zu entries from %s\n", g_script.size(), path);
     std::fflush(stderr);
-    return g_script_loaded;
-}
-
-bool input_script_active() {
     return g_script_loaded;
 }
 

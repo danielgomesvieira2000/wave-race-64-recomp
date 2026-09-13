@@ -111,7 +111,8 @@ so the game held **14-21 fps against the 20 it asks for**, with water at
 Original. That is a correctness result, not a performance one: on llvmpipe
 nothing about frame cost generalises.
 
-**Re-verified** with the sea extension and the draw distance at Maximum: builds
+**Re-verified** with the sea extension and the draw distance at Extended (then
+called Maximum): builds
 with no warnings beyond the vendored libraries' CMake deprecations, boots, walks
 the menus, reaches the attract race at **16-20 fps**, and emits the ring --
 `48 sectors x 9 circles, 860 to 16192 units` -- with zero errors. That one line
@@ -394,8 +395,8 @@ an archive that already exists, because a published checksum should not quietly
 start describing different bytes.
 
 ```
-powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version 0.8.1
-python3 tools/package_release.py --version 0.8.1
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -BuildDir build-fe -Version 0.9.3
+python3 tools/package_release.py --version 0.9.3
 ```
 
 The second one reads the platform it is running on: a `.tar.gz` on Linux with
@@ -419,19 +420,20 @@ bash tools/build_macos_dependencies.sh
 WR64_BUILD_DIR=build-macos-release \
 WR64_DEPENDENCY_PREFIX="$PWD/build-macos-deps/install" \
     bash tools/build_macos.sh
-python3 tools/package_release.py --version 0.8.1 --build-dir build-macos-release
+python3 tools/package_release.py --version 0.9.3 --build-dir build-macos-release
 ```
 
 SDL2, FreeType and libpng are pinned by version and by SHA-256 there, and the
 script checks each built dylib's architecture and deployment target before it
 finishes. Test the extracted archive before publishing it.
 
-## The frontend UI (phase 06, in progress)
+## The frontend UI
 
 `lib/RecompFrontend` is the shared library every N64: Recompiled port uses for
 the parts that are not game-specific: `recompinput` for controller mapping,
 rebindable keys and per-device profiles, and `recompui` for the config and mod
-menus, built on RmlUi and drawn through RT64. It is off by default.
+menus, built on RmlUi and drawn through RT64. `WR64_WITH_FRONTEND` is off by default in
+CMake; the build scripts and the releases turn it on.
 
 Apply the project's patch to it first -- it adds the call that puts the first pad
 on player one without going through the assignment modal (see
@@ -589,9 +591,9 @@ that fills it -- and both are patched; answering only the first stretches the
 game's 4:3 frustum across a wide viewport, which looks like a stretched image
 rather than a wider view.
 
-**HUD Placement** in the Graphics tab does nothing for this game. It moves 2D
-content that names an edge through RT64's extended GBI, and the cartridge
-predates that.
+**HUD Placement** in the Graphics tab chooses whether the race HUD is anchored to
+the frame's edges or kept at 4:3 in the middle. The cartridge names no edges
+itself, so the display-list rewriter supplies them ([PORTING.md](PORTING.md) §7).
 
 ## Frame rate
 
@@ -618,9 +620,11 @@ surface's waves, the HUD -- animates at the game's rate; the camera's movement
 over the water is smooth because the water is drawn in world space under the
 interpolated view. Zelda 64: Recompiled tags every matrix with the actor it
 belongs to from inside the game's code; that needs the drawing code to be
-decompiled, and two thirds of this game's is not. If a specific object turns
-out to pair badly, the port can rewrite the display list before RT64 sees it
-and tag that object by hand; nothing so far has needed it.
+decompiled, and two thirds of this game's is not. Where objects paired badly the
+port rewrites the display list before RT64 sees it: the sky and the water carry
+explicit ids, a rider's parts are paired by their matrices' addresses, and a
+camera only continues one that drew into the same part of the screen. See
+[TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md).
 
 **How frames are presented had to change for any of that to work.** The
 frontend was handing RT64 the *Console* presentation mode: show the buffer the

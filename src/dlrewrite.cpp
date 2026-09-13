@@ -211,14 +211,10 @@ int origin_cancel(uint32_t origin) {
     return -static_cast<int>((origin * kFramebufferWidth * 4) / G_EX_ORIGIN_RIGHT);
 }
 
-// A 2D draw covers the frame when its vertices reach this close to every edge
-// of clip space; the margin only forgives rounding. Anchoring is by the
-// element's centre: past a third of the way to an edge, it belongs to it.
-constexpr float kFrameEdge = 0.97f;
+// Anchoring is by the element's centre: past a third of the way to an edge, it
+// belongs to it.
 constexpr float kAnchorThird = 1.0f / 3.0f;
 
-// The states in which the game is racing: the attract demo, and the race
-// itself, whichever mode it is in.
 // The game's own vertical field of view, from its projection: m[1][1] is
 // cot(fovy/2) and reads 2.4142, which is cot(22.5) to five figures. Every wider
 // setting is expressed as a ratio against this, and the ratio is applied to
@@ -246,6 +242,8 @@ float env_scale(const char* name, float fallback) {
     return parsed;
 }
 
+// The states in which the game is racing: the attract demo, and the race
+// itself, whichever mode it is in.
 bool racing(uint32_t state) {
     return state == 0x07 || state == 0x28;
 }
@@ -541,10 +539,9 @@ struct Walker {
     int modelview_depth = 0;
     uint32_t texture = 0;
 
-    // Section state: A1's centred perspective sections, and the 2D class in
-    // force.
-    // Draw distance and field of view, as multipliers on the world's frustum.
-    // One is the game's own.
+    // The world's frustum, as multipliers: the field of view from the setting,
+    // and the far plane only from WR64_FAR, a diagnostic -- the game's far plane
+    // limits nothing (include/wr64/drawdistance.h). One is the game's own.
     float far_scale = 1.0f;
     float fov_scale = 1.0f;
     uint32_t matrix_cursor = 0;
@@ -1636,7 +1633,6 @@ struct Walker {
     // mesh sliding rather than its surface moving.
     //
     // WR64_LATTICE_FRAMES bounds the run (600 frames by default).
-    // WR64_WATER_LATTICE is still accepted as the name this started under.
 
     struct LatticeBlock {
         uint8_t segment;
@@ -1765,15 +1761,9 @@ struct Walker {
 
     // One line per watched segment per frame, at the end of the walk.
     void flush_lattice(uint32_t state) {
-        static const char* path = [] {
-            const char* p = std::getenv("WR64_LATTICE");
-            return p != nullptr ? p : std::getenv("WR64_WATER_LATTICE");
-        }();
+        static const char* path = std::getenv("WR64_LATTICE");
         if (path == nullptr) return;
-        static const char* frames_env = [] {
-            const char* p = std::getenv("WR64_LATTICE_FRAMES");
-            return p != nullptr ? p : std::getenv("WR64_WATER_LATTICE_FRAMES");
-        }();
+        static const char* frames_env = std::getenv("WR64_LATTICE_FRAMES");
         static const int wanted = frames_env != nullptr ? std::atoi(frames_env) : 600;
         static int written = 0;
         static std::FILE* f = nullptr;
@@ -2692,11 +2682,11 @@ void trace_3d(uint8_t* rdram, uint32_t list_vaddr, uint32_t state) {
 // distances, so a reach that matches another field in it is a candidate with an
 // address attached, found by one lookup rather than a scan.
 //
-// The struct is not addressed by index here. The game leaves the *current*
-// course's struct address at 0x801C0C80 and the buoy code dereferences exactly
-// that, so following the same pointer needs no stride and cannot be wrong about
-// one; running across courses -- the attract demo does this by itself -- fills
-// in the rest, and the addresses it prints give the stride for free.
+// The struct is found through the pointer the game leaves at 0x801C0C80. It
+// holds one copy a view (0x801CB058 + view * 0x110) and the game repoints it
+// before drawing each view, so in a two-player race this dumps whichever view
+// was drawn last; running across courses -- the attract demo does this by
+// itself -- fills in the rest.
 //
 // Each field is printed three ways because its type is not known in advance: as
 // a signed integer, as a float, and as raw hex. A distance limit reads plainly
@@ -2804,13 +2794,14 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
 
 
+    static const bool vertex_trace = std::getenv("WR64_LATTICE_VERTS") != nullptr;
+    if (vertex_trace) ++g_vertex_frame;
+
     // Claim this frame's water snapshot before anything is emitted. The game
     // thread published it at task submission keyed by this display list, and
-    // water_material() below reads whatever this call selected. A list with no
+    // the water draws below read whatever this call selected. A list with no
     // matching snapshot leaves the material empty, which is the same as
     // Original: unknown tasks keep the game's own water.
-    if (std::getenv("WR64_LATTICE_VERTS") != nullptr) ++g_vertex_frame;
-
     wr64::water::begin_frame(list_vaddr);
 
     wr64::inspector::begin_frame(state);
@@ -2825,16 +2816,17 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     w.hud = !hud_off;
     static const bool noemit = std::getenv("WR64_HUD_NOEMIT") != nullptr;
     w.noemit = noemit;
-    // The menus' layouts are 4:3 by design and stay so whatever the setting
-    // says; the setting is about the race HUD. Anchoring the race HUD is
-    // whether a frame is a race is read from the frame (see RaceTest), not
-    // from this state number. WR64_HUD_NO_ANCHORS switches anchoring off.
+    // WR64_FAR multiplies the far plane, a diagnostic (see Walker::far_scale).
     static const float far_scale = env_scale("WR64_FAR", 1.0f);
     // WR64_FOV overrides the setting, for measuring against it.
     static const float fov_override = env_scale("WR64_FOV", 0.0f);
     w.far_scale = far_scale;
     w.fov_scale = fov_override != 0.0f ? fov_override
                                        : g_fov_scale.load(std::memory_order_relaxed);
+    // The menus' layouts are 4:3 by design and stay so whatever HUD Placement
+    // says; the setting is about the race HUD, and whether a frame is a race is
+    // read from the frame (see RaceTest), not from this state number.
+    // WR64_HUD_NO_ANCHORS switches anchoring off.
     static const bool anchors_disabled = std::getenv("WR64_HUD_NO_ANCHORS") != nullptr;
     static const bool sky_interp_off = std::getenv("WR64_NO_SKY_INTERP") != nullptr;
     w.sky_interp = !sky_interp_off;
@@ -2850,8 +2842,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     w.model_cur = &model_positions[model_flip ^ 1];
     w.model_cur->clear();
     static const bool lattice_trace = std::getenv("WR64_LATTICE") != nullptr ||
-                                     std::getenv("WR64_LATTICE_VERTS") != nullptr ||
-                                      std::getenv("WR64_WATER_LATTICE") != nullptr;
+                                     std::getenv("WR64_LATTICE_VERTS") != nullptr;
     w.lattice_trace = lattice_trace;
     w.anchors = !anchors_disabled &&
                 config.hr_option != ultramodern::renderer::HUDRatioMode::Original;

@@ -8,6 +8,18 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## Unreleased
+
+- **Field of View and Draw Distance take effect on Apply**, like every other
+  option in their tab, instead of as soon as they are clicked.
+- **Shorter setting descriptions**: Draw Distance, Water Quality, Clarity and Aqua
+  Brightness say what they do without the measurements; the Water tab's names are
+  in Title Case like the other tabs'.
+- **A first run opens fullscreen at the display's size**, as intended. The
+  default was being set after the settings file had already been written, so it
+  never took effect.
+- Unused code, stale comments and out-of-date documentation removed or corrected.
+
 ## [0.9.3](docs/releases/0.9.3.md) — Every buoy, all the way out
 
 - **Draw Distance is Original or Extended.** Extended is what Maximum was: the

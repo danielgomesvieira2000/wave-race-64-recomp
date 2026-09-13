@@ -73,9 +73,9 @@ painful once it is merged, which is why the check above is worth the ten seconds
 
 ## Texture packs, "HD" projects and mods
 
-The port has no texture-replacement or mod system today. If one is added, its
-content will load from a folder on the user's machine, and this repository will
-still contain none of it.
+The port loads mods and texture packs from the mods folder in the user's settings
+directory ([examples/mods/README.md](examples/mods/README.md)). This repository
+contains none of their content beyond the empty template there.
 
 Upscales are the case worth naming, because they are the most common way this
 rule gets broken by accident. A texture upscaled from a rip is a derivative of
@@ -94,7 +94,7 @@ its origin stated in the pull request.
 |---|---|
 | You need a library | add it as a submodule under `lib/`, and add a row to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) naming its role, license and license-text path |
 | The library publishes no license | it cannot be used |
-| You need a change inside an upstream submodule (N64Recomp, N64ModernRuntime, RT64, RSPRecomp) | write it as a script in `tools/` (`patch_rt64.py`, `patch_librecomp.py`, ...); the submodules stay pinned to upstream commits and are never committed with a dirty tree |
+| You need a change inside an upstream submodule (N64ModernRuntime and the N64Recomp and RSPRecomp inside it, RT64, RecompFrontend) | write it as a script in `tools/` (`patch_rt64.py`, `patch_librecomp.py`, ...); the submodules stay pinned to upstream commits and are never committed with a dirty tree |
 | Upstream should have the change permanently | send it upstream as well, and say so in the pull request |
 
 Vendoring a copy of someone's source into this tree is not how anything here is
@@ -153,8 +153,9 @@ have read, and the two rules above are yours to have checked.
 - Run `WaveRace64Recomp.exe --identify your.z64` and paste the result. Anything
   but USA Rev A is the answer to most bug reports.
 - Attach `%LOCALAPPDATA%\WaveRace64Recomp\wr64.log`.
-- Say the mode, course, direction, the settings in use (Framerate, Widescreen,
-  HUD Placement) and whether it happens every time.
+- Say the mode, course, direction, the settings in use (Framerate, Aspect Ratio,
+  HUD Placement, Draw Distance, Water Quality and Style) and whether it happens
+  every time.
 - Screenshots and clips as attachments on the issue, never as files in the repo.
 - **Never attach a dump**, or any part of one, to an issue.
 

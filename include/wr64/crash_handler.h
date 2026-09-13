@@ -6,10 +6,6 @@ namespace wr64 {
 // the process dies. See src/crash_handler.cpp for why this is worth having.
 void install_crash_handler();
 
-// Prints where a code address is, resolved to a function name and source line.
-// Shared with the crash report, which is where the symbol lookup already lives.
-void describe_code_address(const char* label, void* address);
-
 // Watches a piece of work that is expected to finish quickly, and if it has not
 // finished after `seconds`, reports where the calling thread is stuck. A
 // recompiled microcode that spins forever is otherwise invisible: no fault, no

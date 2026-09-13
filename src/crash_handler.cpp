@@ -270,10 +270,6 @@ void describe_one_address(const char* label, void* address) {
 
 namespace wr64 {
 
-void describe_code_address(const char* label, void* address) {
-    describe_address(label, address);
-}
-
 }  // namespace wr64
 
 namespace {
@@ -458,10 +454,8 @@ void install_crash_handler() {
 // unconditionally from code that is not itself platform-gated, so a missing
 // definition is a link error rather than a missing feature.
 //
-// The two that still say something useful say it. describe_code_address prints
-// the raw address, which is what the Windows version prints when the symbol
-// lookup fails anyway, and wr64_report_lookup_miss reports the recompiled
-// function that could not be found -- see tools/patch_librecomp.py, which
+// The one that still says something useful says it: wr64_report_lookup_miss
+// reports the recompiled function that could not be found -- see tools/patch_librecomp.py, which
 // injects the call. The hang watchdog is the one real loss; it exists to catch
 // recompiled microcode that spins forever, and rebuilding it on POSIX timers
 // is work for the day that actually happens on Linux or macOS.
@@ -471,10 +465,6 @@ void install_crash_handler() {
 namespace wr64 {
 
 void install_crash_handler() {}
-
-void describe_code_address(const char* label, void* address) {
-    std::fprintf(stderr, "[wr64] %s: %p\n", label, address);
-}
 
 void watch_for_hang(const char*, int) {}
 void watch_done() {}

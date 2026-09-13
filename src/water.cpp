@@ -18,14 +18,15 @@
 
 namespace wr64::water {
 namespace {
-// High and Aqua by default, which is what the fork this came from shipped and
-// what the water was tuned against. It is not free -- expect the time spent
-// drawing a frame to roughly double, see docs/WATER.md -- and the Water tab
-// steps it down to Modern or all the way to Original, which is a true bypass.
+// High (the menu's Best) and Aqua by default, which is what the fork this came
+// from shipped and what the water was tuned against. It is not free -- expect
+// the time spent drawing a frame to roughly double, see docs/WATER.md -- and the
+// Water tab steps it down to Enhanced or all the way to Original, which is a true
+// bypass.
 //
-// This default is the one in src/frontend.cpp, not this one: the config's Load
-// callback runs before the first frame and overwrites whatever is here. This
-// value only applies to a build without the frontend.
+// With saved settings, the config's Load callback runs before the first frame
+// and overwrites whatever is here. On a first run there is no water.json and no
+// callback, so these apply -- keep them equal to src/frontend.cpp's defaults.
 std::atomic<uint32_t> selected{uint32_t(Quality::High)};
 std::atomic<uint32_t> selectedStyle{uint32_t(Style::Aqua)};
 std::atomic<float> aquaBrightness{0.5f}, aquaTint{0.5f}, aquaClarity{0.5f};

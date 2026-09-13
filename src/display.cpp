@@ -48,6 +48,14 @@ void set_window(SDL_Window* window) {
     g_window = window;
 }
 
+float window_aspect() {
+    int w = 0, h = 0;
+    if (g_window != nullptr) {
+        SDL_GetWindowSize(g_window, &w, &h);
+    }
+    return w > 0 && h > 0 ? float(w) / float(h) : 320.0f / 240.0f;
+}
+
 // The presentation (see tools/patch_rt64.py) fits the drawn region to the
 // window: the region is placed at the unwidened scale in the middle of RT64's
 // widened frame, and scaled so that it fills the window's height, or its
@@ -59,14 +67,6 @@ void set_window(SDL_Window* window) {
 // out of the frame's 320 * ratio, where ratio is how much RT64 widened it:
 // the window's aspect over the framebuffer's 4:3. Half the difference is how
 // far the visible edge lies inside the frame's edge.
-float window_aspect() {
-    int w = 0, h = 0;
-    if (g_window != nullptr) {
-        SDL_GetWindowSize(g_window, &w, &h);
-    }
-    return w > 0 && h > 0 ? float(w) / float(h) : 320.0f / 240.0f;
-}
-
 float anchor_inset() {
     int w = 0, h = 0;
     if (g_window != nullptr) {

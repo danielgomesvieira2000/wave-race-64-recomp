@@ -118,9 +118,9 @@ translucency.
 |---|---|
 | When it is drawn | whenever **either** Water quality or Draw Distance is above Original |
 | How far | as far as Draw Distance asks for, or the course's own cull, whichever is further |
-| What it costs | 7 circles x 24 sectors: 312 vertex slots and 144 quads a frame, against the game's own 500 vertices |
+| Size | 9 circles x 48 sectors: 432 vertices and 384 quads a frame, against the game's own 500 vertices |
 | Turning it off | `WR64_NO_WATER_RING=1`, or `WR64_WATER_RING_DEBUG=1` to see where it is, painted magenta |
-| What it costs | nothing measurable. Over five configurations of the same attract demo, 84 two-second windows each, the port held the game's own 20 frames per second in **98%** of windows with and without it; the full stack -- Best water, the ring, and the draw distance at Maximum -- held it in 96%. The metric saturates at the game's own rate, so this says the port keeps up, not how much headroom is left |
+| What it costs | nothing measurable. Over five configurations of the same attract demo, 84 two-second windows each, the port held the game's own 20 frames per second in **98%** of windows with and without it; the full stack -- Best water, the ring, and the draw distance at Extended (then called Maximum) -- held it in 96%. The metric saturates at the game's own rate, so this says the port keeps up, not how much headroom is left |
 
 With both settings at Original nothing is added at all, because a frame with
 neither raised has to be the frame the game itself would have produced.
@@ -141,6 +141,8 @@ frame; they do not persist and they are not settings.
 | `WR64_WATER_DEBUG` | `0`-`14`, the diagnostic views |
 | `WR64_TEST_OPEN_SETTINGS` | `water@25`: opens the settings menu on that tab after that many seconds, for a capture of the menu. Changes nothing saved |
 | `WR64_WATER_PROFILES` | path to a `profiles.json` to use instead of the packaged one |
+| `WR64_WATER=ultra` | a quality above Best that the menu does not offer: the added spray's particle budget doubles |
+| `WR64_TEST_WATER_COMPARE_TICK` | a game tick; at it the water flips to Original once, as `F9` does, for a scripted comparison |
 | `WR64_WATER_TRACE` | path to write a per-30-frame CSV of craft position and state |
 | `WR64_WATER_MATERIAL_TRACE` | set to anything: prints the first few materials handed to the renderer, before and after the style is applied |
 

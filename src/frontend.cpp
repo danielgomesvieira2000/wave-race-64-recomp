@@ -72,7 +72,8 @@ ultramodern::renderer::PresentationMode presentation_mode();
 // The two differ by one argument: ultramodern's callback does not carry a
 // presentation mode, and RecompFrontend's context wants one. See
 // presentation_mode() below for what it decides.
-// Sits between ultramodern and RecompFrontend's renderer so that every
+//
+// It also sits between ultramodern and RecompFrontend's renderer so that every
 // display list can be rewritten before RT64 sees it (see wr64/dlrewrite.h).
 // Everything else is forwarded untouched.
 class RewritingContext final : public ultramodern::renderer::RendererContext {
@@ -296,6 +297,38 @@ void init() {
     general.has_mouse_sensitivity = false;
 
     recompui::config::create_general_tab(general);
+
+    // The port's own options in tabs with an Apply button take effect on Apply,
+    // and on Load at startup -- never on Temporary, which librecomp reports on
+    // every click and every step of a slider. Graphics and Water both confirm.
+    // (General and Sound are created by recompui without confirmation: they have
+    // no Apply button, and a change there applies as it is made.)
+    auto on_choice = [](std::function<void(uint32_t)> apply) {
+        return [apply](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+                       recomp::config::OptionChangeContext context) {
+            if (context == recomp::config::OptionChangeContext::Temporary) {
+                return;
+            }
+            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
+                apply(*choice);
+            }
+        };
+    };
+    auto on_number = [](std::function<void(double)> apply) {
+        return [apply](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+                       recomp::config::OptionChangeContext context) {
+            if (context == recomp::config::OptionChangeContext::Temporary) {
+                return;
+            }
+            if (const double* number = std::get_if<double>(&value)) {
+                apply(*number);
+            }
+        };
+    };
+    auto on_percent = [on_number](std::function<void(float)> apply) {
+        return on_number([apply](double percent) { apply(static_cast<float>(percent)); });
+    };
+
     // Field of view, on the world's own frustum. The game draws at 45 degrees
     // vertically; this widens it without changing the shape of anything, since
     // the horizontal half is derived from the vertical one and the aspect ratio.
@@ -305,8 +338,8 @@ void init() {
     // The draw distance sits beside it and is a different thing entirely: the
     // game's far plane is already at 16,192 against a course that needs a few
     // thousand, so pushing *that* out reveals nothing. What limits the view is
-    // the game's own culling, one integer per course, which the setting below
-    // raises. See include/wr64/drawdistance.h.
+    // the game's own culling, one integer per course and view, which the setting
+    // below raises. See include/wr64/drawdistance.h.
     auto& graphics = recompui::config::create_graphics_tab();
     graphics.add_number_option(
         "fov", "Field of View",
@@ -322,16 +355,11 @@ void init() {
     // static geometry. See include/wr64/drawdistance.h.
     graphics.add_enum_option(
         "object_draw_distance", "Draw Distance",
-        "<recomp-color primary>Original</recomp-color> is the game's own: the course is drawn "
-        "to between 2,500 and 6,000 units depending on the course, and nothing is written to "
-        "the game's memory.<br /><br />"
-        "<recomp-color primary>Extended</recomp-color> draws the whole course: the scenery, the "
-        "gate markers and the shoreline out to the far plane, every buoy in view -- the game "
-        "otherwise has room for only 32 of the small buoys and 12 of the racing ones at a time, "
-        "which is what made distant buoys pop in -- and the sea out to the horizon, from the "
-        "same waves the game's own water stands on.<br /><br />"
-        "Drawing more costs frame time, so if the game is already running below its own frame "
-        "rate, leave this on Original.",
+        "How far away the course is drawn.<br /><br />"
+        "<recomp-color primary>Original</recomp-color>: the game's own, where distant scenery "
+        "and buoys pop in.<br /><br />"
+        "<recomp-color primary>Extended</recomp-color>: the course out to the horizon, every "
+        "buoy in view, and the sea beyond the game's own patch of water. Costs some frame rate.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
             { 1u, "Extended", "Extended" },
@@ -353,31 +381,16 @@ void init() {
             }
             return 0u;
         });
-    graphics.add_option_change_callback(
-        "object_draw_distance",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            // A distance, and there is only one worth having above the game's:
-            // the far plane, past which nothing can be drawn. The furthest object
-            // measured on any course sat at 13,175. See include/wr64/drawdistance.h.
-            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::drawdistance::set_reach(*choice == 1u ? wr64::drawdistance::kFarPlane : 0);
-            }
-        });
+    // A distance, and there is only one worth having above the game's: the far
+    // plane, past which nothing can be drawn. The furthest object measured on any
+    // course sat at 13,175. See include/wr64/drawdistance.h.
+    graphics.add_option_change_callback("object_draw_distance", on_choice([](uint32_t choice) {
+        wr64::drawdistance::set_reach(choice == 1u ? wr64::drawdistance::kFarPlane : 0);
+    }));
 
-
-    // The modern water renderer, in the Graphics tab because it is a rendering
-    // choice and because that is where the reader looking for it will be. The
-    // things that shape how it looks, rather than whether it runs, get their own
-    // tab below: five settings crowded into Graphics would bury Field of View.
-    graphics.add_option_change_callback(
-        "fov",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext) {
-            if (const double* degrees = std::get_if<double>(&value)) {
-                wr64::dlrewrite::set_field_of_view(*degrees);
-            }
-        });
+    graphics.add_option_change_callback("fov", on_number([](double degrees) {
+        wr64::dlrewrite::set_field_of_view(degrees);
+    }));
 
     // Every water setting, in one tab, immediately after Graphics. The master
     // switch used to sit in the Graphics tab with the rest here, which meant
@@ -410,46 +423,19 @@ void init() {
     // They are what gets written into water.json, and an id that matches
     // nothing does not fail loudly, it quietly resolves to some other entry.
     //
-    // Every callback ignores Temporary changes: the tab asks for confirmation,
-    // so a value takes effect on Apply, and on Load at startup.
-    auto on_choice = [](std::function<void(uint32_t)> apply) {
-        return [apply](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-                       recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                apply(*choice);
-            }
-        };
-    };
-    auto on_percent = [](std::function<void(float)> apply) {
-        return [apply](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-                       recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const double* percent = std::get_if<double>(&value)) {
-                apply(static_cast<float>(*percent));
-            }
-        };
-    };
 
-    // Best by default, which is what the water was tuned against. This default
-    // is the one that decides what a new profile gets, since the Load callback
-    // runs before the first frame and overwrites the one in src/water.cpp.
+    // Best by default, which is what the water was tuned against. With a saved
+    // water.json its Load callback sets the renderer before the first frame; on a
+    // first run there is no file and no callback, so the defaults in
+    // src/water.cpp apply -- keep the two the same.
     water.add_enum_option(
-        "water_quality", "Water quality",
-        "<recomp-color primary>Original</recomp-color>: the game's own water, exactly as it "
-        "was. Adds no cost.<br /><br />"
-        "<recomp-color primary>Enhanced</recomp-color>: new lighting from the sun and sky, "
-        "colour that deepens with the water, refraction, wakes that linger behind each craft "
-        "and wash along the shore.<br /><br />"
-        "<recomp-color primary>Best</recomp-color>: Enhanced, plus reflections of the scenery "
-        "and fine spray. The most demanding: on a laptop it can double the time spent drawing "
-        "each frame.<br /><br />"
-        "The waves themselves, and how the craft handles on them, are the same at every "
-        "setting.",
+        "water_quality", "Water Quality",
+        "<recomp-color primary>Original</recomp-color>: the game's own water.<br /><br />"
+        "<recomp-color primary>Enhanced</recomp-color>: sun and sky lighting, colour that "
+        "deepens with the water, refraction, and wakes that linger.<br /><br />"
+        "<recomp-color primary>Best</recomp-color>: Enhanced plus reflections and spray. The "
+        "most demanding.<br /><br />"
+        "The waves, and how the craft handles on them, are the same at every setting.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "original", "Original" },
             { 1u, "modern", "Enhanced" },
@@ -461,7 +447,7 @@ void init() {
     }));
 
     water.add_enum_option(
-        "water_style", "Water style",
+        "water_style", "Water Style",
         "The colours of Enhanced and Best water.<br /><br />"
         "<recomp-color primary>Classic</recomp-color>: the game's own colours and "
         "transparency, with the new effects on top.<br /><br />"
@@ -488,28 +474,25 @@ void init() {
     // saved then is still read. 50% is each style's usual look.
     water.add_percent_number_option(
         "aqua_clarity", "Clarity",
-        "How clear the water is. 50% is the usual look.<br /><br />"
-        "Lower makes the water murkier, which shows most in the shallows. Higher lets you see "
-        "what is under the surface -- the sea floor, fish, the dolphin -- and brings back the "
-        "original game's clear water colour; at 100% it is fully see-through.<br /><br />"
-        "In two-player races only the murkier half applies. Not used by the Classic style, "
-        "which keeps the game's own transparency.",
+        "How clear the water is. 50% is the usual look. Lower is murkier; higher shows the "
+        "sea floor and fish below, fully see-through at 100%. In two-player races only lower "
+        "values have an effect.",
         50.0);
     water.add_option_change_callback("aqua_clarity", on_percent([](float percent) {
         wr64::water::set_clarity(percent);
     }));
 
     water.add_percent_number_option(
-        "aqua_brightness", "Aqua brightness",
-        "Darkens or lightens the Aqua water, from well under half as bright to more than "
-        "twice. 50% is the usual look. Reflections and foam keep their own brightness.",
+        "aqua_brightness", "Aqua Brightness",
+        "Darkens or lightens the Aqua water. 50% is the usual look. Reflections and foam keep "
+        "their own brightness.",
         50.0);
     water.add_option_change_callback("aqua_brightness", on_percent([](float percent) {
         wr64::water::set_aqua_brightness(percent);
     }));
 
     water.add_percent_number_option(
-        "aqua_tint", "Aqua tint",
+        "aqua_tint", "Aqua Tint",
         "Shifts the Aqua water from deep blue at 0% to green turquoise at 100%. 50% is the "
         "usual look.",
         50.0);
@@ -520,7 +503,7 @@ void init() {
     // Fine surface detail, separate from the cartridge's waves. The game's own
     // wave simulation is untouched by any of this: handling does not change.
     water.add_enum_option(
-        "water_ripples", "Surface ripples",
+        "water_ripples", "Surface Ripples",
         "Fine detail on the surface of Enhanced and Best water, added on top of the game's "
         "waves rather than replacing them. <recomp-color primary>Normal</recomp-color> is the "
         "usual look.",
@@ -559,10 +542,10 @@ void init() {
 
     // Main Volume did nothing until this. recompui defines the slider and reads
     // it back, and nothing upstream ever applies it -- the port is expected to,
-    // and this one was not. The callback covers all three ways it changes:
-    // Load, when the saved setting is read at startup; Temporary, while the
-    // slider is being dragged, which is what makes it audible as you move it;
-    // and Permanent, on Apply.
+    // and this one was not. The Sound tab has no Apply button (recompui creates
+    // it without confirmation), so the callback hears Load when the saved setting
+    // is read at startup and Permanent on every step of the slider, which is what
+    // makes the volume follow the handle as it moves.
     auto& sound = recompui::config::create_sound_tab();
     sound.add_option_change_callback(
         recompui::config::sound::options::main_volume,
@@ -592,7 +575,7 @@ void init() {
 
     sound.add_bool_option(
         "mute_unfocused", "Mute When Not In Focus",
-        "Silences the game while another window has focus. Feedback stops with it.",
+        "Silences the game, and stops controller rumble, while another window has focus.",
         true);
     sound.add_option_change_callback(
         "mute_unfocused",
@@ -621,6 +604,10 @@ void init() {
     // ocarina, a quick-save -- declare them here so they appear in the
     // remapping list.
 
+    // Whether this is a first run, asked before finalize(): loading a missing
+    // settings file writes one with the defaults, so afterwards it always exists.
+    const bool first_run = !std::filesystem::exists(config_directory() / "graphics.json");
+
     // Loads the player's saved settings from disk. Must come after every tab.
     recompui::config::finalize();
 
@@ -631,24 +618,26 @@ void init() {
     // 320x240, and aspect ratio is Expand, which widens the frustum to whatever
     // shape the window is. Only the window mode defaults to Windowed.
     //
-    // This runs after finalize() and only when the player has no saved graphics
-    // settings, which is what makes it a first-run default rather than an
-    // override: choose Windowed in the menu and that choice is written to
-    // graphics.json and respected from then on. Setting it before finalize()
-    // does not work -- the option map does not exist until it has loaded, and
+    // Only when the player had no saved graphics settings, which is what makes it
+    // a first-run default rather than an override: choose Windowed in the menu and
+    // that choice is saved and respected from then on. It is written after
+    // finalize() -- the option map does not exist until the file has loaded, and
     // writing into it faults.
     //
-    // Both copies are set. recompui owns the value the menu shows, ultramodern
-    // owns the one the renderer reads, and the graphics tab syncs the two on
-    // change; setting only one leaves the menu and the window disagreeing.
+    // The Graphics tab confirms its changes, so set_option_value only stages the
+    // value; save_config() applies it, which is what the Apply button does, and
+    // writes it. Without that the menu showed Fullscreen as an unapplied change
+    // and nothing was saved. ultramodern's copy, which the renderer reads, is set
+    // as well, so the first window opens fullscreen either way.
     //
-    // HUD Placement is left at the library's default. It only moves 2D content
-    // that names an edge through RT64's extended GBI, and this game predates
-    // that; its HUD is kept at 4:3 in the middle of the frame regardless.
-    if (!std::filesystem::exists(config_directory() / "graphics.json")) {
-        recompui::config::get_graphics_config().set_option_value(
+    // HUD Placement is left at the library's default; the display-list rewriter
+    // anchors the race HUD to the frame's edges whenever it is not Original.
+    if (first_run) {
+        auto& graphics_config = recompui::config::get_graphics_config();
+        graphics_config.set_option_value(
             recompui::config::graphics::options::wm_option,
             static_cast<uint32_t>(ultramodern::renderer::WindowMode::Fullscreen));
+        graphics_config.save_config();
 
         ultramodern::renderer::GraphicsConfig gfx = ultramodern::renderer::get_graphics_config();
         gfx.wm_option = ultramodern::renderer::WindowMode::Fullscreen;

@@ -8,7 +8,7 @@
 >   and says the fallback is to "re-pin to Rev A". Phase 01 measured it and the
 >   project re-pinned: everything ships against **Wave Race 64 (USA) Rev A**,
 >   also called v1.1. Every address in the repository is tied to Rev A.
-> - **The phases ran out.** The plan stops at phase 07; the work continued past
+> - **The phases ran out.** The plan stops at phase 08; the work continued past
 >   it -- rumble, audio, the debug menu, mods -- without new phase numbers. What
 >   changed and when is in [../CHANGELOG.md](../CHANGELOG.md) and
 >   [releases/](releases).
@@ -114,7 +114,8 @@ Widescreen and arbitrary resolution through RT64, RecompFrontend for menus and
 rebindable input. High frame rate without touching the game: physics and camera
 are tied to a 30 Hz update, so the game keeps its rate and RT64 interpolates
 each object's transform between game frames, as the other ports do. Then CI that
-builds without a ROM, and a first-run flow that explains the ROM requirement.
+builds without a ROM (not done: releases are built and tested by hand), and a
+first-run flow that explains the ROM requirement.
 **Gate:** a stranger with a dump and no context can build and play it.
 *Met: 0.1.0, 2026-09-04.*
 
@@ -262,7 +263,7 @@ nothing a player could see. The second round started from the picture.
    rate identical over a 2P race.
 6. *Kept from round one:* a 150-unit limit on object pairs. The glides it
    refuses were not caught in the demo race's captures, but they are the purple
-   course-edge buoys sliding in the opening sequence at maximum draw distance,
+   course-edge buoys sliding in the opening sequence at the draw distance then called Maximum,
    and with the limit that is confirmed gone in play.
 7. *The riders, reported next.* After the camera fix the riders' own
    interpolation had not improved. Grouping the log's transforms into riders
@@ -280,8 +281,8 @@ Documented in `docs/TRANSFORM-PAIRING.md` (manual and recipe), `PORTING.md` §7
 regions, the racers' matrices).
 
 **Gate:** a captured 2P VS start shows no alternation in either view; riders
-hold together racing and on the select screen; and a race at maximum draw
-distance shows no sliding at the display's rate. *All three are met; the third
+hold together racing and on the select screen; and a race at the draw distance
+then called Maximum shows no sliding at the display's rate. *All three are met; the third
 confirmed in the opening sequence, where the course-edge buoys slid.*
 
 ## Standing constraints

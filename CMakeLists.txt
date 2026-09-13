@@ -282,8 +282,9 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
-    # Patches replacing recompiled functions. RECOMP_FUNC is weak under Clang,
-    # so these strong definitions win at link time without regenerating anything.
+    # Patches: replacements for recompiled functions, wrappers registered by
+    # address, and the functions recomp/wr64.toml's hooks call. RECOMP_FUNC is
+    # weak under Clang, so these strong definitions win at link time.
     file(GLOB WR64_PATCH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/*.cpp")
     list(APPEND WR64_SOURCES ${WR64_PATCH_SOURCES})
 endif()

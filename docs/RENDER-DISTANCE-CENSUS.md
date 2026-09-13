@@ -8,10 +8,10 @@ The question matters because a "draw distance" setting in a PC port cannot do
 anything a renderer-side change can reach. In Wave Race 64 the far plane is
 already at 16,192, about twenty times further out than anything a course
 contains; raising it reveals nothing. What limits the view is the game's own
-culling, decided per kind of object, in that object's own code, **before
-anything reaches a display list**. A renderer cannot put back what was never
-submitted. So a correct setting is a list of the game's own limits, and the list
-has to be measured before it can be scaled.
+culling, **decided before anything reaches a display list**. A renderer cannot
+put back what was never submitted. The census found that culling is almost
+entirely one integer per course and view, and a setting built on it had to be
+measured before it could be chosen.
 
 This document has two halves: how to run the census, and how to build the same
 thing in another project.
@@ -244,8 +244,9 @@ ever got far away.
 Once one limit is found, its neighbours are the cheapest place to look for the
 next. Follow the same pointer the game's own code dereferences rather than
 indexing an array — no stride to get wrong — and dump on a **course change**,
-not a pointer change: this game leaves the pointer at the array's base for every
-course, so a dump waiting for it to move dumps once and never again.
+not a pointer change: in one player this game leaves the pointer at the same
+struct for every course, so a dump waiting for it to move dumps once and never
+again. In two-player it moves per view; dump each view's copy by its stride.
 
 ---
 
@@ -256,7 +257,7 @@ course, so a dump waiting for it to move dumps once and never again.
 | `src/dlrewrite.cpp` | Census mode in the display-list walker; `dump_course_struct` |
 | `tools/render_distance_census.py` | The analysis and the verdicts |
 | `tools/scripts/race.txt` | A scripted race — useful for menus, *not* for the census |
-| `include/wr64/drawdistance.h` | The limits found so far, and what has been ruled out |
+| `include/wr64/drawdistance.h` | The limit, what it does not reach, and what was ruled out |
 | `docs/GAME-INTERNALS.md` | §6, the game facts the census produces |
 
 ## Keeping this current

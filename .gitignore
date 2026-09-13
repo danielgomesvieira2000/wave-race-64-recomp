@@ -18,8 +18,6 @@ baserom*
 # Recompiler output (regenerated from the user's ROM)
 /RecompiledFuncs/
 /RecompiledPatches/
-recomp_overlays.inl
-funcs.h
 dump.toml
 data_dump.toml
 
@@ -67,10 +65,18 @@ desktop.ini
 /recomp/wr64.us.rev1.asm.yaml
 
 # Window captures from tools/capture_window.ps1.
-shots/
+/shots/
 
-# Runtime output when the game is started from the repository root
-# (before the settings directory was registered; kept out of the tree).
-mods/
-mod_config/
-saves/
+# Runtime output when the game is started from the repository root, anchored so
+# that examples/mods/ is not caught by it.
+/mods/
+/mod_config/
+/saves/
+/*.log
+
+# Claude Code worktrees and macOS Finder metadata.
+/.claude/
+.DS_Store
+
+# Output of tools/jal_scan.py, regenerated on demand.
+/recomp/jal_targets.txt

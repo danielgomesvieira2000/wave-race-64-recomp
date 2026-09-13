@@ -418,15 +418,18 @@ which is what a player sees as pop-in.
 ```
 
 `$s2` is `lw 0xA4($v0)` at `0x8006E9AC`, and `$v0` is the word at **`0x801C0C80`**
--- a pointer the game leaves there to a per-course struct. **The pointer does not
-move between courses**: it reads `0x801CB058` on every one, so the game copies the
-current course's environment into a single struct rather than indexing an array.
-A diagnostic that waits for the pointer to change to know the course changed
-therefore fires once and never again. So the limit is
+-- a pointer the game leaves there to the course's environment struct. **The
+pointer does not move between courses**: in a one-player race it reads
+`0x801CB058` on every one, because the game copies each course's values into the
+struct rather than indexing an array, so a diagnostic that waits for the pointer
+to change to know the course changed fires once and never again. It does move
+between *views*: two players have a copy each, and the game repoints it before
+drawing each (*Each view has its own copy of the course's environment*, below).
+So the limit is
 
 | | |
 |---|---|
-| Pointer to the struct | `0x801C0C80` |
+| Pointer to the struct | `0x801C0C80`, reading `0x801CB058` for view 0 |
 | The distance | struct `+0xA4`, an `int`, **5000** on courses 0 and 1, **6000** on course 2 |
 | Neighbours | `+0xA0` reads 400 and `+0xA8` reads 135; both are compared elsewhere in the same function |
 
@@ -489,7 +492,7 @@ limit at `+0xA4` is still the right thing to key on.
 
 Raising `+0xA4` lets the game submit the buoys it was skipping, and matrices,
 display list and renderer follow -- **up to 32 of them a view**, which is the
-next limit (below). At four times, 5000 to 20000, the draws counted went from
+next limit (below), and which the port removes at Extended. At four times, 5000 to 20000, the draws counted went from
 12-23 to 40-54 and the furthest from 4,096-4,570 to 7,062-8,617. Those counts
 predate knowing the buoys have 32 slots, so they cannot all have been buoys with
 a slot of their own; read them as draws, not buoys.
@@ -972,7 +975,7 @@ Note how close the display list sits to the buoys' `0x0102CD78` and `0x0102CD90`
 the same neighbourhood of the same segment, which is a hint they belong to one
 object system with different types. `func_8006E674` does branch on a type field at
 `+0x10` of each record; types 4 and 5 are always marked hidden by it (*The buoys
-have 32 matrix slots a view*, above).
+have a slot limit, and it is the buffer's*, above).
 
 **They are not culled by distance at all.** Measured over a full lap, thirty
 frames spread across forty-five seconds of racing:
@@ -1090,12 +1093,10 @@ game's **inset** scissor (`8,20`-`311,219`), as horizontal strips 5 pixels tall
 in four textured tiles per row spanning `x 0..96`, `96..192`, `192..288` and
 `288..384`, with rows running to `y 288`: the game overdraws its own 320x240 by
 20% in both axes, and the overdraw is not centred (`0..384` centres on 192). A
-port widening the frame has to get all four tiles out to its edges. **This port
-does not yet.** The wipe stays boxed in the middle 4:3 with the previous screen's
-background standing either side of it, and anchoring the tiles to both edges of
-the frame placed them across it in the renderer's own arithmetic without changing
-what reached the screen -- so something after placement is still deciding the
-width. Unsolved.
+port widening the frame has to get all four tiles out to its edges. This port
+does since 0.8.0; anchoring the tiles to the frame's edges was not enough on its
+own, and what was: [PORTING.md](PORTING.md), *The transition curtain: let RT64
+widen what it already would*.
 
 ### The sky
 

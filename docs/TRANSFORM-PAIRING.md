@@ -13,7 +13,7 @@ Three defects here, and the fix for each -- the first two inside RT64
 |---|---|---|
 | **The 2P race-start burst.** For over a second after a two-player race fades in, each view flickers between two shots. | For 33 consecutive game frames each view's camera was paired with *another* view's previous camera. | A camera only continues a previous camera on the same framebuffer slot that drew into mostly the same part of the screen. |
 | **Riders coming apart.** In a race, one part of a rider -- an arm, a leg, a piece of the craft -- jumps ahead of the body every few frames; on the watercraft select screen, parts jump when the selection changes. | RT64 pairs a rider's parts by draw signature and nearest position. Mirrored parts share a signature, so a part's own previous pose is taken by its twin, or found under a different draw call when the mesh changes. The part left without a pair is drawn at its new place, then snaps again the next frame because it restarts from zero velocity. | Each part is paired **by identity**: an explicit transform id from its matrix's address, set by the rewriter before every part's matrix load, with its translation always interpolated. |
-| **Objects gliding across the course.** Purple course-edge buoys sliding along their rows, plainest in the opening sequence at maximum draw distance; repeated objects -- buoys, markers, spray -- paired with one hundreds to thousands of units away and drawn sliding between them. | RT64 accepts any object pair, whatever the distance. | A pair further apart than 150 world units is refused. |
+| **Objects gliding across the course.** Purple course-edge buoys sliding along their rows, plainest in the opening sequence at the draw distance then called Maximum; repeated objects -- buoys, markers, spray -- paired with one hundreds to thousands of units away and drawn sliding between them. | RT64 accepts any object pair, whatever the distance. | A pair further apart than 150 world units is refused. |
 
 And the instruments that found them: a **pairing log** that records every
 camera and object pair, a **window capture** that records every presented
@@ -187,7 +187,7 @@ reported.
 
 **Seen on screen: the purple course-edge buoys.** Where the sliding shows is
 the opening sequence before the attract demo race -- the camera flying over the
-course with no input -- at maximum draw distance, with interpolation on: rows
+course with no input -- at the draw distance then called Maximum, with interpolation on: rows
 of identical edge buoys, each paired with a neighbour 400 units along the row as
 the game repacks its buoy table, slid along the row. With the limit, confirmed
 fixed in play; the log of that sequence (1,410 frames) shows no pair over 150

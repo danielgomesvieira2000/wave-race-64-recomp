@@ -58,7 +58,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -97,9 +96,9 @@ constexpr int32_t  kMaxA = 256, kMaxB = 64;
 constexpr uint32_t kBlockA = 0x00750000u;
 constexpr uint32_t kBlockB = 0x00760000u;
 
-// Commands the rest of a frame needs after the buoys, kept free. Measured: 928
-// before them and 1,723 at the end of a frame with 64, so under 300 after them
-// at the most; this is more than twice that.
+// Commands the rest of a frame needs after the buoys, kept free. Measured with
+// every buoy drawn: 928 before them and 1,723 at the end of the frame, so under
+// 300 after them at the most; this is more than twice that.
 constexpr uint32_t kReserve = 700;
 constexpr uint32_t kCommandsA = 8;              // per table A buoy
 constexpr uint32_t kCommandsB = 15;             // per table B buoy, with its arrow

@@ -1,6 +1,6 @@
-"""Two patches to RT64 that widescreen in Wave Race 64 needs.
+"""The patches to RT64 this port needs, listed below.
 
-Both come from the same fact about this game: it does not draw to its whole
+The first two, which widescreen in Wave Race 64 needs, come from the same fact about this game: it does not draw to its whole
 320x240 framebuffer. Every frame -- title, attract, menus, racing -- is drawn
 inside the region from (8, 20) to (311, 219), a 303x199 window with black
 borders around it that a CRT's overscan was meant to hide. On a modern display
@@ -94,10 +94,9 @@ Run from the repository root:
 """
 
 import sys
-from pathlib import Path as _Path
-
-sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 REPO = Path(__file__).resolve().parent.parent
 RT64 = REPO / "lib" / "RT64" / "src"
@@ -815,7 +814,7 @@ def main():
 
     # The inspector hook lives in its own script because it answers a different
     # question, but the port links against the symbol it adds, so a build needs
-    # it as much as the four above. One command applies everything required.
+    # it as much as the patches above. One command applies everything required.
     import patch_rt64_inspector
     patch_rt64_inspector.main()
 
@@ -838,9 +837,9 @@ def main():
 
     # The modern water renderer. Last, because it is the largest and touches
     # several of the files the patches above do -- applying it first would make
-    # their anchors harder to find, not the other way round. Original is the
-    # default setting, so this costs a player who does not want it nothing, but
-    # the port does not compile without the headers it adds.
+    # their anchors harder to find, not the other way round. Water quality
+    # Original is a true bypass, so this costs a player who does not want it
+    # nothing, but the port does not compile without the headers it adds.
     import patch_rt64_water
     if patch_rt64_water.main() != 0:
         raise SystemExit(1)

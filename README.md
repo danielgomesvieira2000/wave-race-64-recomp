@@ -89,7 +89,7 @@ running natively:
   drawn -- but there is one number per course and view that decides how much of
   the course is submitted at all, and it covers nearly all of the fixed scenery.
   Extended raises it to the far plane, draws every buoy in view where the game has
-  room for 32, and extends the sea to the horizon, in one and two player alike.
+  room for only 32 small and 12 racing buoys, and extends the sea to the horizon, in one and two player alike.
 - **Controller rumble**, which the game never had: it shipped a year before the
   Rumble Pak and has no rumble code at all, so the port works the feedback out
   from the race itself -- the slap of landing off a wave, buoys taken and missed,
@@ -153,8 +153,8 @@ If something sits in the wrong place, that window is how to say which thing.
 
 ## Known issues
 
-- **Windows** is what this project builds and tests today. A fork carries native
-  macOS support; wider platform coverage is intended.
+- **macOS** builds from this tree but is untested by the maintainers and has no
+  release binary; the Linux build has only been run on a software rasteriser.
 
 Not bugs, though they get reported as such: in a **4:3 window** the picture is
 letterboxed, because the game draws a 303x199 region of its 320x240 framebuffer

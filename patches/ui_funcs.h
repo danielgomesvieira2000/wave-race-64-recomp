@@ -14,9 +14,9 @@
 //
 // What recompui actually needs from here today is the event structures, which
 // live in the library itself; the indirection exists so a port can add its own
-// mod-facing declarations alongside them. This project has no mods yet, so the
-// file is exactly that include and nothing more. When Wave Race grows a mod API
-// the generated declarations belong here.
+// mod-facing declarations alongside them. Mods load, but this port exports no
+// API of its own to them, so the file is exactly that include and nothing more.
+// If it ever does, the declarations belong here.
 
 #include "recompui/event_structs.h"
 

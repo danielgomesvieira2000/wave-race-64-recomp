@@ -867,27 +867,6 @@ const char* rsp_exit_name(RspExitReason r) {
     return "?";
 }
 
-// Dumps the task's audio command list (ABI 1: eight bytes per command, opcode in
-// the top byte) so the command that overruns DMEM can be identified from what
-// the game asked for rather than from where the store landed.
-void dump_audio_task(const uint8_t* rdram, RspExitReason reason) {
-    static const char* const kOps[16] = {
-        "SPNOOP", "ADPCM", "CLEARBUFF", "ENVMIXER", "LOADBUFF", "RESAMPLE", "SAVEBUFF", "SEGMENT",
-        "SETBUFF", "SETVOL", "DMEMMOVE", "LOADADPCM", "MIXER", "INTERLEAVE", "POLEF", "SETLOOP" };
-    const uint32_t count = g_audio_task_size / 8;
-    std::fprintf(stderr, "[wr64-audio] task failed with %s: %u commands at 0x%08X\n",
-                 rsp_exit_name(reason), count, g_audio_task_data);
-    for (uint32_t i = 0; i < count && i < 200; ++i) {
-        const uint32_t addr = g_audio_task_data + i * 8;
-        const uint32_t w0 = *reinterpret_cast<const uint32_t*>(rdram + (addr & 0x00FFFFFFu));
-        const uint32_t w1 = *reinterpret_cast<const uint32_t*>(rdram + ((addr + 4) & 0x00FFFFFFu));
-        const uint32_t op = w0 >> 24;
-        std::fprintf(stderr, "[wr64-audio]  %3u %-10s f=%02X a=%04X  b=%04X c=%04X   (%08X %08X)\n",
-                     i, kOps[op & 15], (w0 >> 16) & 0xFF, w0 & 0xFFFF, w1 >> 16, w1 & 0xFFFF, w0, w1);
-    }
-    std::fflush(stderr);
-}
-
 OSTask g_audio_task{};
 
 // Re-runs the failed task with only its first `count` commands, exactly as
