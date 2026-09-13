@@ -50,8 +50,30 @@
 // **Not reached by this, and why**
 //
 // One kind on course 2 -- display list `0x0102CE78` with texture `0x01015220`,
-// 746 sites -- is culled at about 5,100 and did not move when `+0xA4` doubled
-// (5,108 against 5,083). Its limit is somewhere else and has not been found.
+// 53 positions -- is drawn out to about 5,100 and no further, and it did not
+// move when `+0xA4` doubled from 6,000 to 12,000: 5,108 against 5,083. So it
+// has a limit of its own. Where that limit lives was searched for and is still
+// unknown:
+//
+//   - **Not in the per-course struct.** No field reads between 4,800 and 5,400
+//     on any course dumped; the only value near it is `+0xA4` itself.
+//   - **Not either of the game's two hardcoded `5000.0f` constants.** One
+//     belongs to `func_800A68A4`, which *places* something at x = 5000 and asks
+//     the water its height there rather than comparing a distance; the other to
+//     `func_800AC184`, in a loop over a table of 0xBC-stride entries.
+//
+// It is one kind on one course, against the 49 of 57 that `+0xA4` governs.
+//
+// **A trap worth recording, because it nearly cost a measured result.** It is
+// tempting to argue such a kind is not distance-culled at all but *selected*,
+// the way the direction arrows below are, and there is evidence for it: in 52%
+// of frames a nearer instance is skipped while a further one is drawn, which no
+// "closer than N" rule can do by itself. But the same is true of the **buoys**,
+// whose cap is proven causally, and they skip a nearer buoy in **92%** of
+// frames. The game does both -- it caps by distance *and* chooses among what is
+// inside the cap. A census verdict built on "skips a nearer one" reclassified
+// the buoys, and would have discarded the causal result; the census reports that
+// share as a column now and does not rule on it.
 //
 // The course's yellow direction arrows are not culled by distance at all, so
 // there is nothing here to scale. Measured over a lap: one or two drawn per

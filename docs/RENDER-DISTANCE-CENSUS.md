@@ -85,6 +85,8 @@ frame,course,list,texture,x,y,z,distance,camx,camz
 ```
 
 * **reach** — the 99.5th percentile of the distances it was drawn at.
+* **skips near** — how often a further instance was drawn while a nearer one was
+  left out; see below, and do not read it as a disqualifier.
 * **max drawn** — the furthest single draw, which overshoots; see below.
 * **furthest** — the furthest any of its sites ever was from the camera.
 * **drawn<=reach** — of the frames where a site was within the reach, how many
@@ -104,7 +106,7 @@ to read **5,000**, and the census recovers 4,997 without being told.
 | `moves` | Its positions are not fixed — another racer, spray, part of the player's craft. The test does not apply. |
 | `at origin` | Drawn under no world matrix at all: the HUD, the sky, a full-screen effect. The census has nothing to say about it. |
 
-### Three traps this already fell into
+### Four traps this already fell into
 
 **The cull is applied when the list is built, not when it is drawn.** A buoy
 accepted at 4,999 is still in the list a frame or two later, when the camera
@@ -115,6 +117,18 @@ than the maximum -- the 99.5th percentile of the same draws is 4,997. It
 reads 5,969 on a course whose limit is 6,000 and 9,916 on a class whose limit
 looks like 10,000. The maximum is still printed, because the size of the tail
 is worth seeing.
+
+**"It skips a nearer one" does not mean there is no cap.** The report carries a
+`skips near` column: the share of frames in which the kind drew a further
+instance while leaving a nearer one out. No "closer than N" rule can do that on
+its own, so it is tempting to read a high share as proof the kind is *selected*
+rather than culled -- the way this game picks its direction arrows by the racing
+line. That reasoning is wrong here, and the buoys are the counter-example: their
+cap is proven causally, by doubling the number and watching the reach double,
+and they still skip a nearer buoy in **92%** of frames. The game caps by
+distance *and* chooses among what is inside the cap. A verdict built on this
+column reclassified the buoys and would have thrown the causal result away, so
+it is reported and not ruled on.
 
 **`reach` is a lower bound, not the limit.** A kind with forty sites spread along
 the course has one sitting at the limit in most frames, and its reach lands

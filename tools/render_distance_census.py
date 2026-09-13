@@ -176,12 +176,21 @@ def without_origin_draws(per_frame):
 
 
 def sites_of(per_frame):
-    """The distinct positions a kind was drawn at, and how many draws in all."""
+    """The distinct positions a kind was drawn at, and how many draws in all.
+
+    A site is an **XZ**, not an XYZ. The distance this measures is horizontal --
+    the game's own culls square dx and dz and leave dy out -- so height is not
+    part of where a thing is for this purpose, and counting it makes one object
+    that bobs look like hundreds of objects. A floating marker on course 2 was
+    credited with 746 sites that way, all of them the same (-1400, 4537) at a
+    slightly different height each frame, which was enough to keep it out of the
+    "moves" bucket and make its reach look better evidenced than it was.
+    """
     seen = set()
     draws = 0
     for instances in per_frame.values():
-        for x, y, z, _d in instances:
-            seen.add((x, y, z))
+        for x, _y, z, _d in instances:
+            seen.add((x, z))
             draws += 1
     return seen, draws
 
@@ -206,7 +215,7 @@ def opportunity(sites, cameras, reach):
     furthest_sq = 0.0
     beyond = 0
     for _frame, (camx, camz) in some_cameras:
-        for x, _y, z in some_sites:
+        for x, z in some_sites:
             d = (x - camx) ** 2 + (z - camz) ** 2
             if d > furthest_sq:
                 furthest_sq = d
@@ -227,13 +236,49 @@ def hit_rate(sites, cameras, per_frame, reach):
     close = 0
     drawn = 0
     for frame, (camx, camz) in some_cameras:
-        for x, _y, z in some_sites:
+        for x, z in some_sites:
             if (x - camx) ** 2 + (z - camz) ** 2 <= squared:
                 close += 1
                 if frame in per_frame:
                     drawn += 1
                 break
     return (drawn / close) if close else 0.0
+
+
+def skips_nearer(sites, cameras, per_frame):
+    """How often a nearer instance was skipped while a further one was drawn.
+
+    It is tempting to read this as proof there is no distance rule -- if the rule
+    were "closer than N" then everything nearer than the furthest thing drawn
+    was also within N, so how could it be left out? That reasoning is wrong, and
+    the buoys are the counter-example: their distance cap is *proven*, causally,
+    by doubling the number and watching their reach double, and they still skip
+    a nearer buoy in **92%** of frames.
+
+    So the game does both. It caps by distance and it also chooses which of the
+    instances inside that cap to draw. This number says how much choosing is
+    going on; it cannot say there is no cap, and a verdict that treated it that
+    way reclassified the buoys and would have thrown away a measured result.
+    """
+    close = 0
+    skipped = 0
+    for frame, instances in per_frame.items():
+        camera = cameras.get(frame)
+        if camera is None:
+            continue
+        camx, camz = camera
+        drawn = {(round(x), round(z)) for x, _y, z, _d in instances}
+        ranked = sorted((((x - camx) ** 2 + (z - camz) ** 2, (x, z)) for x, z in sites))
+        furthest = max((d for d, site in ranked
+                        if (round(site[0]), round(site[1])) in drawn), default=None)
+        if furthest is None:
+            continue
+        close += 1
+        for d, site in ranked:
+            if d < furthest and (round(site[0]), round(site[1])) not in drawn:
+                skipped += 1
+                break
+    return (skipped / close) if close else 0.0
 
 
 def analyse(rows, cameras, min_frames, include_all):
@@ -246,7 +291,7 @@ def analyse(rows, cameras, min_frames, include_all):
         if not per_frame:
             drawn = sorted(d for i in all_draws.values() for *_p, d in i)
             results.append(("at origin", percentile(drawn, REACH_PERCENTILE),
-                            drawn[-1], 0.0, 0.0, len(all_draws), 0, 0,
+                            drawn[-1], 0.0, 0.0, 0.0, len(all_draws), 0, 0,
                             dlist, texture))
             continue
         sites, draws = sites_of(per_frame)
@@ -254,7 +299,7 @@ def analyse(rows, cameras, min_frames, include_all):
         reach = percentile(drawn, REACH_PERCENTILE)
         excuse = classify(sites, draws)
         if excuse is not None:
-            results.append((excuse, reach, drawn[-1], 0.0, 0.0, len(per_frame),
+            results.append((excuse, reach, drawn[-1], 0.0, 0.0, 0.0, len(per_frame),
                             len(sites), 0, dlist, texture))
             continue
 
@@ -267,7 +312,13 @@ def analyse(rows, cameras, min_frames, include_all):
             call = "CULLED" if hit >= 0.5 else "unclear"
         else:
             call = "not culled"
-        results.append((call, reach, drawn[-1], furthest, hit, len(per_frame),
+        # Only where a distance verdict was reached and there is more than one
+        # instance to choose between: everywhere else the question is empty and
+        # the pass is not cheap.
+        skips = 0.0
+        if call in ("CULLED", "unclear") and len(sites) > 1:
+            skips = skips_nearer(sites, cameras, per_frame)
+        results.append((call, reach, drawn[-1], furthest, hit, skips, len(per_frame),
                         len(sites), beyond, dlist, texture))
     return results
 
@@ -276,15 +327,16 @@ def report(results, wanted, show_all):
     """Print one course's table, and return its verdict per kind."""
     results.sort(key=lambda r: (ORDER[r[0]], -r[1]))
     print(f"  {'verdict':<10} {'reach':>7} {'max drawn':>10} {'furthest':>9} "
-          f"{'drawn<=reach':>13} {'frames':>7} {'sites':>6} {'beyond':>8}"
-          f"  list / texture")
-    for (call, reach, top, furthest, hit, nframes, nsites, beyond,
+          f"{'drawn<=reach':>13} {'skips near':>11} {'frames':>7} {'sites':>6} "
+          f"{'beyond':>8}  list / texture")
+    for (call, reach, top, furthest, hit, skips, nframes, nsites, beyond,
          dlist, texture) in results:
         if not show_all and call.lower() not in wanted:
             continue
         far = f"{furthest:>9.0f}" if furthest else f"{'-':>9}"
         rate = f"{hit:>12.0%}" if furthest else f"{'-':>12}"
-        print(f"  {call:<10} {reach:>7.0f} {top:>10.0f} {far} {rate} "
+        skip = f"{skips:>10.0%}" if skips else f"{'-':>10}"
+        print(f"  {call:<10} {reach:>7.0f} {top:>10.0f} {far} {rate} {skip} "
               f"{nframes:>7} {nsites:>6} {beyond:>8}  {dlist} {texture}")
 
     tally = defaultdict(int)
