@@ -106,8 +106,21 @@ draws, walks the menus and runs the attract race. The only Vulkan device there
 is Mesa's `llvmpipe` software rasteriser -- no GPU is passed through -- and even
 so the game held **14-21 fps against the 20 it asks for**, with water at
 Original. That is a correctness result, not a performance one: on llvmpipe
-nothing about frame cost generalises, and the modern water settings were not
-exercised.
+nothing about frame cost generalises.
+
+**Re-verified** with the sea extension and the draw distance at Maximum: builds
+with no warnings beyond the vendored libraries' CMake deprecations, boots, walks
+the menus, reaches the attract race at **16-20 fps**, and emits the ring --
+`48 sectors x 9 circles, 860 to 16192 units` -- with zero errors. That one line
+exercises the whole of the new path on Linux: the game-thread sampling through
+`func_8004D30C`, the publish and claim across threads, and the GBI emission.
+
+**Set water to Original before testing here.** The shipped default is High with
+the Aqua style, and on llvmpipe the modern renderer is roughly ten times slower
+than the game's own path -- a run at the default reached main loop tick 1,000 in
+900 seconds where Original reached 10,000 in a fraction of that, and never got
+past the title screen. That is a fact about a software rasteriser, not about the
+renderer.
 
 Settings, saves and mods live in `$XDG_DATA_HOME/WaveRace64Recomp`, or
 `~/.local/share/WaveRace64Recomp`.
