@@ -38,7 +38,8 @@ interop::WaterMaterial frame{};
 uint32_t frameRipples=uint32_t(RippleDetail::Normal);
 Style frameStyle=Style::Aqua;
 float frameBrightness=0.5f, frameTint=0.5f, frameClarity=0.5f;
-struct PendingFrame { uint32_t list; interop::WaterMaterial material; };
+bool frameOnePlayer=true;
+struct PendingFrame { uint32_t list; interop::WaterMaterial material; bool onePlayer; };
 std::deque<PendingFrame> pendingFrames;
 std::mutex frameMutex;
 bool initialized = false;
@@ -195,7 +196,7 @@ void set_quality(Quality value) { selected.store(std::min(uint32_t(value), 3u));
 void set_style(Style value) { selectedStyle.store(std::min(uint32_t(value), 2u)); }
 void set_aqua_brightness(float percent) { aquaBrightness.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
 void set_aqua_tint(float percent) { aquaTint.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
-void set_aqua_clarity(float percent) { aquaClarity.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
+void set_clarity(float percent) { aquaClarity.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
 void set_ripple_detail(RippleDetail value) { selectedRipples.store(std::min(uint32_t(value), 2u)); }
 void set_spray_enabled(bool enabled) { selectedSpray.store(enabled); }
 void toggle() {
@@ -225,11 +226,16 @@ void publish_frame(const uint8_t *rdram, uint32_t display_list) {
             set_spray_enabled(std::strcmp(v,"off")!=0 && std::strcmp(v,"0")!=0);
         }
         if (const char *v = std::getenv("WR64_WATER_DEBUG")) debugView.store(std::clamp(std::atoi(v),0,14));
+        // Percentages, as the sliders store them. For comparing captures of one
+        // setting against another without touching the saved settings.
+        if (const char *v = std::getenv("WR64_WATER_CLARITY")) set_clarity(float(std::atof(v)));
+        if (const char *v = std::getenv("WR64_WATER_BRIGHTNESS")) set_aqua_brightness(float(std::atof(v)));
+        if (const char *v = std::getenv("WR64_WATER_TINT")) set_aqua_tint(float(std::atof(v)));
         const char *rippleNames[]={"Soft","Normal","Strong"};
         const char *styleNames[]={"Modern","Classic","Aqua"};
-        std::fprintf(stderr,"[water] appearance: %s, %s ripples, spray %s\n",
+        std::fprintf(stderr,"[water] appearance: %s, %s ripples, spray %s, clarity %.0f%%, brightness %.0f%%, tint %.0f%%\n",
             styleNames[selectedStyle.load()],rippleNames[selectedRipples.load()],
-            selectedSpray.load() ? "On" : "Off");
+            selectedSpray.load() ? "On" : "Off",aquaClarity.load()*100,aquaBrightness.load()*100,aquaTint.load()*100);
         initialized = true;
     }
     const uint32_t tick = word(rdram, 0x80151960);
@@ -267,7 +273,8 @@ void publish_frame(const uint8_t *rdram, uint32_t display_list) {
     frame.surface.x = float(int32_t(word(rdram,0x80192458)));
     // The authored lake reflection was reviewed in the one-player fog path.
     // Do not apply that compatibility input to a different original layout.
-    if (word(rdram,0x800DAB28)!=1) frame.optics.y=0;
+    const bool onePlayer=word(rdram,0x800DAB28)==1;
+    if (!onePlayer) frame.optics.y=0;
     const uint32_t count=std::min(word(rdram,0x801982F0),4u);
     for (uint32_t i=0;i<4;i++) {
         interop::float4 craft{0,0,0,-1};
@@ -308,7 +315,7 @@ void publish_frame(const uint8_t *rdram, uint32_t display_list) {
         std::fflush(trace);
     }
     std::lock_guard lock(frameMutex);
-    pendingFrames.push_back({display_list & 0x7fffff,frame});
+    pendingFrames.push_back({display_list & 0x7fffff,frame,onePlayer});
     // The game double-buffers lists. The bound also covers skipped render tasks.
     while (pendingFrames.size() > 16) pendingFrames.pop_front();
 }
@@ -321,6 +328,7 @@ void begin_frame(uint32_t display_list) {
     frame = {};
     if (match == pendingFrames.end()) return; // Unknown tasks retain original water.
     frame = match->material;
+    frameOnePlayer = match->onePlayer;
     pendingFrames.erase(pendingFrames.begin(),std::next(match));
     frame.identity.x = frame.identity.z <= 9 ? float(uint32_t(quality())) : 0;
     frame.identity.y = float(debugView.load());
@@ -346,6 +354,7 @@ interop::WaterMaterial material(uint32_t view) {
     const interop::float4 beforeDeep = result.deepColor;
     const interop::float4 beforeShallow = result.shallowColor;
     const float beforeVisibility = result.optics.x;
+    const float beforeSeeThrough = result.optics.y;
     // Keep the published course profile immutable. Each view/draw applies the
     // current preference once, so repeated draws cannot amplify the ripples.
     constexpr float rippleScales[]={0.5f,1.0f,1.7f};
@@ -360,19 +369,62 @@ interop::WaterMaterial material(uint32_t view) {
         result.shallowColor.x *= 1.7f;
         result.shallowColor.y *= 1.30f;
         result.shallowColor.z *= 1.22f;
-        // All sliders are centered on the reviewed Aqua look. Tint shifts
+        // Both sliders are centered on the reviewed Aqua look. Tint shifts
         // blue toward turquoise without altering the reflected sky/scenery.
-        const float brightness = 0.65f + frameBrightness * 0.70f;
+        //
+        // The ranges are wide on purpose. They scale only the water body's own
+        // colour, which the shader then darkens by the lighting, hides behind
+        // the refracted bottom and the reflection, and compresses in tone
+        // mapping and gamma: the first ranges here, 0.65-1.35 and +-12-20%,
+        // came out as roughly +-15% and +-5% on screen, which read as a
+        // slider that does nothing. Brightness is exponential so that 50% is
+        // unchanged and each end is the same number of stops away.
+        const float brightness = std::pow(2.5f, frameBrightness * 2.0f - 1.0f);  // 0.4 to 2.5
         const float tint = frameTint * 2.0f - 1.0f;
         for (auto *color : {&result.deepColor, &result.shallowColor}) {
-            color->x *= brightness * (1.0f - tint * 0.20f);
-            color->y *= brightness * (1.0f + tint * 0.12f);
-            color->z *= brightness * (1.0f - tint * 0.12f);
+            color->x *= brightness * (1.0f - tint * 0.55f);
+            color->y *= brightness * (1.0f + tint * 0.30f);
+            color->z *= brightness * (1.0f - tint * 0.30f);
         }
-        result.deepColor.w *= 1.0f - frameClarity * 0.80f;
+    }
+    if (frameStyle != Style::Classic) {
+        // Clarity, for the two styles that shade the water themselves. Classic
+        // keeps the cartridge's own transparency and its shader reads none of
+        // this, so the slider is hidden there.
+        //
+        // 50% is each style's reviewed look. Aqua's clearer shallows are a
+        // fixed step on top of Modern: absorption x0.6, visibility x1.4.
+        float absorption = frameStyle == Style::Aqua ? 0.6f : 1.0f;
+        float visibility = frameStyle == Style::Aqua ? 1.4f : 1.0f;
+        const float s = frameClarity - 0.5f;
+        if (s < 0) {
+            // Murk. Absorption has to rise steeply to show at all: over the
+            // ~50 units of water usually in view, the profiles' absorption lets
+            // three quarters of the red through, so doubling it is barely seen.
+            absorption *= std::pow(6.0f, -2.0f * s);                    // up to x6
+            visibility *= 1.0f + 1.2f * s;                              // down to x0.4
+        } else {
+            absorption *= 1.0f - 1.33f * s;                             // down to x1/3
+            visibility *= 1.0f + 0.57f * s;                             // up to x1.29
+        }
+        result.deepColor.w *= absorption;
         // Keep the finite visibility fade: beyond the authored underwater
         // geometry the shader must still resolve to water, never exposed sky.
-        result.optics.x = std::min(result.optics.x * (1.0f + frameClarity * 0.80f), 140.0f);
+        result.optics.x = std::min(result.optics.x * visibility, std::max(beforeVisibility, 140.0f));
+        // The upper half shows what the game drew under the surface -- the
+        // sea floor, fish, the course's own water colour -- by raising the
+        // profile's authored_reflection weight toward 1. Absorption and the
+        // visibility range alone cannot do that: the shader lights and
+        // darkens the refracted bottom as part of the water body, which is
+        // why the water stays opaque-looking however far they are pushed.
+        // See docs/WATER.md, "Clarity".
+        //
+        // One player only, like the profile's own value. In two-player races
+        // the cartridge draws its water opaque, so what lies "under" the
+        // surface is that flat water, and blending toward it flattens away
+        // the ripples and lighting -- tried on a two-player race and seen.
+        const float seeThrough = std::clamp(frameClarity * 2.0f - 1.0f, 0.0f, 1.0f);
+        if (frameOnePlayer) result.optics.y += (1.0f - result.optics.y) * seeThrough;
     }
     // What the renderer is actually being handed, which is the only way to tell
     // "the style does nothing" from "the style never reaches the renderer" --
@@ -385,13 +437,13 @@ interop::WaterMaterial material(uint32_t view) {
             std::fprintf(stderr,
                 "[water-trace] quality=%u style=%s opticsW=%.1f "
                 "deep %.4f %.4f %.4f a=%.4f -> %.4f %.4f %.4f a=%.4f  "
-                "shallow %.4f %.4f %.4f -> %.4f %.4f %.4f  vis %.1f -> %.1f\n",
+                "shallow %.4f %.4f %.4f -> %.4f %.4f %.4f  vis %.1f -> %.1f  see-through %.2f -> %.2f\n",
                 uint32_t(quality()), names[uint32_t(frameStyle)], result.optics.w,
                 beforeDeep.x, beforeDeep.y, beforeDeep.z, beforeDeep.w,
                 result.deepColor.x, result.deepColor.y, result.deepColor.z, result.deepColor.w,
                 beforeShallow.x, beforeShallow.y, beforeShallow.z,
                 result.shallowColor.x, result.shallowColor.y, result.shallowColor.z,
-                beforeVisibility, result.optics.x);
+                beforeVisibility, result.optics.x, beforeSeeThrough, result.optics.y);
             std::fflush(stderr);
         }
     }

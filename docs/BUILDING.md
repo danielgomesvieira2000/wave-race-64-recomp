@@ -115,7 +115,7 @@ the menus, reaches the attract race at **16-20 fps**, and emits the ring --
 exercises the whole of the new path on Linux: the game-thread sampling through
 `func_8004D30C`, the publish and claim across threads, and the GBI emission.
 
-**Set water to Original before testing here.** The shipped default is High with
+**Set water to Original before testing here.** The shipped default is Best with
 the Aqua style, and on llvmpipe the modern renderer is roughly ten times slower
 than the game's own path -- a run at the default reached main loop tick 1,000 in
 900 seconds where Original reached 10,000 in a fraction of that, and never got

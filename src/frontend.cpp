@@ -15,10 +15,14 @@
 #include "wr64/inspector.h"
 #include "wr64/drawdistance.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
+#include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <recompui/recompui.h>
@@ -387,183 +391,170 @@ void init() {
     // fov callback -- an option this change did not touch -- with a stack
     // that named the callback rather than the tab that had moved.
     //
-    // Everything below the first option does nothing while it is Original.
+    // Everything below the first option does nothing while it is Original,
+    // and is greyed out then.
     auto& water = recompui::config::create_config_tab("Water", "water", true);
 
-    // The master switch, first, because everything under it only shapes what it
-    // turns on. High by default, which is what the water was tuned against; this
-    // default is the one that decides what a new profile gets, since the Load
-    // callback runs before the first frame and overwrites the one in
-    // src/water.cpp. Original is a true bypass rather than a degraded mode -- it
-    // is what the cartridge draws -- and it is one step away for anyone whose
-    // machine wants it.
+    // Laid out as one decision and then refinements of it. Water quality is a
+    // three-step ladder -- Original, Enhanced, Best -- and each option below it
+    // says what it shapes. An option that does nothing under the current
+    // choices is greyed out when the quality is the reason (it comes back with
+    // a higher step, so it is worth seeing) and hidden when the style is (it
+    // belongs to another look). librecomp keys each kind of dependency by the
+    // dependent option alone, so an option can have one of each and no more.
     //
-    // The enum ids here and below are the lower-case ones the fork this renderer
-    // came from used, and they are deliberately not the display names. They are
-    // what gets written into water.json, so a settings file written by either
-    // build is read correctly by the other -- and an id that matches nothing
-    // does not fail loudly, it quietly resolves to some other entry.
-    water.add_enum_option(
-        "water_quality", "Water",
-        "<recomp-color primary>Original</recomp-color> is the game's own water. "
-        "<recomp-color primary>Modern</recomp-color> keeps the cartridge's waves and physics "
-        "exactly as they are and shades them differently: sun and sky lighting, colour that "
-        "deepens with the water, refraction, wakes that persist behind each craft, and wash "
-        "along the shoreline. <recomp-color primary>High</recomp-color> adds reflections of "
-        "the scenery in view and fine airborne spray.<br /><br />"
-        "This costs more than it looks. On a laptop GPU it roughly doubles the time spent "
-        "drawing each frame, and a machine that is already only just holding the game's frame "
-        "rate will feel it. See docs/WATER.md.",
-        std::vector<recomp::config::ConfigOptionEnumOption>{
-            { 0u, "original", "Original" },
-            { 1u, "modern", "Modern" },
-            { 2u, "high", "High" },
-        },
-        2u);
-    water.add_option_change_callback(
-        "water_quality",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
+    // The enum ids are the lower-case ones the fork this renderer came from
+    // used, and they are deliberately not the display names -- which is what
+    // let the display names change here without touching anyone's settings.
+    // They are what gets written into water.json, and an id that matches
+    // nothing does not fail loudly, it quietly resolves to some other entry.
+    //
+    // Every callback ignores Temporary changes: the tab asks for confirmation,
+    // so a value takes effect on Apply, and on Load at startup.
+    auto on_choice = [](std::function<void(uint32_t)> apply) {
+        return [apply](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+                       recomp::config::OptionChangeContext context) {
             if (context == recomp::config::OptionChangeContext::Temporary) {
                 return;
             }
             if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::water::set_quality(static_cast<wr64::water::Quality>(*choice));
+                apply(*choice);
             }
-        });
+        };
+    };
+    auto on_percent = [](std::function<void(float)> apply) {
+        return [apply](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
+                       recomp::config::OptionChangeContext context) {
+            if (context == recomp::config::OptionChangeContext::Temporary) {
+                return;
+            }
+            if (const double* percent = std::get_if<double>(&value)) {
+                apply(static_cast<float>(*percent));
+            }
+        };
+    };
+
+    // Best by default, which is what the water was tuned against. This default
+    // is the one that decides what a new profile gets, since the Load callback
+    // runs before the first frame and overwrites the one in src/water.cpp.
+    water.add_enum_option(
+        "water_quality", "Water quality",
+        "<recomp-color primary>Original</recomp-color>: the game's own water, exactly as it "
+        "was. Adds no cost.<br /><br />"
+        "<recomp-color primary>Enhanced</recomp-color>: new lighting from the sun and sky, "
+        "colour that deepens with the water, refraction, wakes that linger behind each craft "
+        "and wash along the shore.<br /><br />"
+        "<recomp-color primary>Best</recomp-color>: Enhanced, plus reflections of the scenery "
+        "and fine spray. The most demanding: on a laptop it can double the time spent drawing "
+        "each frame.<br /><br />"
+        "The waves themselves, and how the craft handles on them, are the same at every "
+        "setting.",
+        std::vector<recomp::config::ConfigOptionEnumOption>{
+            { 0u, "original", "Original" },
+            { 1u, "modern", "Enhanced" },
+            { 2u, "high", "Best" },
+        },
+        2u);
+    water.add_option_change_callback("water_quality", on_choice([](uint32_t choice) {
+        wr64::water::set_quality(static_cast<wr64::water::Quality>(choice));
+    }));
 
     water.add_enum_option(
         "water_style", "Water style",
-        "<recomp-color primary>Classic</recomp-color> keeps the cartridge's own colours, "
-        "transparency, fog and broad highlights, and adds only the effects. "
-        "<recomp-color primary>Modern</recomp-color> is richer and darker. "
-        "<recomp-color primary>Aqua</recomp-color> keeps the same rendering as Modern with a "
-        "lighter teal and clearer shallows. Does nothing while Water is Original.",
-        // Listed Classic, Modern, Aqua -- least to most departure from the
-        // cartridge. The order here is the order on screen: recompui builds the
+        "The colours of Enhanced and Best water.<br /><br />"
+        "<recomp-color primary>Classic</recomp-color>: the game's own colours and "
+        "transparency, with the new effects on top.<br /><br />"
+        "<recomp-color primary>Deep</recomp-color>: a richer, darker sea.<br /><br />"
+        "<recomp-color primary>Aqua</recomp-color>: a lighter teal with clearer shallows.",
+        // Listed least to most departure from the cartridge. recompui builds the
         // control by walking this vector and maps the chosen position back
         // through options[i].value, so the values stay bound to their meanings
         // however the list is arranged. They must keep matching
         // wr64::water::Style, which is why they are not renumbered, and the
-        // hidden dependencies below name values rather than positions.
+        // dependencies below name values rather than positions. "Deep" is the
+        // style the code and the docs call Modern; its id stays "modern".
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 1u, "classic", "Classic" },
-            { 0u, "modern", "Modern" },
+            { 0u, "modern", "Deep" },
             { 2u, "aqua", "Aqua" },
         },
         2u);
-    water.add_option_change_callback(
-        "water_style",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::water::set_style(static_cast<wr64::water::Style>(*choice));
-            }
-        });
+    water.add_option_change_callback("water_style", on_choice([](uint32_t choice) {
+        wr64::water::set_style(static_cast<wr64::water::Style>(choice));
+    }));
 
-    // The three Aqua sliders are hidden under the other two styles rather than
-    // left visible and inert: a control that is there and does nothing is worse
-    // than one that is not there.
+    // Clarity keeps the id aqua_clarity from when it was Aqua-only, so a value
+    // saved then is still read. 50% is each style's usual look.
     water.add_percent_number_option(
-        "aqua_brightness", "Water brightness",
-        "Darkens or lightens the Aqua water. 50% is the default look; reflections and foam "
-        "keep their own brightness either way.",
+        "aqua_clarity", "Clarity",
+        "How clear the water is. 50% is the usual look.<br /><br />"
+        "Lower makes the water murkier, which shows most in the shallows. Higher lets you see "
+        "what is under the surface -- the sea floor, fish, the dolphin -- and brings back the "
+        "original game's clear water colour; at 100% it is fully see-through.<br /><br />"
+        "In two-player races only the murkier half applies. Not used by the Classic style, "
+        "which keeps the game's own transparency.",
         50.0);
+    water.add_option_change_callback("aqua_clarity", on_percent([](float percent) {
+        wr64::water::set_clarity(percent);
+    }));
+
+    water.add_percent_number_option(
+        "aqua_brightness", "Aqua brightness",
+        "Darkens or lightens the Aqua water, from well under half as bright to more than "
+        "twice. 50% is the usual look. Reflections and foam keep their own brightness.",
+        50.0);
+    water.add_option_change_callback("aqua_brightness", on_percent([](float percent) {
+        wr64::water::set_aqua_brightness(percent);
+    }));
+
     water.add_percent_number_option(
         "aqua_tint", "Aqua tint",
-        "Shifts Aqua from cooler blue toward greener turquoise. 50% is the default.",
+        "Shifts the Aqua water from deep blue at 0% to green turquoise at 100%. 50% is the "
+        "usual look.",
         50.0);
-    water.add_percent_number_option(
-        "aqua_clarity", "Water clarity",
-        "How far you see into the shallows. Higher reveals more of what is under the surface; "
-        "50% is the default.",
-        50.0);
-    water.add_option_hidden_dependency("aqua_brightness", "water_style", 0u, 1u);
-    water.add_option_hidden_dependency("aqua_tint", "water_style", 0u, 1u);
-    water.add_option_hidden_dependency("aqua_clarity", "water_style", 0u, 1u);
-    water.add_option_change_callback(
-        "aqua_brightness",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const double* percent = std::get_if<double>(&value)) {
-                wr64::water::set_aqua_brightness(static_cast<float>(*percent));
-            }
-        });
-    water.add_option_change_callback(
-        "aqua_tint",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const double* percent = std::get_if<double>(&value)) {
-                wr64::water::set_aqua_tint(static_cast<float>(*percent));
-            }
-        });
-    water.add_option_change_callback(
-        "aqua_clarity",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const double* percent = std::get_if<double>(&value)) {
-                wr64::water::set_aqua_clarity(static_cast<float>(*percent));
-            }
-        });
+    water.add_option_change_callback("aqua_tint", on_percent([](float percent) {
+        wr64::water::set_aqua_tint(percent);
+    }));
 
     // Fine surface detail, separate from the cartridge's waves. The game's own
     // wave simulation is untouched by any of this: handling does not change.
     water.add_enum_option(
         "water_ripples", "Surface ripples",
-        "The fine detail on the surface, which is added on top of the game's waves rather "
-        "than replacing them. <recomp-color primary>Normal</recomp-color> is the default. "
-        "The cartridge's waves, and how the craft handles on them, are the same at every "
-        "setting.",
+        "Fine detail on the surface of Enhanced and Best water, added on top of the game's "
+        "waves rather than replacing them. <recomp-color primary>Normal</recomp-color> is the "
+        "usual look.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "soft", "Soft" },
             { 1u, "normal", "Normal" },
             { 2u, "strong", "Strong" },
         },
         1u);
-    water.add_option_change_callback(
-        "water_ripples",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::water::set_ripple_detail(static_cast<wr64::water::RippleDetail>(*choice));
-            }
-        });
+    water.add_option_change_callback("water_ripples", on_choice([](uint32_t choice) {
+        wr64::water::set_ripple_detail(static_cast<wr64::water::RippleDetail>(choice));
+    }));
 
     water.add_enum_option(
-        "water_spray", "Spray particles",
-        "Fine airborne spray around each craft, which is the added one and not the game's own "
-        "splashes. Turning it off keeps the surface foam and the wakes.",
+        "water_spray", "Spray",
+        "Fine airborne spray around each craft, part of Best. It is added on top of the "
+        "game's own splashes; turning it off keeps the splashes, the foam and the wakes.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "off", "Off" },
             { 1u, "on", "On" },
         },
         1u);
-    water.add_option_change_callback(
-        "water_spray",
-        [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
-           recomp::config::OptionChangeContext context) {
-            if (context == recomp::config::OptionChangeContext::Temporary) {
-                return;
-            }
-            if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::water::set_spray_enabled(*choice != 0u);
-            }
-        });
+    water.add_option_change_callback("water_spray", on_choice([](uint32_t choice) {
+        wr64::water::set_spray_enabled(choice != 0u);
+    }));
+
+    // Greyed out by quality: everything is Enhanced's or Best's.
+    for (const char* id : { "water_style", "aqua_clarity", "aqua_brightness", "aqua_tint", "water_ripples" }) {
+        water.add_option_disable_dependency(id, "water_quality", 0u);
+    }
+    water.add_option_disable_dependency("water_spray", "water_quality", 0u, 1u);
+    // Hidden by style: values, not positions -- Deep is 0, Classic 1, Aqua 2.
+    water.add_option_hidden_dependency("aqua_clarity", "water_style", 1u);
+    water.add_option_hidden_dependency("aqua_brightness", "water_style", 0u, 1u);
+    water.add_option_hidden_dependency("aqua_tint", "water_style", 0u, 1u);
 
     // Main Volume did nothing until this. recompui defines the slider and reads
     // it back, and nothing upstream ever applies it -- the port is expected to,
@@ -663,6 +654,27 @@ void init() {
         ultramodern::renderer::set_graphics_config(gfx);
 
         std::fprintf(stderr, "[wr64] no saved graphics settings; defaulting to fullscreen at the display\'s size\n");
+    }
+
+    // Test hook: WR64_TEST_OPEN_SETTINGS=water@25 opens the settings menu on the
+    // Water tab 25 seconds after startup, so a capture can show a tab as a
+    // player sees it without anyone pressing Escape. Opening it changes nothing
+    // that is saved.
+    if (const char* spec = std::getenv("WR64_TEST_OPEN_SETTINGS")) {
+        const std::string text = spec;
+        const size_t at = text.find('@');
+        const std::string tab = text.substr(0, at);
+        const double delay = at == std::string::npos ? 20.0 : std::atof(text.c_str() + at + 1);
+        std::thread([tab, delay]() {
+            std::this_thread::sleep_for(std::chrono::duration<double>(delay));
+            recompui::ContextId context = recompui::config::get_config_context_id();
+            context.open();
+            recompui::config::set_tab(tab);
+            context.close();
+            recompui::config::open();
+            std::fprintf(stderr, "[wr64] test: opened the settings menu on the %s tab\n", tab.c_str());
+            std::fflush(stderr);
+        }).detach();
     }
 
     std::fprintf(stderr, "[wr64] frontend ready: launcher, ROM picker and config menu\n");

@@ -75,11 +75,13 @@ running natively:
   object could have made.
 - **Field of View**, 45 to 110 degrees. The game draws at 45; higher shows more
   of the world without stretching anything.
-- **Modern water**, in the Water tab, which keeps the cartridge's waves, physics
-  and timing and changes only how that surface is shaded: sun and sky lighting,
-  colour that deepens with the water, refraction, persistent wakes, shoreline
-  wash, and on High reflections and airborne spray. It costs roughly double the
-  time spent drawing a frame, so **Original** is there and is a true bypass.
+- **Enhanced and Best water**, in the Water tab, which keep the cartridge's
+  waves, physics and timing and change only how that surface is shaded: sun and
+  sky lighting, colour that deepens with the water, refraction, persistent wakes,
+  shoreline wash, and on Best reflections and airborne spray. Three styles, and
+  a Clarity slider that goes from murky to fully see-through. It costs roughly
+  double the time spent drawing a frame, so **Original** is there and is a true
+  bypass.
   Written by [Elliott Tate](https://github.com/elliotttate); see
   [Credits](#credits).
 - **Draw Distance**, in world units up to 16,192. There is no global draw

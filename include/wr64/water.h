@@ -18,7 +18,8 @@ void set_quality(Quality value);
 void set_style(Style value);
 void set_aqua_brightness(float percent);
 void set_aqua_tint(float percent);
-void set_aqua_clarity(float percent);
+// Modern and Aqua; the setting's id is still aqua_clarity, see src/frontend.cpp.
+void set_clarity(float percent);
 void set_ripple_detail(RippleDetail value);
 void set_spray_enabled(bool enabled);
 }

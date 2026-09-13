@@ -104,7 +104,7 @@ disagree about.
 | `animation` | previous/current simulation seconds, detail strength, foam strength |
 | `identity` | **quality (0 disables)**, debug view, course, generation |
 | `surface` | mean height, wind X/Z, view index |
-| `optics` | visibility range, authored reflection weight, shallow caustics, classic style |
+| `optics` | visibility range, authored reflection (see-through) weight, shallow caustics, classic style |
 | `craftPrevious[4]`, `craftCurrent[4]` | world XYZ, wet-contact fraction (`-1` inactive) |
 | `shoreCounts` | bounded shoreline segments per craft tile |
 | `shoreSegments[80]` | XZ endpoints, `WATER_SHORE_SEGMENTS_PER_TILE` = 20 |
@@ -330,7 +330,10 @@ the smaller anchored patches, so their anchors are found in unmodified text.
 | Patch ordering | water before `patch_texture_packs.py` | water last in the `patch_rt64.py` chain | it touches files this repository's own patches anchor into |
 | Enum ids | lower-case (`"high"`, `"aqua"`) | **same** — adopted after a mismatch | ids are what land in the settings file; an id matching nothing resolves silently to another entry |
 | Settings layout | `water_quality` in Graphics, the rest in a Water tab | all six in the Water tab, beside Graphics | a tab whose every entry depends on a setting in *another* tab reads as a tab that does nothing. Moving it also moves where it is stored, from `graphics.json` to `water.json`, so a value saved by the fork's layout is not carried over |
+| Menu names | quality Original / Modern / High, style Classic / Modern / Aqua | quality Original / **Enhanced** / **Best**, style Classic / **Deep** / Aqua; ids unchanged | "Modern" named two different things on one tab. Options that do nothing are greyed out (by quality) or hidden (by style) |
 | `material()` | as written | + `WR64_WATER_MATERIAL_TRACE` | see *the bug* below |
+| Clarity | Aqua only; absorption and visibility | Deep and Aqua; below 50% murk, above 50% the `optics.y` see-through weight rises to 1 in one-player. Same setting id `aqua_clarity` | the Aqua-only version could not make the water clear: the shader lights and darkens what it refracts ([WATER.md, Clarity](WATER.md#clarity)) |
+| Aqua brightness / tint | 0.65-1.35x; +-12-20% | 0.4-2.5x, exponential; +-30-55% | the first ranges compressed to roughly +-15% and +-5% on screen |
 | `patches/water.cpp` | 59 lines | 46 lines | test fixtures and texture-capture removed |
 | Default quality | `High` | `High` | initially set to `Original` here for frame cost; changed back on request |
 | `addFramebuffer` water precondition | none | `waterTransformsReady` | see *the crash* below |
@@ -354,6 +357,8 @@ hooks are the two that matter.
 | | |
 |---|---|
 | `WR64_WATER_MATERIAL_TRACE` | prints the material at the hand-off point, before and after the style transform |
+| `WR64_WATER_CLARITY`, `_BRIGHTNESS`, `_TINT` | slider values for a run, for captures of one setting against another |
+| `WR64_TEST_OPEN_SETTINGS` | opens the settings menu on a tab after a delay, for a capture of the menu |
 | `waterTransformsReady` guard | the precondition the renderer assumed |
 | `docs/WATER.md`, this file | the fork's four design documents are a working record; these are the distilled reference |
 | F9/F10 removal on shutdown | `SDL_DelEventWatch` in `shutdown_platform()` |

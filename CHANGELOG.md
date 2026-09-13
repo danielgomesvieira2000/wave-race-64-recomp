@@ -8,6 +8,26 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## Unreleased
+
+- **A clearer Water tab.** Water quality is now **Original / Enhanced / Best**,
+  and the style **Classic / Deep / Aqua** -- before, "Modern" was both a quality
+  and a style. Options that do nothing under the current choice are greyed out,
+  or hidden if they belong to another style. Saved settings carry over.
+- **Clarity works for Deep as well as Aqua, and can make the water clear.**
+  Above 50% the water shows what the game draws beneath it -- the sea floor,
+  fish, the dolphin, the cartridge's own water colour -- fully at 100%; below
+  50% it turns murkier. 50% is unchanged. The see-through half applies in
+  one-player races only: in two-player the cartridge's water is opaque and
+  blending toward it flattens the surface. Requested in
+  [#15](https://github.com/danielgomesvieira2000/wave-race-64-recomp/issues/15).
+- **Aqua brightness and Aqua tint now visibly change the water.** Brightness
+  runs 0.4x to 2.5x, tint about three times further either way. **A value saved
+  away from 50% looks stronger than before.**
+- **The course profiles are documented**, field by field, including how to aim
+  `sun_direction` at a course's skybox sun and what `authored_reflection` does:
+  [docs/WATER.md](docs/WATER.md#course-profiles).
+
 ## [0.9.1](docs/releases/0.9.1.md) — Riders that hold together, and the sea to the horizon
 
 - **The two-player race-start burst is gone.** For over a second after a 2P VS

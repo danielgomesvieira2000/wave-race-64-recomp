@@ -11,7 +11,7 @@ project**](#putting-it-in-another-project).
 [WATER-IMPLEMENTATION.md](WATER-IMPLEMENTATION.md) is the full account of how
 the fork built it and where this repository differs.
 
-**High with the Aqua style is the default**, on every platform -- what the fork
+**Best quality with the Aqua style is the default**, on every platform -- what the fork
 this came from shipped, and what the water was tuned against. It is not free:
 expect the time spent drawing a frame to roughly double, see [What it
 costs](#what-it-costs). **Original** is the first entry in the Water tab and is
@@ -30,24 +30,68 @@ that branch explicitly had not.
 
 ### The settings
 
-Everything lives in the **Water** tab, which sits beside Graphics. Its first
-setting, **Water**, decides whether the renderer runs at all.
+Everything lives in the **Water** tab, which sits beside Graphics. It is one
+decision and then refinements of it: **Water quality** is a three-step ladder,
+and every option below it is greyed out while it would do nothing, or hidden
+when it belongs to a different style.
 
-| | What it does |
+| Water quality | What it does |
 |---|---|
-| **Original** | The game's own water. The renderer is not engaged; nothing below has any effect. |
-| **Modern** | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
-| **High** *(default)* | Modern, plus screen-space reflections of scenery in view, and fine airborne spray. |
+| **Original** | The game's own water. The renderer is not engaged, nothing below has any effect, and every option below is greyed out. |
+| **Enhanced** | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
+| **Best** *(default)* | Enhanced, plus screen-space reflections of scenery in view, and fine airborne spray. |
 
-Everything below it shapes how that renderer looks, and none of it has any
-effect while **Water** is Original.
+| Option | Shown | What it does |
+|---|---|---|
+| **Water style** | Enhanced, Best | Least to most departure from the cartridge. **Classic** keeps its own colours, transparency, fog and broad highlights and adds only the effects. **Deep** is richer and darker. **Aqua** *(default)* is Deep with a lighter teal and clearer shallows. |
+| **Clarity** | Deep, Aqua | 50% is each style's usual look. Below it the water turns murkier; above it the water shows more and more of what the game draws under the surface. See [Clarity](#clarity). |
+| **Aqua brightness** | Aqua | 0.4x to 2.5x the water's own colour; 50% is the usual look. |
+| **Aqua tint** | Aqua | Deep blue at 0% to green turquoise at 100%. |
+| **Surface ripples** | Enhanced, Best | Soft / **Normal** / Strong. Fine detail added on top of the game's waves, never replacing them. |
+| **Spray** | Best | The *added* airborne spray. Off keeps the surface foam, the wakes and the game's own splashes. |
 
-| | |
+The menu names are not the names in the code, the saved settings, the
+environment overrides or the log, which kept the fork's:
+
+| Menu | `water.json`, `WR64_WATER*`, log | Code |
+|---|---|---|
+| Original / Enhanced / Best | `original` / `modern` / `high` | `Quality::Original` / `Modern` / `High` |
+| Classic / Deep / Aqua | `classic` / `modern` / `aqua` | `Style::Classic` / `Modern` / `Aqua` |
+| Clarity | `aqua_clarity` | `set_clarity` |
+
+The menu was renamed after 0.9.1: the quality was Original / Modern / High and the
+style Classic / Modern / Aqua, so "Modern" meant two different things on one
+tab. The ids did not change, so saved settings read as they were.
+
+### Clarity
+
+Two different things, one either side of 50%:
+
+| Slider | What changes | Where it shows |
+|---|---|---|
+| **0-50%** | absorption up to **x6**, visibility range down to **x0.4** | shallow water: shores, ramps, around the piers. Over open sea little of the bottom was visible to begin with, so little changes |
+| **50%** | nothing: Deep as authored, Aqua with its fixed step (absorption x0.6, visibility x1.4) | |
+| **50-100%** | absorption down to **x1/3**, visibility up to **x1.29**, and the **see-through weight** rises from the course's `authored_reflection` to **1** | everywhere in one-player: the sea floor, fish and the dolphin show through, and the water comes back toward the cartridge's own colour |
+
+The see-through weight is the profile field `authored_reflection` (see [Course
+profiles](#course-profiles)). It blends the finished water toward the image the
+game had drawn *before* the water: the sea floor, anything swimming, and the
+course's own water colour. Pushing absorption and visibility alone does not get
+there, however far: the shader lights and darkens what it refracts as part of
+the water body, so the bottom stays dim.
+
+| Limit | Why |
 |---|---|
-| **Water style** | Listed least to most departure from the cartridge. **Classic** keeps its own colours, transparency, fog and broad highlights and adds only the effects. **Modern** is richer and darker. **Aqua** *(default)* is Modern with a lighter teal and clearer shallows. |
-| **Water brightness / Aqua tint / Water clarity** | Aqua only, and hidden under the other two styles. 50% is the default look in each. Clarity is how far you see into the shallows. |
-| **Surface ripples** | Soft / **Normal** / Strong. Fine detail added on top of the game's waves, never replacing them. |
-| **Spray particles** | The *added* airborne spray. Off keeps the surface foam, the wakes and the game's own splashes. |
+| **One player only** above 50% | in two-player races the cartridge draws its water opaque, so the image under the surface is that flat water. Tried on a two-player Sunny Beach race: the ripples and lighting flatten into a pale sheet. The lower half still applies |
+| Fades within **15-70 units** of the mean water height | inherited from the shader's reflection term; only tall swells are affected |
+| Visibility still capped at **140** (or the profile's own range if higher) | past the course's underwater geometry the shader must resolve to water, never to exposed sky |
+| Hidden under **Classic** | Classic's shader rebuilds the colour from the cartridge's own image and reads none of these values |
+
+**A saved value away from 50% looks different after 0.9.1.** The first ranges
+were too weak to see -- brightness 0.65-1.35x and tint +-12-20% came out as
+roughly +-15% and +-5% on screen once tone mapping and gamma had compressed them,
+which is what made the three sliders read as inert. Brightness 70%, for example,
+was 1.14x and is now 1.44x; Clarity 80% now includes a 60% see-through blend.
 
 ### How far the sea reaches
 
@@ -76,7 +120,7 @@ translucency.
 | How far | as far as Draw Distance asks for, or the course's own cull, whichever is further |
 | What it costs | 7 circles x 24 sectors: 312 vertex slots and 144 quads a frame, against the game's own 500 vertices |
 | Turning it off | `WR64_NO_WATER_RING=1`, or `WR64_WATER_RING_DEBUG=1` to see where it is, painted magenta |
-| What it costs | nothing measurable. Over five configurations of the same attract demo, 84 two-second windows each, the port held the game's own 20 frames per second in **98%** of windows with and without it; the full stack -- High water, the ring, and the draw distance at Maximum -- held it in 96%. The metric saturates at the game's own rate, so this says the port keeps up, not how much headroom is left |
+| What it costs | nothing measurable. Over five configurations of the same attract demo, 84 two-second windows each, the port held the game's own 20 frames per second in **98%** of windows with and without it; the full stack -- Best water, the ring, and the draw distance at Maximum -- held it in 96%. The metric saturates at the game's own rate, so this says the port keeps up, not how much headroom is left |
 
 With both settings at Original nothing is added at all, because a frame with
 neither raised has to be the frame the game itself would have produced.
@@ -93,7 +137,9 @@ frame; they do not persist and they are not settings.
 | `WR64_WATER_STYLE` | `classic`, `modern`, `aqua` |
 | `WR64_WATER_RIPPLES` | `soft`, `normal`, `strong` |
 | `WR64_WATER_SPRAY` | `off` / `0`, anything else is on |
+| `WR64_WATER_CLARITY`, `WR64_WATER_BRIGHTNESS`, `WR64_WATER_TINT` | `0`-`100`, as the sliders store them |
 | `WR64_WATER_DEBUG` | `0`-`14`, the diagnostic views |
+| `WR64_TEST_OPEN_SETTINGS` | `water@25`: opens the settings menu on that tab after that many seconds, for a capture of the menu. Changes nothing saved |
 | `WR64_WATER_PROFILES` | path to a `profiles.json` to use instead of the packaged one |
 | `WR64_WATER_TRACE` | path to write a per-30-frame CSV of craft position and state |
 | `WR64_WATER_MATERIAL_TRACE` | set to anything: prints the first few materials handed to the renderer, before and after the style is applied |
@@ -105,9 +151,14 @@ renderer at all -- by printing what was actually sent:
 
 ```
 [water-trace] quality=2 style=Aqua opticsW=0.0
-  deep 0.0080 0.1000 0.1500 a=0.0030 -> 0.0160 0.1850 0.2025 a=0.0018
-  shallow 0.0300 0.4400 0.3800 -> 0.0510 0.5720 0.4636  vis 66.7 -> 93.3
+  deep 0.0080 0.1000 0.1500 a=0.0030 -> 0.0160 0.1850 0.2025 a=0.0006
+  shallow 0.0300 0.4400 0.3800 -> 0.0510 0.5720 0.4636  vis 66.7 -> 119.9
+  see-through 0.00 -> 1.00
 ```
+
+That one is Aqua at Clarity 100%. The `[water] appearance:` line at startup
+prints the style and all three sliders, and it prints the values actually in
+force: the saved settings, unless an override above replaced one.
 
 No lines at all in a race means the display list carrying the material is not
 being emitted, which is a rewriter problem and not a settings one.
@@ -122,7 +173,7 @@ There is no free version of this. Two measurements, neither of them a benchmark:
 | | |
 |---|---|
 | Apple M3 Max, Metal ([PR #2][pr]) | game-render GPU median/p95 **1.260/1.897 ms → 2.658/4.303 ms**, and a private depth copy of **18.7 MiB** at 1280x956 with 4x MSAA |
-| Intel Iris Xe, D3D12 (this tree) | with the renderer engaged and verified on screen, a scripted run through the title, the menus and an attract race holds the game's own 20 fps at **Original**, **Modern** and **High** alike |
+| Intel Iris Xe, D3D12 (this tree) | with the renderer engaged and verified on screen, a scripted run through the title, the menus and an attract race holds the game's own 20 fps at **Original**, **Enhanced** and **Best** alike |
 
 The second is still not a frame-cost comparison. The port's frame-rate line
 reports the *game's* rate -- the cartridge's 20 or 30 -- which does not move at
@@ -142,6 +193,44 @@ beside the executable at build time (inside `Contents/Resources` on macOS).
 They are artist-authored art directions, not measurements of the original
 lighting. A malformed file is reported and the compiled-in defaults are used, so
 a bad edit degrades rather than fails.
+
+**Editing it.** The file is read once, at the first frame: restart the game to
+see a change. Edit a copy and point `WR64_WATER_PROFILES` at it to try values
+without touching the packaged one. The log says `[water] loaded ten course
+profiles`, or `using default profile:` and why. Colours are linear RGB. Values
+outside the ranges below are rejected (the four-component fields) or clamped
+(the single numbers). The Water tab's sliders apply on top of these, per course.
+
+| Field | Components | Range | What it does |
+|---|---|---|---|
+| `id` | | 0-9 | the course. 0 Dolphin Park, 1 Sunny Beach, 2 Sunset Bay, 3 Marine Fortress, 4 Drake Lake, 5 Port Blue, 6 Twilight City, 7 Southern Island, 8 Glacier Coast, 9 rider selection. `name` is only a label |
+| `deep_color` | RGB, absorption | 0-2; absorption above 0 | body colour of deep water; absorption per game unit, weighted 1.8 / 0.55 / 0.30 across R/G/B so red goes first |
+| `shallow_color` | RGB, roughness | 0-2; roughness 0.065 or more | body colour where the wave faces the sun; roughness blurs highlights and reflections |
+| `sun_direction` | X, Y, Z, specular | -4 to 4 | **the sun.** XYZ points *from the water toward the sun* in the course's world axes, Y up; it is normalised, so only the direction matters. The fourth number is highlight strength |
+| `sun_color` | RGB, ambient | 0-4 | highlight, haze and caustics colour; ambient scales the body, foam and spray |
+| `sky_color` | RGB, haze | 0-2 | the sky reflected where the screen has nothing to reflect; haze warms the horizon toward the sun colour |
+| `detail` | | 0-2 | ripple strength, times the Surface ripples setting |
+| `foam` | | 0-1 | foam amount |
+| `wind` | X, Z | -2 to 2 | ripple and foam drift |
+| `visibility_range` | | 10-300 | how far into the water the bottom fades out, in units of water depth along the view |
+| `authored_reflection` | | 0-1 | **the see-through weight.** Blends the finished water toward the image the game drew before the water, by up to 60% face-on and 100% at grazing angles. One player only. Drake Lake's 0.85 is what keeps its mirrored shoreline; at 1 on any course the floor, fish and the cartridge's own water colour show. Clarity above 50% raises it toward 1 for every course. Not used by Classic |
+| `caustics` | | 0-0.5 | light patterns on a shallow floor |
+
+**Aiming the sun at a course's skybox.** Nothing reads the sun from the game;
+every course has the value in this file, and six of the ten share the same one,
+`[-0.45, 0.75, 0.48, 2.0]`. To match a skybox: Y sets the elevation (a low sun
+is a small Y, as on Sunset Bay's `0.23`), and X and Z the compass bearing on the
+course's own axes. The quick way to find the bearing is to face the skybox sun
+in a race, raise the fourth number so the highlight is obvious, and turn X and Z
+until the glint on the water sits under the sun.
+
+| Course | `sun_direction` | `authored_reflection` |
+|---|---|---|
+| Sunset Bay | `[-0.6, 0.23, 0.76, 2.5]` | 0 |
+| Drake Lake | `[-0.45, 0.75, 0.48, 0.6]` | **0.85** |
+| Twilight City | `[-0.3, 0.15, 0.9, 0.3]` | 0 |
+| Southern Island | `[-0.25, 0.86, 0.44, 2.2]` | 0 |
+| every other course | `[-0.45, 0.75, 0.48, 2.0]` | 0 |
 
 ---
 
@@ -259,9 +348,10 @@ Repeated scripted runs find it; playing does not, for a while.
 ### Cost control
 
 Make Original the default and make it a real bypass, not a cheaper shading path.
-Expose the expensive parts separately -- reflections and spray are `High` here,
-not `Modern` -- so a player on a slower machine has something between "all of
-it" and "none of it".
+Expose the expensive parts separately -- reflections and spray are Best here,
+not Enhanced -- so a player on a slower machine has something between "all of
+it" and "none of it". Name the steps as a ladder a player can read without the
+tooltip; see *The settings* above for why the names here are not the ids.
 
 ---
 

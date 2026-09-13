@@ -735,6 +735,49 @@ been set by people who could not hear the result.** This project's own saved
 setting was zero. Making the slider work made the port correctly silent, which
 is indistinguishable from breaking the audio unless the log says which it is.
 
+**Symptom: the value reaches the renderer and the slider still does nothing.**
+The next layer down. The water's Aqua sliders were wired end to end -- the
+material trace showed every value arriving -- and a player still reported them
+inert, correctly. Each scaled an input the shader then weakens several times over:
+the water body's colour is multiplied by lighting, replaced by the refracted
+floor wherever that shows, and compressed by tone mapping and gamma. A 0.65-1.35x
+brightness came out as roughly +-15% on screen, a +-12% tint as +-5%. The fix was
+not more plumbing but range, **checked by capturing both ends of each slider**,
+and for clarity a different input altogether. The lesson generalises: a trace
+proves a value arrives, only a picture proves it matters, and when widening a
+range, a value players have already saved away from the default changes with it.
+
+### An option can hide on one other option, and grey out on one more
+
+**Symptom: an option that should be hidden is visible, or hidden when it should
+not be.** librecomp's `add_option_hidden_dependency` and
+`add_option_disable_dependency` each keep their table keyed by the *dependent*
+option alone (`dependency_to_values` in `ConfigOptionDependency`). A second
+hidden dependency on the same option does not add a condition; it overwrites the
+list of values and leaves the first source still pointing at it, so the two
+sources end up testing each other's values. The two tables are separate,
+though, so an option gets **one condition of each kind**.
+
+This port's Water tab uses exactly that: every option greys out on the quality
+(it comes back at a higher step, so it is worth seeing) and the style-specific
+sliders hide on the style (they belong to another look). Decide which reason
+is which before laying out a tab, because the library will not combine two of
+the same.
+
+Renaming what a menu shows is free as long as the ids stay: an enum option's id
+is what reaches the saved file, its label is only what is drawn. This port
+renamed the water quality Modern / High to Enhanced / Best with every saved
+setting still read.
+
+### Opening the menu from a test
+
+`recompui::config::set_tab(id)` and `recompui::config::open()` show a tab without
+anyone pressing Escape, which is what lets a capture check a menu layout. From
+any thread other than the UI's, take the config context first --
+`get_config_context_id().open()`, `set_tab`, `.close()` -- then `open()`, which
+takes its own lock. This port's hook is `WR64_TEST_OPEN_SETTINGS=water@25`, in
+`src/frontend.cpp`.
+
 ### Separating one sound from another after the mix is impossible
 
 **So do it before the mix.** A main volume can scale the finished buffer; a music
