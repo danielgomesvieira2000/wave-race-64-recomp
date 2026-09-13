@@ -1921,7 +1921,7 @@ forms the game uses: inside a model list in segment 2 (races; the list is
 inlined), and at the top level followed by a call to a segment 8 mesh (the select
 screen). `WR64_NO_MODEL_IDS=1` switches it off.
 
-**Measured**: attract demo, 79,362 identity pairs, 0 snapped; watercraft select,
+**Measured**: over two minutes of racing, 79,362 identity pairs, 0 snapped; watercraft select,
 8 switches, unpaired or snapped parts in 16 frames before and 0 after, save 2
 deliberate whole-model steps onto the 23-part rider. Frame rate over a 2P race
 unchanged. **Confirmed in play, in races and on the select screen.**

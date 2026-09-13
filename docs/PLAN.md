@@ -271,7 +271,7 @@ nothing a player could see. The second round started from the picture.
    then snapping from zero velocity. Round one's identities by matrix address
    came back, with the translation always interpolated, a teleport guard, the
    select screen's top-level part loads covered, and a whole-model step when a
-   rider gains parts. Attract demo: 79,362 part pairs, 0 snapped. Select screen:
+   rider gains parts. Two minutes of racing: 79,362 part pairs, 0 snapped. Select screen:
    16 frames with a part out of place over 8 switches, then 0. Confirmed in play
    in races and on the select screen.
 

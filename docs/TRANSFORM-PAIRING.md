@@ -171,8 +171,8 @@ reported.
 
 | | heuristic | by identity |
 |---|---:|---:|
-| Attract demo race: moving riders with parts split between snapped and gliding | 140 | 59 -- all of them a water-level object beside the rider (a shadow or wake that appears and disappears), not a part |
-| Attract demo race: parts paired by identity / snapped | -- | 79,362 / **0** |
+| Moving riders with parts split between snapped and gliding | 140 (attract demo) | 59, every one a water-level object beside the rider (a shadow or wake that appears and disappears), not a part. **Not a like-for-like comparison**: this run was partly driven by a controller in use on the same machine |
+| Two minutes of racing: parts paired by identity / snapped | -- | 79,362 / **0** |
 | Why a part was left unpaired (heuristic, moving riders) | own previous pose taken by another part: 36; own previous under a different draw call: 14 | -- |
 | Watercraft select, 8 switches: frames with an unpaired or snapped part | 16 (2-11 of 18-23 parts each switch) | 2, both a switch onto the 23-part rider, where the whole model takes its new pose together |
 | Seen on screen | parts snapping in races and on switching riders (reported in play) | none, in races and on the select screen (confirmed in play) |

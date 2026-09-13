@@ -8,7 +8,7 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [0.9.1](docs/releases/0.9.1.md) — Riders that hold together, and the sea to the horizon
 
 - **The two-player race-start burst is gone.** For over a second after a 2P VS
   race fades in, each view flickered between two shots. The models were never
@@ -30,7 +30,7 @@ notice changes.
   and the part left over was drawn apart from the body and then snapped again.
   Each part is now paired with itself, by its matrix's address, and always
   glides with the rest; a part that teleports, or a model that gains parts on a
-  switch, takes its new pose in one piece. Measured over the attract demo:
+  switch, takes its new pose in one piece. Measured over two minutes of racing:
   79,362 part pairs, none snapped; on the select screen, 16 frames with a part
   out of place over eight switches before, none after. Frame rate unchanged.
   `WR64_NO_MODEL_IDS=1` switches it off.
@@ -96,9 +96,9 @@ notice changes.
   game submits correct, stable geometry at any of these settings. What slides is
   RT64 pairing one buoy's matrix with another's between frames as the set of them
   changes — confirmed by presenting at the game's own frame rate, where no frames
-  are interpolated and the sliding does not happen. It is there at the game's own
-  distance too, and it is written up in `docs/PORTING.md` under *Objects that
-  slide when more of them are drawn*.
+  are interpolated and the sliding does not happen. It was there at the game's own
+  distance too, and it is fixed in this release; see the course-edge buoys above
+  and `docs/PORTING.md`, *Objects that slide when more of them are drawn*.
 
 ## [0.9.0](docs/releases/0.9.0.md) — Linux, macOS, and modern water
 
