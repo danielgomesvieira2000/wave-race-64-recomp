@@ -2020,16 +2020,29 @@ and `G_EX_ORDER_LINEAR`, so RT64 pairs the part with itself before and instead o
 its heuristic. The translation is `G_EX_COMPONENT_INTERPOLATE`, not `AUTO`, so no
 part of a body decides on its own not to glide. A part that moved more than 150
 units in one game frame, and every part of a model in the frame one of its parts
-first appears, is drawn at its new pose instead. The loads are found in both
+first appears, is drawn at its new pose instead. The loads are found in the
 forms the game uses: inside a model list in segment 2 (races; the list is
-inlined), and at the top level followed by a call to a segment 8 mesh (the select
-screen). `WR64_NO_MODEL_IDS=1` switches it off.
+inlined), at the top level followed by a call to a segment 8 mesh (the select
+screen), and a body load with jointed parts (the dolphin, below).
+`WR64_NO_MODEL_IDS=1` switches it off.
 
 **Measured**: over two minutes of racing, 79,362 identity pairs, 0 snapped; watercraft select,
 8 switches, unpaired or snapped parts in 16 frames before and 0 after, save 2
 deliberate whole-model steps onto the 23-part rider. Frame rate over a 2P race
 unchanged. **Confirmed in play, in races and on the select screen.**
 [TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) has the recipe.
+
+**The dolphin needed a third form.** In the opening sequence it is a body load
+followed by five `mul+push` parts, each calling a segment 8 mesh (GAME-INTERNALS,
+"The dolphin"), which neither rule recognised: the body's next command is a
+matrix, not a call, and a pushed matrix was never a part. Left to the heuristic,
+two parts sharing a mesh and a speed of ~50 units a game frame gave 191 unpaired
+transforms in 42 s and fins visibly off the body. The rewriter now treats a load
+followed by such parts as one run -- the parts take the body's teleport decision,
+since their own translation is local -- and closes the run before any call that
+loads a modelview matrix, because the group would otherwise carry into the next
+object. After: one unpaired transform per part, on its first appearance, every
+move over 150 units stepped. **Confirmed in play.**
 
 **What hid it**: the first round of this work tried exactly these identities,
 and they were removed because a 2P intro showed no part moving more than 63

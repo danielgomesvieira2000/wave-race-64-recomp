@@ -10,6 +10,10 @@ notice changes.
 
 ## Unreleased
 
+- **The dolphin in the opening sequence moves smoothly** with interpolation on.
+  Its fins and tail were drawn apart from its body for a frame at a time; its
+  parts are now paired with themselves like a rider's, and the same applies to
+  the dolphins in the attract demo.
 - **Field of View and Draw Distance take effect on Apply**, like every other
   option in their tab, instead of as soon as they are clicked.
 - **Shorter setting descriptions**: Draw Distance, Water Quality, Clarity and Aqua

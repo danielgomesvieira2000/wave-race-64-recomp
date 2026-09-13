@@ -177,6 +177,21 @@ reported.
 | Watercraft select, 8 switches: frames with an unpaired or snapped part | 16 (2-11 of 18-23 parts each switch) | 2, both a switch onto the 23-part rider, where the whole model takes its new pose together |
 | Seen on screen | parts snapping in races and on switching riders (reported in play) | none, in races and on the select screen (confirmed in play) |
 
+**The dolphin**, opening sequence 20-62 s after launch, the build before against
+the jointed rule:
+
+| | heuristic | by identity |
+|---|---:|---:|
+| Transforms | one draw call signature for 3 of the 5 parts | 5 ids, 1,206 pairs each |
+| Unpaired | 191 (a part unpaired every frame for ~5 s at a time) | 1 per part, its first appearance |
+| Drawn at the new place | 156, mixed with gliding parts | 29 per part, every one a move over 150 units (58 of 58 checked on two parts), all parts together |
+| Attract demo, two more dolphins | -- | 807 pairs per part, 1 unpaired each; 64 of 64 moves over 150 stepped |
+| Seen on screen | dorsal fin off the body at 27.24 s, tail fluke below it at 27.46 s (captures) | attached in every captured frame; confirmed in play |
+
+Cost, opening sequence, timed with `__rdtsc` around the part rules: 20 us a
+list before, 30 us after (the extra is the identity groups for the dolphin's
+parts), against a whole rewrite of 130-185 us a list in either build.
+
 **Objects** (`WR64_PAIRING_MAX_JUMP=0` against the default):
 
 | | limit off | limit 150 |
@@ -315,7 +330,7 @@ list a rider is drawn from moved between segment 2 slots mid-run and the part
 meshes change with the selected rider. Hash the address to 32 bits, set the
 top bit, and keep clear of `G_EX_ID_IGNORE` (0) and `G_EX_ID_AUTO` (~0).
 
-**Where the matrix loads are.** Two forms, both handled:
+**Where the matrix loads are.** Three forms, all handled:
 
 - *Inside a model list* (races): a top-level call to a segment 2 list that
   loads at least four modelview matrices. The rewriter emits calls and lets
@@ -323,6 +338,14 @@ top bit, and keep clear of `G_EX_ID_IGNORE` (0) and `G_EX_ID_AUTO` (~0).
   list, nested calls left as calls -- and sets a group before each load.
 - *At the top level* (the watercraft select screen): a plain modelview load
   whose next drawing command is a call into segment 8, the character bank.
+- *At the top level, jointed* (the dolphin): a plain load of a body matrix
+  followed by `mul+push` part matrices, each followed by a call into segment 8
+  and a pop. The load opens a run; a `mul+push` continues it only while a run
+  is open, so a stray multiplied matrix elsewhere is never taken for a part.
+  **Close the run before any call that loads a modelview matrix** (scan the
+  called list; skip the scan for segment 8 meshes): the group is RT64 state that
+  outlives the call, and the dolphin is followed by one that loads another
+  object's matrix.
 
 **The group.** `gEXMatrixGroup` with the id, `G_EX_ORDER_LINEAR`,
 `G_EX_INTERPOLATE_DECOMPOSE`, vertex and texture-coordinate components
@@ -343,6 +366,10 @@ interpolated:
   to a rider with more parts. A new part has nothing to glide from; if the rest
   glide, it is drawn apart from them. Look ahead over the run first, and step
   the whole model at once.
+
+A jointed part's matrix is local to its body, so its own translation says
+nothing about a teleport: **it takes the body's decision**. A body that jumped
+6,000 units with its parts still interpolating would draw them streaking after it.
 
 Split screen draws each rider twice under the same addresses. Linear ordering
 pairs the n-th occurrence with the n-th, and both occurrences carry the same

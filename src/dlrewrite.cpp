@@ -1164,12 +1164,14 @@ struct Walker {
 
     // The group for one part's matrix load: the part's identity, its translation
     // interpolated unless it moved further than a part can in one game frame.
-    void model_part_group(uint32_t matrix_segmented, bool step = false) {
+    // Returns whether the part is drawn at its new place. `check_teleport`
+    // false leaves that to `step`, for a part whose matrix is local to another.
+    bool model_part_group(uint32_t matrix_segmented, bool step = false, bool check_teleport = true) {
         const Mat4 m = read_matrix(physical(matrix_segmented));
         const std::array<float, 3> here = { m.m[3][0], m.m[3][1], m.m[3][2] };
         uint32_t position = step ? G_EX_COMPONENT_SKIP : G_EX_COMPONENT_INTERPOLATE;
         const auto before = model_prev->find(matrix_segmented);
-        if (before != model_prev->end()) {
+        if (check_teleport && before != model_prev->end()) {
             const float dx = here[0] - before->second[0];
             const float dy = here[1] - before->second[1];
             const float dz = here[2] - before->second[2];
@@ -1181,6 +1183,7 @@ struct Walker {
         (*model_cur)[matrix_segmented] = here;
         model_group(model_id(matrix_segmented), position);
         ++model_loads;
+        return position == G_EX_COMPONENT_SKIP;
     }
 
     // The same parts can be drawn from the frame's own list rather than from a
@@ -1198,33 +1201,67 @@ struct Walker {
     // parts up to two thirds of a 44-unit move away from the body for two
     // generated frames. So when any part of a run of parts is new, the whole run
     // takes its new pose at once for that frame -- one step, in one piece.
+    //
+    // The dolphin in the opening sequence is drawn the same way with a joint
+    // between: a plain load of its body's matrix from segment 6, then for each
+    // of five parts a multiplied push of the part's own animated matrix, a call
+    // to its mesh in segment 8 and a pop (GAME-INTERNALS.md, "The dolphin").
+    // Two parts share a mesh, and at up to 50 units a game frame RT64's heuristic
+    // left a part unpaired or paired with its twin for seconds at a time. So a
+    // multiplied push continues a run of parts that a load began, and takes the
+    // run's teleport decision rather than its own: its translation is local to
+    // the body, and a body that jumped must not have its parts glide after it.
     bool top_part_group_open = false;
     bool top_part_run_steps = false;
+    bool top_part_run_skips = false;
 
-    // Whether the matrix load just before `cursor` is a character part: a plain
-    // modelview load whose next drawing command is a call into segment 8.
-    bool loads_part(uint32_t params, uint32_t cursor) const {
-        if (!(params & kMtxLoad) || (params & kMtxPush) || (params & kMtxProjection)) return false;
+    // The next drawing command after `cursor`, looking at most eight commands
+    // ahead: 1 for a call into segment 8, 2 for a multiplied push, 0 otherwise.
+    int next_part_command(uint32_t cursor, uint32_t* push_cursor) const {
         for (int i = 0; i < 8; ++i, cursor += 8) {
             const uint32_t* c = words(cursor);
             const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
             if (op == kOpDisplayList) {
-                return ((c[0] >> 16) & 0xFF) == 0 && (c[1] >> 24) == 0x08;
+                return ((c[0] >> 16) & 0xFF) == 0 && (c[1] >> 24) == 0x08 ? 1 : 0;
             }
-            if (op == kOpMtx || op == kOpVtx || op == kOpPopMtx || op == kOpEndDisplayList ||
-                is_rect(op)) {
-                return false;
+            if (op == kOpMtx) {
+                const uint32_t params = (c[0] >> 16) & 0xFF;
+                if (params == kMtxPush) {
+                    if (push_cursor) *push_cursor = cursor + 8;
+                    return 2;
+                }
+                return 0;
+            }
+            if (op == kOpVtx || op == kOpPopMtx || op == kOpEndDisplayList || is_rect(op)) {
+                return 0;
             }
         }
-        return false;
+        return 0;
+    }
+
+    // Whether the matrix command just before `cursor` is a character part: a
+    // plain modelview load whose next drawing command is a call into segment 8,
+    // or a multiplied push that is; and, inside a run (`in_run`), a multiplied
+    // push whose next drawing command is such a call.
+    bool loads_part(uint32_t params, uint32_t cursor, bool in_run = false) const {
+        if (params & kMtxProjection) return false;
+        if (params == kMtxPush) return in_run && next_part_command(cursor, nullptr) == 1;
+        if (!(params & kMtxLoad) || (params & kMtxPush)) return false;
+        uint32_t push_cursor = 0;
+        switch (next_part_command(cursor, &push_cursor)) {
+            case 1: return true;
+            case 2: return next_part_command(push_cursor, nullptr) == 1;
+            default: return false;
+        }
     }
 
     // Whether the run of part loads starting at the load at `load_cursor` has
     // any part whose matrix was not loaded last frame. Walks the frame's list
-    // forward, over calls and following branches, until a modelview load that
-    // is not a part, a projection load or the end.
+    // forward, over calls and pops and following branches, until a modelview
+    // matrix that is not a part, a projection load or the end.
     bool part_run_has_new_part(uint32_t load_cursor) const {
         uint32_t cursor = load_cursor;
+        bool in_run = false;
         for (uint32_t steps = 0; steps < 2048; ++steps) {
             const uint32_t* c = words(cursor);
             const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
@@ -1237,7 +1274,8 @@ struct Walker {
             }
             if (op != kOpMtx) continue;
             const uint32_t params = (w0 >> 16) & 0xFF;
-            if (!loads_part(params, cursor)) return false;
+            if (!loads_part(params, cursor, in_run)) return false;
+            in_run = true;
             if (model_prev->find(w1) == model_prev->end()) return true;
         }
         return false;
@@ -1246,16 +1284,32 @@ struct Walker {
     void top_level_matrix(uint32_t w0, uint32_t w1, uint32_t cursor) {
         const uint32_t params = (w0 >> 16) & 0xFF;
         const bool part = models_on && model_cur != nullptr && have_projection &&
-                          projection_is_perspective && loads_part(params, cursor);
-        if (part) {
-            if (!top_part_group_open) {
-                top_part_run_steps = part_run_has_new_part(cursor - 8);
-                if (top_part_run_steps) ++model_steps;
-            }
-            model_part_group(w1, top_part_run_steps);
-            top_part_group_open = true;
+                          projection_is_perspective &&
+                          loads_part(params, cursor, top_part_group_open);
+        if (!part) {
+            top_part_close();
+            return;
         }
-        else {
+        if (params == kMtxPush) {
+            // A joint: one step or one teleport with the load that began the run.
+            model_part_group(w1, top_part_run_steps || top_part_run_skips, false);
+            return;
+        }
+        if (!top_part_group_open) {
+            top_part_run_steps = part_run_has_new_part(cursor - 8);
+            if (top_part_run_steps) ++model_steps;
+        }
+        top_part_run_skips = model_part_group(w1, top_part_run_steps);
+        top_part_group_open = true;
+    }
+
+    // A call that loads a modelview matrix ends a run: the group is RT64 state
+    // that outlives the call, and the matrices inside belong to something else.
+    // The dolphin is followed by one (0x01008290, loading 0x02000A40). A part's
+    // own mesh in segment 8 draws vertices only and is not scanned.
+    void top_level_call(uint32_t segmented) {
+        if (top_part_group_open && (segmented >> 24) != 0x08 &&
+            list_modelview_loads(physical(segmented)) > 0) {
             top_part_close();
         }
     }
@@ -1264,6 +1318,7 @@ struct Walker {
         if (top_part_group_open) {
             model_group(G_EX_ID_AUTO, G_EX_COMPONENT_AUTO);
             top_part_group_open = false;
+            top_part_run_skips = false;
         }
     }
 
@@ -2920,8 +2975,8 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             }
             // A character model's list is copied in place of the call, so each of
             // its parts can be paired by identity. See Walker::inline_model.
+            w.top_level_call(w1);
             if (w.model_call(w1)) {
-                w.top_part_close();
                 w.inline_model(w1);
                 continue;
             }

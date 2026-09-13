@@ -953,6 +953,27 @@ A racer's **spray** is separate: a cloud of a few dozen single-matrix draws
 around the craft, each rebuilt every frame, moving 15-75 units a frame and
 shuffling among themselves. They are particles, not parts, and nothing keys them.
 
+### The dolphin: a jointed model at the top level
+
+The dolphin that leaps past the camera in the opening sequence is drawn from the
+frame's own list as **one body matrix and five jointed parts**. Traced with
+`WR64_3D_TRACE_STATE=any` over the opening:
+
+| | |
+|---|---|
+| Body | plain load (`G_MTX_LOAD`, no push) of **`0x060005D0`**, segment 6, modelview depth 0 |
+| Each part | `G_MTX_MUL` + `G_MTX_PUSH` of the part's own matrix, a call to its mesh in **segment 8**, `gSPPopMatrix` |
+| Parts, in order | `0x06000610` -> `0x08062AB8`, `0x06000650` -> `0x08063008`, `0x06000690` -> `0x080631A8`, `0x060006D0` -> `0x08062E60`, `0x06000710` -> `0x08062E60` |
+| Shared mesh | the last two parts call the same list; their draw calls are identical |
+| Part matrices | local to the body and animated, e.g. `0x06000690` translated (568, -123, -404) |
+| Addresses | the same in every frame and in both alternating lists (617 frames traced) |
+| Speed | ~50 units a game frame; 56 moves over 150 units in 617 frames, up to 6,004, when it is moved to its next leap |
+| Next command | `call 0x01008290`, which loads `0x02000A40` -- a matrix that belongs to something else |
+| Where | states `0x02`-`0x04` (the opening). The attract demo (`0x07`) draws two more the same way, bodies `0x06000750` and `0x060008D0`, parts at the body `+ 0x40` to `+ 0x140` |
+
+As with the riders, the matrix address is the identity that holds: the two parts
+cannot be told apart by what they draw.
+
 ### The gate markers: identified, and what limits them
 
 The **yellow arrows on the course** are not culled the way the buoys are. Raising
