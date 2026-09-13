@@ -646,6 +646,24 @@ void init() {
         std::fprintf(stderr, "[wr64] no saved graphics settings; defaulting to fullscreen at the display\'s size\n");
     }
 
+    // Test hook: WR64_TEST_INSPECTOR=25 opens RT64's F1 menu -- the HUD inspector
+    // and the water sun editor -- 25 seconds after startup, by posting the F1 key
+    // RT64's event filter listens for, so a capture can show those windows.
+    if (const char* spec = std::getenv("WR64_TEST_INSPECTOR")) {
+        const double delay = std::atof(spec) > 0.0 ? std::atof(spec) : 20.0;
+        std::thread([delay]() {
+            std::this_thread::sleep_for(std::chrono::duration<double>(delay));
+            SDL_Event event{};
+            event.type = SDL_KEYDOWN;
+            event.key.state = SDL_PRESSED;
+            event.key.keysym.scancode = SDL_SCANCODE_F1;
+            event.key.keysym.sym = SDLK_F1;
+            SDL_PushEvent(&event);
+            std::fprintf(stderr, "[wr64] test: pressed F1\n");
+            std::fflush(stderr);
+        }).detach();
+    }
+
     // Test hook: WR64_TEST_OPEN_SETTINGS=water@25 opens the settings menu on the
     // Water tab 25 seconds after startup, so a capture can show a tab as a
     // player sees it without anyone pressing Escape. Opening it changes nothing

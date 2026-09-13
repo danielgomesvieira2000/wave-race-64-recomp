@@ -24,7 +24,8 @@ again closes it.
 
 F1 is RT64's own shortcut for its developer UI, and the port's window is drawn
 inside that UI, so both appear together: RT64's **Game editor** on one side and
-**Wave Race HUD** on the other. That pairing is the point -- half of what you
+**Wave Race HUD** on the other. The water renderer's sun editor, **Wave Race
+water: sun**, opens with them ([WATER.md](WATER.md), *Tuning the sun*). That pairing is the point -- half of what you
 need is already in RT64's half (see
 [What RT64 already does](#what-rt64-already-does)).
 
@@ -396,7 +397,7 @@ and you would substitute your own.
 | File | What |
 |---|---|
 | `include/wr64/inspector.h` | The interface, and the threading contract written down |
-| `src/inspector.cpp` | The panel, the frame double-buffer, the override table, the save |
+| `src/inspector.cpp` | The panel, the frame double-buffer, the override table, the save; draws every port window from RT64's one hook |
 | `tools/patch_rt64_inspector.py` | The RT64 hook. Idempotent; chained into `tools/patch_rt64.py` |
 | `src/dlrewrite.cpp` | The five call sites |
 | `src/frontend.cpp` | `install()`, and forcing developer mode on so F1 works |

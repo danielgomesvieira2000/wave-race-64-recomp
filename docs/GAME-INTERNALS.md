@@ -508,7 +508,7 @@ draw it through that slot.
 | Records | `0x801BB138`, `0x18` bytes (x `+0`, z `+8`, type `+0x10`), count `0x801BC938`, room for 256 | `0x801AEE20`, `0x104` bytes, count `0x801BB120`, room for 64 |
 | What | the small buoys: the purple course-edge rows (type 1), plus clusters that depend on difficulty (types 2, 3) | the racing buoys and gates, chained buoy to buoy; the yellow arrow is drawn above the next one |
 | Built | once, at course load, by `func_80071E70` from three per-course lists appended in order; never repacked | at course load |
-| Visible if | `sqrt(dx^2 + dz^2) < +0xA4`, and within 60 degrees of the camera's heading (`dot > 0.5f`, `c.lt.s` at `0x8006ECA4`); types 4 and 5 never | the same distance, doubled for gates; the same cone (`0x8006EAF4`), which gates and some types skip |
+| Visible if | `sqrt(dx^2 + dz^2) < +0xA4`, and within 60 degrees of the camera's heading (`dot > 0.5f`, `c.lt.s` at `0x8006ECA4`; the heading is `gCameraPerspective[i]` `+0x64`/`+0x6C`, x and z, at `0x80227C80 + i*0x10C`, `i` from `0x80223930`); types 4 and 5 never | the same distance, doubled for gates; the same cone (`0x8006EAF4`), which gates and some types skip |
 | Visibility marks | `int16` at `0x801C08C0`, `-1` hidden, else a fade | `int16` at `0x801C0840` |
 | Slots a view | **32**, `slti $t5, 0x20` at `0x8006F01C` | **12**, `slti $t5, 0xC` at `0x80070108` |
 | Slot bytes | `0x801C0B80` | `0x801C0B40` |

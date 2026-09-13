@@ -19,6 +19,10 @@ notice changes.
   default was being set after the settings file had already been written, so it
   never took effect.
 - Unused code, stale comments and out-of-date documentation removed or corrected.
+- **A sun editor in the F1 menu.** *Wave Race water: sun* sets the water's sun per
+  course -- bearing, height and strength, with a button that aims it where the
+  camera faces -- saves to `water_sun.json`, and `tools/promote_water_sun.py`
+  copies the result into the course profiles.
 
 ## [0.9.3](docs/releases/0.9.3.md) — Every buoy, all the way out
 

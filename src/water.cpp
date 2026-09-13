@@ -15,6 +15,7 @@
 #include <set>
 #include <vector>
 #include "json/json.hpp"
+#include <librecomp/game.hpp>
 
 namespace wr64::water {
 namespace {
@@ -49,6 +50,58 @@ float currentTime = 0, previousTime = 0;
 uint64_t visualTicks = 0;
 std::array<interop::float4,4> previousCraft;
 std::array<interop::WaterMaterial,10> profiles;
+
+// The sun editor's state (see water.h). Written by the F1 panel on RT64's thread
+// and read here on the game thread, so everything is behind one small lock.
+std::mutex sunMutex;
+std::array<interop::float4,kCourses> sunOverride{};
+std::array<bool,kCourses> sunOverridden{};
+std::atomic<bool> profilesReady{false};
+std::atomic<uint32_t> lastCourse{~0u};
+std::atomic<float> headingX{0.0f}, headingZ{0.0f};
+std::atomic<bool> headingValid{false};
+
+// gCameraPerspective and the index of the camera in use; +0x64 and +0x6C are the
+// camera's horizontal heading, the vector func_8006E674 culls buoys against.
+constexpr uint32_t kCameraIndex=0x80223930, kCameraBase=0x80227C80, kCameraStride=0x10C;
+
+std::filesystem::path sun_path() {
+    return recomp::get_config_path() / "water_sun.json";
+}
+
+bool valid_sun(const interop::float4 &s) {
+    auto in=[](float v){ return std::isfinite(v) && v>=-4.0f && v<=4.0f; };
+    return in(s.x) && in(s.y) && in(s.z) && in(s.w) && s.w>=0.0f && s.x*s.x+s.y*s.y+s.z*s.z>=0.01f;
+}
+
+// water_sun.json: the same fields assets/water/profiles.json uses, for the
+// courses that have an override. Read once, after the profiles; a bad entry is
+// skipped and reported rather than rejecting the rest.
+void load_sun_overrides() {
+    std::ifstream file(sun_path());
+    if (!file) return;
+    try {
+        nlohmann::json doc; file >> doc;
+        uint32_t loaded=0;
+        std::lock_guard lock(sunMutex);
+        for (const auto &course:doc.at("courses")) {
+            const uint32_t id=course.at("id").get<uint32_t>();
+            const auto &a=course.at("sun_direction");
+            if (id>=kCourses || !a.is_array() || a.size()!=4) continue;
+            interop::float4 s{a.at(0).get<float>(),a.at(1).get<float>(),a.at(2).get<float>(),a.at(3).get<float>()};
+            if (!valid_sun(s)) {
+                std::fprintf(stderr,"[water] water_sun.json: course %u's sun is out of range; ignored\n",id);
+                continue;
+            }
+            sunOverride[id]=s;
+            sunOverridden[id]=true;
+            ++loaded;
+        }
+        std::fprintf(stderr,"[water] sun overrides from water_sun.json: %u course(s)\n",loaded);
+    } catch (const std::exception &error) {
+        std::fprintf(stderr,"[water] water_sun.json ignored: %s\n",error.what());
+    }
+}
 
 void load_profiles() {
     interop::WaterMaterial base{};
@@ -198,6 +251,68 @@ void set_style(Style value) { selectedStyle.store(std::min(uint32_t(value), 2u))
 void set_aqua_brightness(float percent) { aquaBrightness.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
 void set_aqua_tint(float percent) { aquaTint.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
 void set_clarity(float percent) { aquaClarity.store(std::isfinite(percent) ? std::clamp(percent / 100.0f, 0.0f, 1.0f) : 0.5f); }
+const char* course_name(uint32_t course) {
+    static const char* const names[kCourses]={"Dolphin Park","Sunny Beach","Sunset Bay","Marine Fortress",
+        "Drake Lake","Port Blue","Twilight City","Southern Island","Glacier Coast","Rider Selection"};
+    return course<kCourses ? names[course] : "no course";
+}
+uint32_t current_course() { return lastCourse.load(); }
+bool profiles_loaded() { return profilesReady.load(); }
+Sun profile_sun(uint32_t course) {
+    const interop::float4 s=profiles[std::min(course,kCourses-1)].sunDirection;
+    return {s.x,s.y,s.z,s.w};
+}
+bool sun_override(uint32_t course, Sun *out) {
+    if (course>=kCourses) return false;
+    std::lock_guard lock(sunMutex);
+    if (!sunOverridden[course]) return false;
+    const interop::float4 &s=sunOverride[course];
+    *out={s.x,s.y,s.z,s.w};
+    return true;
+}
+void set_sun_override(uint32_t course, const Sun &sun) {
+    if (course>=kCourses) return;
+    const interop::float4 s{sun.x,sun.y,sun.z,sun.strength};
+    if (!valid_sun(s)) return;
+    std::lock_guard lock(sunMutex);
+    sunOverride[course]=s;
+    sunOverridden[course]=true;
+}
+void clear_sun_override(uint32_t course) {
+    if (course>=kCourses) return;
+    std::lock_guard lock(sunMutex);
+    sunOverridden[course]=false;
+}
+bool camera_heading(float *x, float *z) {
+    if (!headingValid.load()) return false;
+    *x=headingX.load(); *z=headingZ.load();
+    return true;
+}
+// Writes every override in effect -- the ones loaded at startup included -- so the
+// file always says exactly what the game will use next time. A course reverted to
+// its profile is left out.
+bool save_sun_overrides(std::string &status) {
+    nlohmann::json doc;
+    doc["schema_version"]=1;
+    doc["courses"]=nlohmann::json::array();
+    uint32_t count=0;
+    {
+        std::lock_guard lock(sunMutex);
+        for (uint32_t id=0;id<kCourses;id++) {
+            if (!sunOverridden[id]) continue;
+            const interop::float4 &s=sunOverride[id];
+            doc["courses"].push_back({{"id",id},{"name",course_name(id)},{"sun_direction",{s.x,s.y,s.z,s.w}}});
+            ++count;
+        }
+    }
+    const std::filesystem::path path=sun_path();
+    std::ofstream out(path);
+    if (!out) { status="could not write "+path.string(); return false; }
+    out << doc.dump(2) << "\n";
+    status="saved "+std::to_string(count)+" course(s) to water_sun.json";
+    return true;
+}
+
 void set_ripple_detail(RippleDetail value) { selectedRipples.store(std::min(uint32_t(value), 2u)); }
 void set_spray_enabled(bool enabled) { selectedSpray.store(enabled); }
 void toggle() {
@@ -211,6 +326,8 @@ void reset_for_race() { raceResetRequested.store(true); }
 void publish_frame(const uint8_t *rdram, uint32_t display_list) {
     if (!initialized) {
         load_profiles();
+        profilesReady.store(true);
+        load_sun_overrides();
         if (const char *v = std::getenv("WR64_WATER")) {
             selected.store(std::strcmp(v,"ultra")==0 ? 3 : std::strcmp(v,"high")==0 ? 2 :
                 (std::strcmp(v,"modern")==0 || std::strcmp(v,"1")==0) ? 1 : 0);
@@ -269,6 +386,19 @@ void publish_frame(const uint8_t *rdram, uint32_t display_list) {
     }
     previousTick = tick; previousCourse = course;
     interop::WaterMaterial frame = profiles[std::min(course,9u)];
+    if (course<kCourses) {
+        std::lock_guard lock(sunMutex);
+        if (sunOverridden[course]) frame.sunDirection=sunOverride[course];
+    }
+    lastCourse.store(course);
+    {
+        const uint32_t camera=kCameraBase+(word(rdram,kCameraIndex)&3)*kCameraStride;
+        const float fx=real(rdram,camera+0x64), fz=real(rdram,camera+0x6C);
+        const float length=std::sqrt(fx*fx+fz*fz);
+        const bool ok=std::isfinite(length) && length>0.0001f;
+        if (ok) { headingX.store(fx/length); headingZ.store(fz/length); }
+        headingValid.store(ok);
+    }
     frame.animation.x = previousTime; frame.animation.y = currentTime;
     frame.identity = {float(uint32_t(quality())),float(debugView.load()),float(course),float(generation)};
     frame.surface.x = float(int32_t(word(rdram,0x80192458)));
@@ -438,13 +568,15 @@ interop::WaterMaterial material(uint32_t view) {
             std::fprintf(stderr,
                 "[water-trace] quality=%u style=%s opticsW=%.1f "
                 "deep %.4f %.4f %.4f a=%.4f -> %.4f %.4f %.4f a=%.4f  "
-                "shallow %.4f %.4f %.4f -> %.4f %.4f %.4f  vis %.1f -> %.1f  see-through %.2f -> %.2f\n",
+                "shallow %.4f %.4f %.4f -> %.4f %.4f %.4f  vis %.1f -> %.1f  see-through %.2f -> %.2f  "
+                "sun %.3f %.3f %.3f %.2f\n",
                 uint32_t(quality()), names[uint32_t(frameStyle)], result.optics.w,
                 beforeDeep.x, beforeDeep.y, beforeDeep.z, beforeDeep.w,
                 result.deepColor.x, result.deepColor.y, result.deepColor.z, result.deepColor.w,
                 beforeShallow.x, beforeShallow.y, beforeShallow.z,
                 result.shallowColor.x, result.shallowColor.y, result.shallowColor.z,
-                beforeVisibility, result.optics.x, beforeSeeThrough, result.optics.y);
+                beforeVisibility, result.optics.x, beforeSeeThrough, result.optics.y,
+                result.sunDirection.x, result.sunDirection.y, result.sunDirection.z, result.sunDirection.w);
             std::fflush(stderr);
         }
     }

@@ -20,6 +20,8 @@
 
 #include "json/json.hpp"
 
+#include "wr64/water.h"
+
 // Set by this file, called by RT64 once per frame with an ImGui frame open.
 // tools/patch_rt64_inspector.py adds the call.
 extern "C" void (*RT64_PortInspectorHook)();
@@ -325,6 +327,13 @@ void draw_panel() {
     ImGui::End();
 }
 
+// Every window the port puts in RT64's F1 menu: the HUD's, and the water sun
+// editor's (src/watersun.cpp). RT64 has one hook, so this draws them all.
+void draw_windows() {
+    draw_panel();
+    wr64::water::draw_sun_editor();
+}
+
 }  // namespace
 
 bool enabled() {
@@ -346,7 +355,7 @@ void init() {
 
 void install() {
     if (!g_enabled) return;
-    RT64_PortInspectorHook = draw_panel;
+    RT64_PortInspectorHook = draw_windows;
 }
 
 void begin_frame(uint32_t game_state) {

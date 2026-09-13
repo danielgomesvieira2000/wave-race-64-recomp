@@ -834,6 +834,11 @@ any thread other than the UI's, take the config context first --
 takes its own lock. This port's hook is `WR64_TEST_OPEN_SETTINGS=water@25`, in
 `src/frontend.cpp`.
 
+RT64's F1 menu opens the same way from a test, by posting the key rather than
+calling anything: `SDL_PushEvent` runs the event watches, and RT64 toggles its
+inspector from one on `SDL_SCANCODE_F1`. This port's hook is
+`WR64_TEST_INSPECTOR=25`.
+
 ### Separating one sound from another after the mix is impossible
 
 **So do it before the mix.** A main volume can scale the finished buffer; a music

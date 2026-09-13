@@ -277,7 +277,7 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
                              src/haptics.cpp src/music.cpp
                              src/inspector.cpp src/mods.cpp
                              src/drawdistance.cpp src/audiodiag.cpp
-                             src/resample.cpp src/water.cpp src/waterfield.cpp
+                             src/resample.cpp src/water.cpp src/waterfield.cpp src/watersun.cpp
                              src/waterring.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)

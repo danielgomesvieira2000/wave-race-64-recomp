@@ -140,6 +140,7 @@ frame; they do not persist and they are not settings.
 | `WR64_WATER_CLARITY`, `WR64_WATER_BRIGHTNESS`, `WR64_WATER_TINT` | `0`-`100`, as the sliders store them |
 | `WR64_WATER_DEBUG` | `0`-`14`, the diagnostic views |
 | `WR64_TEST_OPEN_SETTINGS` | `water@25`: opens the settings menu on that tab after that many seconds, for a capture of the menu. Changes nothing saved |
+| `WR64_TEST_INSPECTOR` | `25`: presses F1 after that many seconds, opening the HUD inspector and the sun editor for a capture |
 | `WR64_WATER_PROFILES` | path to a `profiles.json` to use instead of the packaged one |
 | `WR64_WATER=ultra` | a quality above Best that the menu does not offer: the added spray's particle budget doubles |
 | `WR64_TEST_WATER_COMPARE_TICK` | a game tick; at it the water flips to Original once, as `F9` does, for a scripted comparison |
@@ -155,7 +156,7 @@ renderer at all -- by printing what was actually sent:
 [water-trace] quality=2 style=Aqua opticsW=0.0
   deep 0.0080 0.1000 0.1500 a=0.0030 -> 0.0160 0.1850 0.2025 a=0.0006
   shallow 0.0300 0.4400 0.3800 -> 0.0510 0.5720 0.4636  vis 66.7 -> 119.9
-  see-through 0.00 -> 1.00
+  see-through 0.00 -> 1.00  sun -0.450 0.750 0.480 2.00
 ```
 
 That one is Aqua at Clarity 100%. The `[water] appearance:` line at startup
@@ -220,11 +221,9 @@ outside the ranges below are rejected (the four-component fields) or clamped
 
 **Aiming the sun at a course's skybox.** Nothing reads the sun from the game;
 every course has the value in this file, and six of the ten share the same one,
-`[-0.45, 0.75, 0.48, 2.0]`. To match a skybox: Y sets the elevation (a low sun
-is a small Y, as on Sunset Bay's `0.23`), and X and Z the compass bearing on the
-course's own axes. The quick way to find the bearing is to face the skybox sun
-in a race, raise the fourth number so the highlight is obvious, and turn X and Z
-until the glint on the water sits under the sun.
+`[-0.45, 0.75, 0.48, 2.0]`. Y sets the height (a low sun is a small Y, as on
+Sunset Bay's `0.23`), and X and Z the bearing on the course's own axes. Do it in
+the game rather than here: see [Tuning the sun](#tuning-the-sun).
 
 | Course | `sun_direction` | `authored_reflection` |
 |---|---|---|
@@ -233,6 +232,48 @@ until the glint on the water sits under the sun.
 | Twilight City | `[-0.3, 0.15, 0.9, 0.3]` | 0 |
 | Southern Island | `[-0.25, 0.86, 0.44, 2.2]` | 0 |
 | every other course | `[-0.45, 0.75, 0.48, 2.0]` | 0 |
+
+### Tuning the sun
+
+The water is lit from one direction a course, and on the courses where it was
+never matched to the sky the glint sits away from the sun painted there. **Press
+F1** during a race: beside RT64's menu and the HUD inspector is **Wave Race
+water: sun**, for the course on screen.
+
+```
+Sunset Bay (course 2)   * changed
+bearing   [----------|----]  -38.3 deg
+height    [--|-----------]   13.3 deg
+strength  [------|-------]   2.50
+[ Aim at camera heading ]  [ Revert to profile ]
+[ Save to water_sun.json ]  saved 1 course(s) to water_sun.json
+in use   [-0.603, 0.230, 0.764, 2.50]
+profile  [-0.600, 0.230, 0.760, 2.50]
+```
+
+| Control | What it does |
+|---|---|
+| **bearing** | Which way the sun is, in degrees on the course's own axes: 0 looks down +Z, 90 down +X. |
+| **height** | How high it stands: 0 is the horizon, 90 straight overhead. |
+| **strength** | How bright the glint is. Raise it while aiming so the glint is easy to see. |
+| **Aim at camera heading** | Sets the bearing to the way the camera faces. Face the sun in the sky and press it. |
+| **Revert to profile** | Back to `profiles.json`'s value for this course. |
+| **Save to water_sun.json** | Writes every course you changed to the settings folder. The game reads it at startup, so the change stays. |
+
+Changes show on the next frame, and only with Water Quality at Enhanced or Best.
+
+**To ship them**, promote what you saved into the profiles, look at the diff, and
+commit:
+
+```
+python tools/promote_water_sun.py            # copy the saved suns into profiles.json
+python tools/promote_water_sun.py --dry-run  # show what it would change
+python tools/promote_water_sun.py --clear    # ... and delete the local file
+```
+
+`--clear` is worth doing once promoted: `water_sun.json` overrides the profile,
+so while it exists a later change to `profiles.json` does not show on that
+machine.
 
 ---
 
@@ -347,6 +388,28 @@ it the runtime frees its thread queues and RDRAM without waiting for the workers
 that may still be reading them, and the process crashes on exit intermittently.
 Repeated scripted runs find it; playing does not, for a while.
 
+### A tuning window for per-scene art values
+
+Values like a sun direction are art, not measurement, and the only good test of
+one is the picture. This port's editor is three small pieces, and none of them is
+specific to water:
+
+1. **An override table beside the loaded asset**, consulted where the per-frame
+   material is built (`publish_frame` in `src/water.cpp`): profile value, then
+   override. The editor and the game run on different threads -- RT64's UI thread
+   and the game's -- so the table is a small array behind one lock.
+2. **A window in the renderer's existing debug UI** (`src/watersun.cpp`), drawn
+   from the same hook as the HUD inspector (see
+   [HUD-INSPECTOR.md](HUD-INSPECTOR.md), *Putting it in another project*). Edit
+   in the units the eye works in -- a bearing and a height, not x, y and z -- and
+   convert on the way in and out. Take what you can from the game: the camera's
+   heading, read on the game thread each frame, turns "match the sky" into one
+   button.
+3. **Save to the settings folder, promote to the asset.** The save is loaded at
+   startup, so a tuned value survives a restart without touching the repository;
+   a script copies it into the shipped asset when it is right. Write the asset
+   back in its existing formatting, so the diff is the changed numbers.
+
 ### Cost control
 
 Make Original the default and make it a real bypass, not a cheaper shading path.
@@ -364,7 +427,9 @@ tooltip; see *The settings* above for why the names here are not the ids.
 | `tools/patches/rt64-water.patch` | the RT64 side |
 | `tools/patch_rt64_water.py` | applies it, idempotently; chained into `patch_rt64.py` |
 | `tools/patches/runtime-shutdown.patch`, `tools/patch_runtime_shutdown.py` | the shutdown fix it needs |
-| `src/water.cpp`, `include/wr64/water.h` | the port side: settings, the per-frame snapshot, profile loading |
+| `src/water.cpp`, `include/wr64/water.h` | the port side: settings, the per-frame snapshot, profile loading, the sun overrides |
+| `src/watersun.cpp` | the sun editor in the F1 menu |
+| `tools/promote_water_sun.py` | copies saved suns from `water_sun.json` into `profiles.json` |
 | `include/wr64/water_shore.h` | shoreline segments, from the game's own bounded collision planes |
 | `patches/water.cpp` | the two game hooks |
 | `src/overlays.cpp` | registers them by address |
