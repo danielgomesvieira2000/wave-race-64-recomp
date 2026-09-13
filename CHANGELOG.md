@@ -10,6 +10,13 @@ notice changes.
 
 ## Unreleased
 
+- **Measured, on both platforms.** The sea extension and the raised draw
+  distance cost nothing measurable: across five configurations of the same
+  attract demo, 84 two-second windows each, the port held the game's own 20
+  frames per second in 98% of windows with and without them, and 96% with all
+  of it on at once — High water, the ring, and Maximum distance. The Linux
+  build was rebuilt against all of it and runs on Mesa's software Vulkan.
+
 - **The sea reaches as far as the course does.** The game animates a patch of
   water 922 units across and paints everything beyond it onto the sky — a flat,
   seven-vertex band at sea level, which is why the water appeared to meet the

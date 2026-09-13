@@ -39,6 +39,7 @@
 #include "recomp.h"
 
 #include <chrono>
+#include <cstring>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -147,7 +148,16 @@ void vi_swap_buffer_hook(uint8_t* rdram, recomp_context* ctx) {
     // up rather than the game's choice. Time Trial, for one, asks for 20 -- the
     // divider is 3 there -- where the championship asks for 30. (A window that
     // straddles a change reads as some other number for one line.)
-    if (rate == last_reported) {
+    // Normally only when it changes, so a steady rate is one line rather than
+    // one every two seconds. WR64_FRAME_STATS prints every window instead,
+    // which is what comparing two settings needs: "did it change" is not a
+    // measurement, and a rate that holds at the target tells you nothing about
+    // how much headroom is left.
+    static const bool every_window = [] {
+        const char* value = std::getenv("WR64_FRAME_STATS");
+        return value != nullptr && value[0] != 0 && std::strcmp(value, "0") != 0;
+    }();
+    if (rate == last_reported && !every_window) {
         return;
     }
     last_reported = rate;

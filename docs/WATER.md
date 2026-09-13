@@ -75,7 +75,8 @@ translucency.
 | When it is drawn | whenever **either** Water quality or Draw Distance is above Original |
 | How far | as far as Draw Distance asks for, or the course's own cull, whichever is further |
 | What it costs | 7 circles x 24 sectors: 312 vertex slots and 144 quads a frame, against the game's own 500 vertices |
-| Turning it off | `WR64_NO_WATER_RING=1` |
+| Turning it off | `WR64_NO_WATER_RING=1`, or `WR64_WATER_RING_DEBUG=1` to see where it is, painted magenta |
+| What it costs | nothing measurable. Over five configurations of the same attract demo, 84 two-second windows each, the port held the game's own 20 frames per second in **98%** of windows with and without it; the full stack -- High water, the ring, and the draw distance at Maximum -- held it in 96%. The metric saturates at the game's own rate, so this says the port keeps up, not how much headroom is left |
 
 With both settings at Original nothing is added at all, because a frame with
 neither raised has to be the frame the game itself would have produced.
