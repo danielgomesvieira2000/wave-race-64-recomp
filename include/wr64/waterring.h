@@ -47,16 +47,17 @@
 
 namespace wr64::waterring {
 
-// The ring's shape. Twenty-four sectors is 15 degrees each, which at the inner
-// radius is about 240 units between neighbours -- coarser than the game's own
-// 32-unit grid, and correct for it: this geometry is never closer than 922
-// units, where a wave is a few pixels across.
-constexpr int kSectors = 24;
+// The ring's shape. Forty-eight sectors is 7.5 degrees each, about 110 units
+// between neighbours at the inner radius -- still coarser than the game's own
+// 32-unit grid, but close enough at the seam that the two read as one surface.
+// Twenty-four was tried first and the join showed.
+constexpr int kSectors = 48;
 
-// Radii, including the inner edge. Six bands of quads between seven circles,
+// Radii, including the inner edge. Eight bands of quads between nine circles,
 // spaced so they grow with distance: the far bands cover far more ground for
-// the same vertex count, which is where the cost has to go.
-constexpr int kCircles = 7;
+// the same vertex count, which is where the cost has to go. The outermost two
+// fade out, so the ring meets the sky's painted sea rather than ending at it.
+constexpr int kCircles = 9;
 
 constexpr int kVertexCount = kSectors * kCircles;
 

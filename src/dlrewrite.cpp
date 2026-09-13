@@ -134,11 +134,19 @@ constexpr uint32_t kMaxCommands = kScratchSize / 8;
 constexpr uint32_t kMatrixScratch = kScratch + kScratchSize;
 constexpr uint32_t kMatrixScratchSize = 0x1000u;   // 64 matrices
 
-// And where the water ring's vertices go, past the matrices. A Vtx is 16 bytes
-// and the ring emits its bands in batches of 26, twice per band; 8 KB is more
-// than twice what the largest ring needs, and the cursor restarts every frame.
+// And where the water ring's vertices go, past the matrices.
+//
+// Size it from the ring, not by feel. A Vtx is 16 bytes; the ring emits each of
+// its bands in chunks of at most 32 vertices that overlap by a column, so 48
+// sectors takes four chunks a band and eight bands take 1,024 vertex slots --
+// 16 KB. The first version of this reserved 8 KB, which is exactly half, and
+// the emitter would have run out at the fourth band and silently stopped: the
+// ring would have been drawn with its outer half missing and the log would
+// still have said it was drawn. 32 KB leaves room for a denser ring without
+// this becoming a trap again. Two views of a split screen each get their own,
+// and the cursor restarts every frame.
 constexpr uint32_t kVertexScratch = kMatrixScratch + kMatrixScratchSize;
-constexpr uint32_t kVertexScratchSize = 0x2000u;
+constexpr uint32_t kVertexScratchSize = 0x8000u;
 
 // The microcode this game runs is not stock F3D. RT64 carries a variant for it
 // -- lib/RT64/src/gbi/rt64_gbi_f3dwave.cpp -- and these are that variant's own
@@ -1126,6 +1134,35 @@ struct Walker {
         return found;
     }
 
+    // The physical address of a list's first vertex, or zero.
+    //
+    // The ring copies the game's own water vertex attributes rather than
+    // carrying a transcription of them, so that whatever the game does -- to its
+    // texture coordinates, its translucency, its shade -- the added geometry
+    // does the same. A constant read out of a trace once is a constant that can
+    // be wrong on a course nobody traced.
+    uint32_t scan_first_vertex_address(uint32_t physical_addr, int depth) const {
+        uint32_t cursor = physical_addr;
+        for (uint32_t steps = 0; steps < 512; ++steps) {
+            const uint32_t* c = words(cursor);
+            const uint32_t w0 = c[0];
+            const uint32_t w1 = c[1];
+            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
+            cursor += 8;
+            if (op == kOpEndDisplayList) return 0;
+            if (op == kOpVtx) return physical(w1);
+            if (op == kOpDisplayList) {
+                const bool branch = ((w0 >> 16) & 0xFF) != 0;
+                if (branch) { cursor = physical(w1); continue; }
+                if (depth < 3) {
+                    const uint32_t found = scan_first_vertex_address(physical(w1), depth + 1);
+                    if (found != 0) return found;
+                }
+            }
+        }
+        return 0;
+    }
+
     uint32_t scan_first_vertex_segment(uint32_t physical_addr, int depth) const {
         uint32_t cursor = physical_addr;
         for (uint32_t steps = 0; steps < 512; ++steps) {
@@ -1186,9 +1223,31 @@ struct Walker {
     // the water is drawn under, so world-space vertices are correct as they
     // stand; and the modern renderer's shading, since the material is still
     // attached.
-    void water_ring(const wr64::waterring::Ring& ring) {
+    // Emits the ring, wearing the game's own water attributes.
+    //
+    // `sample` is the address of the first vertex of the game's own water list.
+    // Texture coordinates, shade colour and translucency are copied from it
+    // rather than transcribed from a trace: a constant read once is a constant
+    // that can be wrong on a course nobody traced, and the whole point of the
+    // ring is that it should be indistinguishable from the sea it continues.
+    void water_ring(const wr64::waterring::Ring& ring, uint32_t sample) {
         using wr64::waterring::kSectors;
         using wr64::waterring::kCircles;
+
+        static const bool ring_debug = std::getenv("WR64_WATER_RING_DEBUG") != nullptr;
+
+        // What the game's own water looks like, read out of the frame being
+        // drawn. The fallbacks are what a trace of Sunny Beach measured, used
+        // only if the scan finds no vertex at all.
+        uint16_t tc_s = 1024, tc_t = 1024;
+        uint16_t shade_rg = 0xFFFF, shade_ba = 0xFFB0;
+        if (sample != 0) {
+            tc_s = half(sample + 8);
+            tc_t = half(sample + 10);
+            shade_rg = half(sample + 12);
+            shade_ba = half(sample + 14);
+        }
+        const uint8_t alpha = uint8_t(shade_ba & 0xFF);
 
         // Once, so a run says whether this reached the display list at all --
         // the difference between "drawn and invisible" and "never emitted" is
@@ -1197,25 +1256,33 @@ struct Walker {
         if (!announced) {
             announced = true;
             std::fprintf(stderr,
-                         "[water] ring: %d sectors x %d circles, %.0f to %.0f units\n",
-                         kSectors, kCircles, ring.inner, ring.outer);
+                         "[water] ring: %d sectors x %d circles, %.0f to %.0f units,"
+                         " tc (%d,%d) shade %04X%04X\n",
+                         kSectors, kCircles, ring.inner, ring.outer,
+                         int16_t(tc_s), int16_t(tc_t), shade_rg, shade_ba);
             std::fflush(stderr);
         }
 
-        // Each band is split in half because a batch is 26 vertices and a whole
-        // band is 50: thirteen columns of two, twelve quads, twice per band.
-        constexpr int kHalfColumns = kSectors / 2 + 1;      // 13
-        constexpr int kBatchVertices = kHalfColumns * 2;    // 26
+        // A band is emitted in chunks, because one G_VTX can only load so many
+        // vertices and a whole ring of them is far more than that. Sixteen
+        // columns of two is thirty-two, which is the limit this microcode's
+        // vertex cache is addressed within.
+        constexpr int kMaxColumns = 16;
+        constexpr int kColumns = kSectors + 1;              // the seam closes
 
         for (int band = 0; band + 1 < kCircles; ++band) {
-            for (int half = 0; half < 2; ++half) {
+            for (int first = 0; first < kSectors; first += kMaxColumns - 1) {
+                const int columns = std::min(kMaxColumns, kColumns - first);
+                if (columns < 2) break;
+                const uint32_t count = uint32_t(columns * 2);
                 const uint32_t base = kVertexScratch + vertex_cursor;
-                if (vertex_cursor + kBatchVertices * 16 > kVertexScratchSize) return;
+                if (vertex_cursor + count * 16 > kVertexScratchSize) return;
 
-                for (int col = 0; col < kHalfColumns; ++col) {
-                    const int sector = (half * (kSectors / 2) + col) % kSectors;
+                for (int col = 0; col < columns; ++col) {
+                    const int sector = (first + col) % kSectors;
                     for (int row = 0; row < 2; ++row) {
-                        const auto& v = ring.vertices[(band + row) * kSectors + sector];
+                        const int circle = band + row;
+                        const auto& v = ring.vertices[circle * kSectors + sector];
                         const uint32_t at = base + uint32_t(col * 2 + row) * 16;
                         // A Vtx is six s16 then four u8. write_half already
                         // carries the XOR-2 convention RDRAM is stored under, so
@@ -1224,30 +1291,37 @@ struct Walker {
                         write_half(at + 0, uint16_t(v.x));
                         write_half(at + 2, uint16_t(v.y));
                         write_half(at + 4, uint16_t(v.z));
-                        write_half(at + 6, 0);           // flag
-                        // Texture coordinates and shade copied from the game's
-                        // own water, read out of a trace rather than guessed:
-                        // every block of the patch carries tc = (1024, 1024) --
-                        // a constant 32.0 in S10.5 -- and rgba = FFFFFFB0. The
-                        // alpha is the point. The water is drawn translucent
-                        // (G_RM_AA_ZB_XLU_SURF) and 0xB0 is what makes it so; an
-                        // opaque ring would read as a solid band laid over the
-                        // sea, which is what the first version of this would
-                        // have drawn at Water = Original.
-                        write_half(at + 8, 1024);
-                        write_half(at + 10, 1024);
-                        write_half(at + 12, 0xFFFF);     // r, g
-                        write_half(at + 14, 0xFFB0);     // b, a
+                        write_half(at + 6, 0);             // flag
+                        write_half(at + 8, tc_s);
+                        write_half(at + 10, tc_t);
+
+                        // The outermost circle fades out. The sea past the ring
+                        // is the sky's painted haze band, and a translucent
+                        // sheet that simply stops against it draws a visible
+                        // edge -- which is what "another colour out there"
+                        // looks like. Fading the last circle to nothing lets
+                        // the two meet instead of abut.
+                        uint16_t ba = shade_ba;
+                        if (circle == kCircles - 1) {
+                            ba = uint16_t((shade_ba & 0xFF00) | 0);
+                        }
+                        else if (circle == kCircles - 2) {
+                            ba = uint16_t((shade_ba & 0xFF00) | (alpha / 2));
+                        }
+                        // WR64_WATER_RING_DEBUG paints it opaque magenta, which
+                        // is the only way to tell "drawn and indistinguishable
+                        // from the sea" from "never reached the screen".
+                        write_half(at + 12, ring_debug ? 0xFF00 : shade_rg);
+                        write_half(at + 14, ring_debug ? 0xFFFF : ba);
                     }
                 }
 
                 // G_VTX: count in bits 9..15, destination index (times five) in
                 // 16..23, the byte length in the low bits for form's sake.
-                const uint32_t n = kBatchVertices;
-                emit((uint32_t(kOpVtx) << 24) | ((n << 9) | (n * 16 - 1)),
+                emit((uint32_t(kOpVtx) << 24) | ((count << 9) | (count * 16 - 1)),
                      0x80000000u | base);
 
-                for (int col = 0; col + 1 < kHalfColumns; ++col) {
+                for (int col = 0; col + 1 < columns; ++col) {
                     const uint32_t a = uint32_t(col * 2 + 0) * 5;
                     const uint32_t b = uint32_t(col * 2 + 1) * 5;
                     const uint32_t c = uint32_t((col + 1) * 2 + 1) * 5;
@@ -1256,7 +1330,7 @@ struct Walker {
                          (a << 24) | (b << 16) | (c << 8) | d);
                 }
 
-                vertex_cursor += kBatchVertices * 16;
+                vertex_cursor += count * 16;
             }
         }
     }
@@ -2196,6 +2270,23 @@ struct Tracer {
                 case kOpVtx: {
                     const uint32_t count = (w0 >> 9) & 0x7F;
                     const uint32_t addr = physical(w1);
+                    // The span of texture coordinate and alpha across the whole
+                    // load, not just its first vertex. Whether a mesh varies
+                    // these or holds them constant is the difference between
+                    // geometry that can be imitated by copying one vertex and
+                    // geometry that cannot.
+                    int tc_lo = 32767, tc_hi = -32768, a_lo = 255, a_hi = 0;
+                    for (uint32_t i = 0; i < count && i < 64; ++i) {
+                        const uint32_t v = addr + i * 16;
+                        for (uint32_t k = 8; k <= 10; k += 2) {
+                            const int t = signed_half(v + k);
+                            tc_lo = std::min(tc_lo, t);
+                            tc_hi = std::max(tc_hi, t);
+                        }
+                        const int a = rdram[((v + 15) & 0x00FFFFFFu) ^ 3];
+                        a_lo = std::min(a_lo, a);
+                        a_hi = std::max(a_hi, a);
+                    }
                     const Mat4 mvp = modelview[modelview_depth] * projection;
                     float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
                     for (uint32_t i = 0; i < count && i < 64; ++i) {
@@ -2212,6 +2303,7 @@ struct Tracer {
                     }
                     std::fprintf(f, "%*svtx #%u 0x%08X (phys 0x%06X) n=%u hash %08X tex 0x%08X"
                                     " v0=(%d,%d,%d) tc=(%d,%d) rgba=%02X%02X%02X%02X"
+                                    " tcspan[%d..%d] aspan[%d..%d]"
                                     " clip x[%.2f..%.2f] y[%.2f..%.2f]\n",
                                  depth * 2, "", vtx_loads++, w1, addr, count, hash(addr, count * 16),
                                  texture, signed_half(addr), signed_half(addr + 2),
@@ -2227,6 +2319,7 @@ struct Tracer {
                                  rdram[((addr + 13) & 0x00FFFFFFu) ^ 3],
                                  rdram[((addr + 14) & 0x00FFFFFFu) ^ 3],
                                  rdram[((addr + 15) & 0x00FFFFFFu) ^ 3],
+                                 tc_lo, tc_hi, a_lo, a_hi,
                                  max_x < min_x ? 0.0f : min_x, max_x < min_x ? 0.0f : max_x,
                                  min_y > max_y ? 0.0f : min_y, min_y > max_y ? 0.0f : max_y);
                     continue;
@@ -2597,7 +2690,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // each get their own.
             if (modern_water) {
                 if (const auto* ring = wr64::waterring::claim(list_vaddr)) {
-                    w.water_ring(*ring);
+                    w.water_ring(*ring, w.scan_first_vertex_address(w.physical(w1), 0));
                 }
             }
             if (modern_water) w.water_material(false);
