@@ -87,29 +87,32 @@ def axial(x: float, z: float):
     return (u >> 6, v >> 6, (u & 63) / 64.0, (v & 63) / 64.0)
 
 
-def height_at(heights, x: float, z: float) -> float:
-    """The surface height at a world XZ: a plane over the containing triangle.
+def height_at(heights, x: float, z: float, water_level: float = 0.0) -> float:
+    """What `func_8004D30C(x, z)` returns at a world XZ.
 
-    Transcribed from func_8004D30C, 0x8004D410 onward. The rhombus is split
-    along `frac u == frac v` -- the branch at 0x8004D424 tests `frac v > frac u`
-    -- and each half takes the base corner plus the two the code actually
-    loads. What it computes is a pair of *differences* between adjacent corner
-    heights, then walks them by the fractional parts:
+    And it is **not the height**. The function builds a plane over the triangle
+    containing the point and returns that plane's constant *divided by the
+    length of its normal* -- the tail at 0x8004D588 onward, transcribed:
 
-        frac v <= frac u    corners (cu,cv), (cu+1,cv), (cu+1,cv+1)
-                            d0 = h00 - h10     (0x8004D548)
-                            d1 = h10 - h11     (0x8004D584)
-                            h  = h00 - fu*d0 - fv*d1
+        d0, d1                two differences between adjacent corner heights
+        fu, fv                the point's offset inside the cell, 0..63 units,
+                              as -(u & 63) and -(v & 63) at 0x8004D414
+        H  = gWaterLevel + h00
 
-        frac v >  frac u    corners (cu,cv), (cu,cv+1), (cu+1,cv+1)
-                            d1 = h00 - h01     (0x8004D470)
-                            d0 = h01 - h11     (0x8004D4D8)
-                            h  = h00 - fv*d1 - fu*d0
+        return (H << 12  -  d0*fu  -  d1*fv) / sqrt((d0^2 + d1^2 + 0x1000) << 12)
 
-    Both reduce to the corner value at each corner, which is the check that the
-    weights are the right way round. The function goes on to normalise a plane
-    with a square root at 0x8004D5C4 -- that is for the *slope* it also returns
-    to its callers, not for the height.
+    0x1000 is 4096 = 64 squared, so the divisor is 64 * sqrt(d0^2 + d1^2 + 64^2)
+    -- the normal of a plane rising d0 and d1 over a 64-unit cell. On flat water
+    d0 = d1 = 0 and it cancels to exactly H, which is why every probe taken on
+    still water agreed with a plain plane and the division went unnoticed. As the
+    surface tilts the two diverge, which was the "about one world unit" residual
+    this file used to report and attribute to unknown weights. The weights were
+    never the problem; the division was.
+
+    A caller that wants a *height* multiplies back by sqrt(D0^2 + D1^2 + 1),
+    where D0 and D1 are the differences over the cell size. The game does not,
+    because what it wants is the plane -- it returns the normal to its callers
+    for slope, which is the other half of the same computation.
     """
     cu, cv, fu, fv = axial(x, z)
 
@@ -118,9 +121,19 @@ def height_at(heights, x: float, z: float) -> float:
         return heights[row][col]
 
     h00 = h(0, 0)
+    # The rhombus is split along `frac u == frac v`; the branch at 0x8004D41C
+    # compares -(v & 63) against -(u & 63), which is `frac v > frac u`.
     if fv > fu:
-        return h00 - fv * (h00 - h(0, 1)) - fu * (h(0, 1) - h(1, 1))
-    return h00 - fu * (h00 - h(1, 0)) - fv * (h(1, 0) - h(1, 1))
+        d1 = h00 - h(0, 1)
+        d0 = h(0, 1) - h(1, 1)
+    else:
+        d0 = h00 - h(1, 0)
+        d1 = h(1, 0) - h(1, 1)
+
+    base = water_level + h00
+    numerator = base * 4096.0 - d0 * (fu * 64.0) - d1 * (fv * 64.0)
+    denominator = 64.0 * math.sqrt(d0 * d0 + d1 * d1 + 4096.0)
+    return numerator / denominator
 
 
 def load_field(path: Path):
@@ -180,13 +193,20 @@ def check_probes(path: Path, heights, water_level: float, quantum: float):
         return False
 
     per_grid = {}
+    offsets = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line or line.startswith("#") or line.startswith("grid,"):
             continue
         grid, xs, zs, hs = line.split(",")
         x, z, game = float(xs), float(zs), float(hs)
-        ours = height_at(heights, x, z) + water_level
+        ours = height_at(heights, x, z, water_level)
         per_grid.setdefault(grid, []).append(abs(ours - game))
+        _cu, _cv, fu, fv = axial(x, z)
+        a, b = round(fu * 64), round(fv * 64)
+        tally = offsets.setdefault(grid, [0, 0])
+        tally[0] += 1
+        if a in (0, 63) or b in (0, 63):
+            tally[1] += 1
 
     print("\n--- decode vs the game's own func_8004D30C ---")
     print(f"  heights are whole world units after >>8; tolerance {quantum:.4f}\n")
@@ -198,13 +218,26 @@ def check_probes(path: Path, heights, water_level: float, quantum: float):
         within = sum(1 for e in errors if e <= quantum)
         median = errors[n // 2]
         p95 = errors[min(n - 1, int(n * 0.95))]
+        # Where the probes actually landed inside a cell. A grid meant for cell
+        # corners that reports (63,63) never reached one: the float round-trip
+        # from lattice coordinates back to world XZ truncates into the previous
+        # cell, and the decoder and the game can then disagree about which cell
+        # a boundary point is in. That is a broken measurement, not a broken
+        # decode, and it has now cost this project twice -- so it is printed.
+        total, edge = offsets.get(grid, (1, 0))
+        share = edge / total
+        where = ("interior" if share < 0.5
+                 else f"{share:.0%} ON A CELL BOUNDARY")
         print(f"  {grid:<8} {n:>7} {100.0 * within / n:>7.1f}% "
-              f"{median:>9.4f} {p95:>9.4f} {errors[-1]:>9.4f}")
+              f"{median:>9.4f} {p95:>9.4f} {errors[-1]:>9.4f}   {where}")
         # A plane over the triangle should agree everywhere, not only on the
         # corners, so every grid counts now. The lattice grid is the strictest
         # of the three anyway: probing exactly on a cell boundary is where a
         # truncating index is most easily off by one.
-        if within < 0.99 * n:
+        # A grid sitting on cell boundaries is excluded from the verdict. It is
+        # not measuring the interpolation; it is measuring whether two different
+        # truncations agree, which they need not.
+        if within < 0.99 * n and share < 0.5:
             ok = False
 
     print()

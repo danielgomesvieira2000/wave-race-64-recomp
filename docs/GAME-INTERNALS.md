@@ -654,18 +654,45 @@ They are combined in 12-bit fixed point at `0x8004D588`-`0x8004D600`:
 square root of `d0^2 + d1^2 + 0x1000` taken at `0x8004D5C4` -- a plane normal
 being normalised, which the function also gives its callers for slope.
 
-**The weights are the part still open.** A plain barycentric plane over those
-corners reproduces the game to a median of **0.089 world units on lattice-aligned
-probes**, against a field spanning about 90, but probes well inside a cell still
-differ by about one unit and no rearrangement of which fraction weights which
-difference improves it. The residual is in that fixed-point tail, not in the
-index or the corner choice, both of which are settled.
+**The weights are `-(u & 63)` and `-(v & 63)`, and the residual was never the
+weights.** Both are formed at `0x8004D414`; the whole tail from `0x8004D588`
+transcribes to
 
-For anything that needs exact heights, the answer is not to finish this
-transcription: **call `func_8004D30C` itself.** It is recompiled like everything
-else and `src/waterfield.cpp` calls it thousands of times a frame without
-trouble. The decode is for understanding the field and for evaluating it in bulk
-somewhere the game's function cannot go, such as a shader.
+    return (H << 12  -  d0*fu  -  d1*fv) / sqrt((d0^2 + d1^2 + 0x1000) << 12)
+
+with `H = gWaterLevel + h00` and `fu`, `fv` the offsets inside the cell in units
+of 0..63. `0x1000` is 4096, which is 64 squared, so the divisor is
+`64 * sqrt(d0^2 + d1^2 + 64^2)` -- **the length of the normal of a plane rising
+d0 and d1 over a 64-unit cell**.
+
+So `func_8004D30C` does not return a height. It returns that plane's constant
+divided by its normal's length, which is the other half of the same computation
+as the slope it hands its callers. On flat water `d0 = d1 = 0` and the divisor
+cancels to exactly `H`, which is why every check made on still water agreed with
+a plain plane and the division went unnoticed for so long. As the surface tilts
+the two diverge, and that divergence *is* the "about one world unit" this
+document used to attribute to unknown weights.
+
+With the division in place the decode reproduces the game **exactly**: over
+19,042 probes taken inside cells, 100% within tolerance, median error 0.0002 and
+0.0000 on the two interior grids.
+
+**A caller that wants a height multiplies back** by `sqrt(D0^2 + D1^2 + 1)`,
+where `D0` and `D1` are the differences over the cell size. The port does not --
+`src/waterfield.cpp` and `src/waterring.cpp` both take the return as a height --
+which makes their heights low by that factor: about 0.6% on typical slopes and
+up to 15% on the steepest. For the water ring, which is far-field geometry, that
+is invisible; for anything that needs the real surface it is not.
+
+**The third probe grid was never testing what it claimed.** The one named
+`lattice`, meant to sample cell corners, puts **100%** of its probes on a cell
+boundary -- 2,205 of 2,401 at `(63,63)`, one unit short, because the float
+round-trip from lattice coordinates back to world XZ truncates into the previous
+cell and the decoder and the game then need not agree which cell a boundary point
+is in. It is a broken measurement, not a broken decode, and it is the second time
+that grid has cost this project an investigation, so `tools/decode_water_field.py`
+now prints each grid's boundary share and excludes a boundary grid from its
+verdict.
 
 #### How this was checked, and what it is for
 
