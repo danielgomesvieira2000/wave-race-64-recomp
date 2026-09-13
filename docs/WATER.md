@@ -59,7 +59,7 @@ environment overrides or the log, which kept the fork's:
 | Classic / Deep / Aqua | `classic` / `modern` / `aqua` | `Style::Classic` / `Modern` / `Aqua` |
 | Clarity | `aqua_clarity` | `set_clarity` |
 
-The menu was renamed after 0.9.1: the quality was Original / Modern / High and the
+The menu was renamed in 0.9.2: the quality was Original / Modern / High and the
 style Classic / Modern / Aqua, so "Modern" meant two different things on one
 tab. The ids did not change, so saved settings read as they were.
 
@@ -87,7 +87,7 @@ the water body, so the bottom stays dim.
 | Visibility still capped at **140** (or the profile's own range if higher) | past the course's underwater geometry the shader must resolve to water, never to exposed sky |
 | Hidden under **Classic** | Classic's shader rebuilds the colour from the cartridge's own image and reads none of these values |
 
-**A saved value away from 50% looks different after 0.9.1.** The first ranges
+**A saved value away from 50% looks different since 0.9.2.** The first ranges
 were too weak to see -- brightness 0.65-1.35x and tint +-12-20% came out as
 roughly +-15% and +-5% on screen once tone mapping and gamma had compressed them,
 which is what made the three sliders read as inert. Brightness 70%, for example,

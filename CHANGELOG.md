@@ -8,7 +8,7 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [0.9.2](docs/releases/0.9.2.md) — Better water options
 
 - **A clearer Water tab.** Water quality is now **Original / Enhanced / Best**,
   and the style **Classic / Deep / Aqua** -- before, "Modern" was both a quality
