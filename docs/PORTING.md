@@ -211,6 +211,19 @@ sites. That mistake reported 775 unresolved targets where there were 24.
 function**, such as the buoy slot count at `0x8006F01C` in the 3,755-line
 `func_8006E674`, and replacing the function means transcribing all of it.
 
+**And if the limit is a full buffer, move what fills it.** The buoy caps are the
+game's segment 5 buffer running out of room. A cartridge built for 4 MB leaves
+the upper 4 MB of the runtime's 8 free, so 16 hooks put the buoys' matrices in a
+block there: one at each place the game computes where a matrix is written (`$a0`
+before the call) and each base register the draw loops add a slot to, one after
+each slot-byte store, one at each cap. Addresses in the display list can be
+physical (segment 0) -- the rewriter and RT64 resolve them -- and a matrix kept at
+the same address every frame, the object's record index rather than the next
+free slot, is one the renderer pairs with itself between frames. Check the gap
+first: this port already keeps display-list, matrix and vertex scratch at
+`0x700000`-`0x748FFF` and an audio command list at `0x7E0000`, and the runtime
+starts at `0x80800000`.
+
 N64Recomp pastes C text into its output before any instruction:
 
 ```toml
@@ -225,6 +238,8 @@ text = "{ int32_t wr64_buoys_slot_limit(uint8_t* rdram); ctx->r1 = SIGNED(ctx->r
 | Declare the called function inside the hook's own braces | the generated files include only `recomp.h` and the recompiler's headers; a block-scope declaration needs no change to `recomp_include` |
 | Define it `extern "C"` in the port | the generated code is C |
 | Hook the instruction *after* the one to override, and overwrite its result register | the hook runs before its instruction; `ctx->r1` is `$at` |
+| Decide once per call, in a hook at the top of the function | several hooks must agree -- where a matrix is written and where it is read -- even if a setting changes while the function runs |
+| Check each address against the generated C | a script that finds the instruction before each hook and refuses a branch catches a delay slot before it becomes a miscompile |
 | Never hook a delay-slot instruction | the generated branch has already been emitted around it |
 | `[[patches.instruction]]` also exists | it swaps a word for a constant; a hook can decide per call |
 
@@ -236,6 +251,15 @@ recompiler leaves untyped (`.type =  }`), which the first script types or
 drops. Run all three after changing a hook. A checkout built before the hooks
 still builds, since the port functions are defined either way, but runs without
 them until its sources are regenerated.
+
+### A per-view value is read at the end of the frame
+
+**Symptom: a setting works on one player's screen in split screen.** Wave Race
+64 keeps a copy of the course's environment per view and repoints a global at
+the view it is about to draw. Code that follows that pointer once a frame, after
+both views, only ever reaches the last view's copy. Address each view's copy by
+its own stride instead (`src/drawdistance.cpp`), or act inside the per-view
+function, which is when the pointer means what it says.
 
 ## 4. Overlay dispatch
 

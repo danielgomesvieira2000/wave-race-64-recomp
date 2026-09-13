@@ -111,20 +111,104 @@ ignored = [
     "game_dma_copy"
 ]
 
-# The course buoys: give the slots to the nearest, and allow 64 in one player.
+# The course buoys: every one in view drawn, when Draw Distance is above Original.
 #
-# func_8006E674 hands its visible buoys, in table order, one of 32 matrix slots
-# per view and stops at the 32nd; at a raised Draw Distance more than 32 are
-# visible, and the rest pop in or are drawn through a stale slot. Hook text is
-# pasted into the generated C before the instruction at before_vram, so each
-# declares the port function it calls. See patches/buoys.cpp.
+# func_8006E674 gives its buoys matrix slots in a buffer with room for 32 of the
+# small ones and 12 of the racing ones a view, in table order, and draws a buoy
+# past the cap through a stale slot. These hooks move the matrices to a block of
+# the port's own, one slot per record, and lift the caps; at Original each returns
+# the game's value. Hook text is pasted into the generated C before the
+# instruction at before_vram, so each declares the port function it calls. See
+# patches/buoys.cpp. After changing these, regenerate the game sources
+# (tools/generate_game.py), not only the recompiler's output.
+
+# Start of the function: decide once, for the whole call.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006E6B8
+text = "{ void wr64_buoys_begin(uint8_t* rdram, recomp_context* ctx); wr64_buoys_begin(rdram, ctx); }"
+
+# The view cones: c.lt.s threshold, dot -- racing buoys in f10, small ones in f8.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006EAF4
+text = "{ float wr64_buoys_cone(float game); ctx->f10.fl = wr64_buoys_cone(ctx->f10.fl); }"
+
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006ECA4
+text = "{ float wr64_buoys_cone(float game); ctx->f8.fl = wr64_buoys_cone(ctx->f8.fl); }"
+
+# Small buoys, between the passes: drop the furthest only if the display list is short.
 [[patches.hook]]
 func = "func_8006E674"
 before_vram = 0x8006EF10
 text = "{ void wr64_buoys_before_slots(uint8_t* rdram, recomp_context* ctx); wr64_buoys_before_slots(rdram, ctx); }"
 
-# Replaces the result of `slti $at, $t5, 0x20` just before its branch.
+# Small buoys: the matrix write ($a0 before SysUtils_MatrixLookAt; $s0 is the record index).
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006EFD4
+text = "{ uint32_t wr64_buoys_matrix_a(uint32_t game, uint32_t index); ctx->r4 = (gpr)(int32_t)wr64_buoys_matrix_a((uint32_t)ctx->r4, (uint32_t)ctx->r16); }"
+
+# Small buoys: after `sb $t5, 0($v0)`, the slot byte becomes the record index.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006F018
+text = "{ void wr64_buoys_slot_byte(uint8_t* rdram, uint32_t byte_address, uint32_t index); wr64_buoys_slot_byte(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r16); }"
+
+# Small buoys: the cap, replacing the result of `slti $at, $t5, 0x20`.
 [[patches.hook]]
 func = "func_8006E674"
 before_vram = 0x8006F020
 text = "{ int32_t wr64_buoys_slot_limit(uint8_t* rdram); ctx->r1 = SIGNED(ctx->r13) < wr64_buoys_slot_limit(rdram) ? 1 : 0; }"
+
+# Small buoys: the base all six draw loops add slot<<6 to ($s2).
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006F1C0
+text = "{ uint32_t wr64_buoys_base_a(uint32_t game); ctx->r18 = (gpr)(int32_t)wr64_buoys_base_a((uint32_t)ctx->r18); }"
+
+# Racing buoys: the three matrix writes -- the buoy (set 0), its second matrix (set 1), a gate (set 0).
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006FEF4
+text = "{ uint32_t wr64_buoys_matrix_b(uint32_t game, uint32_t index, uint32_t set); ctx->r4 = (gpr)(int32_t)wr64_buoys_matrix_b((uint32_t)ctx->r4, (uint32_t)ctx->r16, 0); }"
+
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006FFD4
+text = "{ uint32_t wr64_buoys_matrix_b(uint32_t game, uint32_t index, uint32_t set); ctx->r4 = (gpr)(int32_t)wr64_buoys_matrix_b((uint32_t)ctx->r4, (uint32_t)ctx->r16, 1); }"
+
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x800700D8
+text = "{ uint32_t wr64_buoys_matrix_b(uint32_t game, uint32_t index, uint32_t set); ctx->r4 = (gpr)(int32_t)wr64_buoys_matrix_b((uint32_t)ctx->r4, (uint32_t)ctx->r16, 0); }"
+
+# Racing buoys: after `sb $t5, 0($s2)`, the slot byte becomes the record index.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x80070104
+text = "{ void wr64_buoys_slot_byte(uint8_t* rdram, uint32_t byte_address, uint32_t index); wr64_buoys_slot_byte(rdram, (uint32_t)ctx->r18, (uint32_t)ctx->r16); }"
+
+# Racing buoys: the cap, replacing the result of `slti $at, $t5, 0xC`.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8007010C
+text = "{ int32_t wr64_buoys_slot_limit_b(uint8_t* rdram); ctx->r1 = SIGNED(ctx->r13) < wr64_buoys_slot_limit_b(rdram) ? 1 : 0; }"
+
+# Racing buoys: the draw bases ($s2) -- the buoys, the gates, the second matrix.
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x80070164
+text = "{ uint32_t wr64_buoys_base_b(uint32_t game, uint32_t set); ctx->r18 = (gpr)(int32_t)wr64_buoys_base_b((uint32_t)ctx->r18, 0); }"
+
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8007117C
+text = "{ uint32_t wr64_buoys_base_b(uint32_t game, uint32_t set); ctx->r18 = (gpr)(int32_t)wr64_buoys_base_b((uint32_t)ctx->r18, 0); }"
+
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x80071434
+text = "{ uint32_t wr64_buoys_base_b(uint32_t game, uint32_t set); ctx->r18 = (gpr)(int32_t)wr64_buoys_base_b((uint32_t)ctx->r18, 1); }"

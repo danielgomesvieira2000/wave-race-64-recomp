@@ -3235,4 +3235,8 @@ void set_field_of_view(double degrees) {
     std::fflush(stderr);
 }
 
+float fov_scale() {
+    return g_fov_scale.load(std::memory_order_relaxed);
+}
+
 }  // namespace wr64::dlrewrite

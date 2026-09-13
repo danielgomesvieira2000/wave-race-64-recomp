@@ -477,14 +477,15 @@ number at `0x800D8170` is the identity, and it changes **before** the struct is
 filled in -- so a reader has to wait, or it reads the previous course's
 environment under the new course's name.
 
-**The buoys' display lists are per course too.** They are a pair, one triangle
-each, adjacent in segment 1: `0x0102CD78` and `0x0102CD90` on one course,
-`0x0102CC58` and `0x0102CC70` on another. So is the matrix table -- segment 5 is a
-per-course arena, and the tables land at `0x4140`, `0x9600`, `0xA1C0` and so on
-depending on the course. **An offset from one course says nothing about another**,
-which is why `0xA1C0` greping to the buoy loop was luck rather than method, and
-why the limit at `+0xA4` -- which is the same field on every course -- is the right
-thing to key on.
+**The buoys' display lists are not per course.** This section once said
+`0x0102CD78`/`0x0102CD90` were one course's buoys and `0x0102CC58`/`0x0102CC70`
+another's. Reading `func_8006E674` whole says otherwise: the first pair draws the
+small buoys and the second the racing buoys, on every course, and each has a
+mirrored pair (`0x0102CE08`/`0x0102CE20`, `0x0102CCE8`/`0x0102CD00`) used when the
+camera's heading puts the sprite past the tenth of its eighteen angles. The
+matrix offsets that looked per course -- `0x4140`, `0x9600` -- are other objects'
+tables in the same segment 5 buffer; the buoys' are at fixed offsets (below). The
+limit at `+0xA4` is still the right thing to key on.
 
 Raising `+0xA4` lets the game submit the buoys it was skipping, and matrices,
 display list and renderer follow -- **up to 32 of them a view**, which is the
@@ -493,38 +494,64 @@ next limit (below). At four times, 5000 to 20000, the draws counted went from
 predate knowing the buoys have 32 slots, so they cannot all have been buoys with
 a slot of their own; read them as draws, not buoys.
 
-### The buoys have 32 matrix slots a view
+### The buoys have a slot limit, and it is the buffer's
 
-`func_8006E674` draws the buoys in two passes over the records at `0x801BB138`
-(`0x18` bytes each, count at `0x801BC938`, room for 256):
+`func_8006E674` is called once per view and draws two tables of buoys, each in
+two passes: mark the visible ones, then give each visible one a matrix slot and
+draw it through that slot.
 
-| Pass | What it does | Where |
+| | Table A | Table B |
 |---|---|---|
-| 1 | a buoy is visible if `sqrt(dx^2 + dz^2) < +0xA4` **and** its horizontal direction from the camera dotted with the camera's forward exceeds `0.5f` -- within **60 degrees** either side. Visible buoys get a fade, 0 inside `+0xA0` (400) and rising to 255 at `+0xA4`, as the env-colour alpha over the fog colour. Types 4 and 5 are always marked hidden here | `0x8006EBF4`-`0x8006ED40`; marks at `0x801C08C0`, one `int16` per buoy, `-1` hidden |
-| 2 | every visible buoy **in table order** gets the next slot: a `LookAt` matrix written to segment 5 at `0xA1C0 + view<<11 + slot<<6`, the slot number stored at `0x801C0B80` | `0x8006EF34`-`0x8006F044` |
+| Records | `0x801BB138`, `0x18` bytes (x `+0`, z `+8`, type `+0x10`), count `0x801BC938`, room for 256 | `0x801AEE20`, `0x104` bytes, count `0x801BB120`, room for 64 |
+| What | the small buoys: the purple course-edge rows (type 1), plus clusters that depend on difficulty (types 2, 3) | the racing buoys and gates, chained buoy to buoy; the yellow arrow is drawn above the next one |
+| Built | once, at course load, by `func_80071E70` from three per-course lists appended in order; never repacked | at course load |
+| Visible if | `sqrt(dx^2 + dz^2) < +0xA4`, and within 60 degrees of the camera's heading (`dot > 0.5f`, `c.lt.s` at `0x8006ECA4`); types 4 and 5 never | the same distance, doubled for gates; the same cone (`0x8006EAF4`), which gates and some types skip |
+| Visibility marks | `int16` at `0x801C08C0`, `-1` hidden, else a fade | `int16` at `0x801C0840` |
+| Slots a view | **32**, `slti $t5, 0x20` at `0x8006F01C` | **12**, `slti $t5, 0xC` at `0x80070108` |
+| Slot bytes | `0x801C0B80` | `0x801C0B40` |
+| Matrices, segment 5 | `0xA1C0 + view<<11 + slot<<6` | `0x95C0` (and `0x9BC0` for a second matrix) `+ view*0x300 + slot<<6` |
+| Draw loops | six, all adding `slot<<6` to one base in `$s2` | eight, over three bases |
+| Display list | 8 commands a buoy | 8 a buoy, 7 more for the next buoy's arrow |
 
-**The second pass stops at 32**: `slti $t5, 0x20` at `0x8006F01C`. The region is
-`0x800` bytes a view -- 32 matrices -- with room for two views, and the segment 5
-buffer's own data resumes at `0xB1C0` (the buffer is `0xB2F0` bytes; the game
-alternates two, `func_8006A264`). A buoy past the 32nd keeps its visible mark
-and the draw loops still draw it, reading its slot with `lbu` from whatever it
-held on an earlier frame: in the wrong place or on top of another buoy. And the
-order is the table's, so a nearby buoy can be the one without a slot.
+**Slots go out in table order and the loop stops at the cap.** A buoy past it
+keeps its visible mark and the draw loops still draw it, reading its slot byte
+from an earlier frame: on top of another buoy or where it used to be. The caps
+are the buffer being full, not a choice: segment 5 is `0xB2F0` bytes (the game
+alternates two, `func_8006A264`), table B's regions run straight into table A's
+at `0xA1C0`, and table A's two views end at `0xB1C0` where the buffer's own data
+resumes.
 
-At the game's own distance fewer than 32 are usually visible. At Maximum they
-are not. Measured with `WR64_BUOY_TRACE` over 600 views of a race at 16,192:
+**Where it shows.** At the game's own distance the caps are rarely reached. At a
+raised one table A is over its cap everywhere, and worst at the end of a lap:
+the end of the edge row, its start past the line and the difficulty clusters at
+the top of the table are all in view, and the nearest buoys come last in the
+table, so they are the ones without a slot. Measured with `WR64_BUOY_TRACE` over
+600 views of a one-player race at 16,192:
 
-| | Game's own | Nearest first, 64 slots in one-player |
+| | Game's own | Every buoy drawn (`patches/buoys.cpp`) |
 |---|---:|---:|
-| Most visible in one view | 120 | 120 |
-| Views with more than 32 | 316 | 316 |
-| Buoys without a proper slot | 10,405 | 2,918 |
-| **Nearest of those** | **2,032** | **11,243** |
-| Display-list commands a whole frame used | -- | at most 1,723 of 3,072 |
+| Most of table A in view at once | 120 | 120 |
+| Buoys left without a proper slot | 10,455 | **0** |
+| Display-list commands a whole frame used | 1,723 of 3,072 | 1,723 of 3,072 |
 
-Only `func_8006E674` reads the marks and the slot numbers; collision, the
-missed-buoy count and the course logic read the records. So the port changes
-the two arrays, not the records -- see `patches/buoys.cpp`.
+Two-player, every buoy drawn: none left out, at most 1,748 commands a frame, and
+up to 12 of table B in view at once -- exactly its cap.
+
+Only `func_8006E674` reads the slot bytes and these matrices, and only it and the
+arrows (`func_8006B334`, table B's marks) read the visibility marks; collision,
+the missed-buoy count and the course logic read the records. So the port can move
+the matrices without touching any of that: see *Every buoy in view* in
+`patches/buoys.cpp`.
+
+### Each view has its own copy of the course's environment
+
+The struct whose `+0xA4` is the draw distance is not one struct. It is `0x110`
+bytes a view from `0x801CB058`, and `func_8006E674` points `0x801C0C80` at the
+view it is about to draw (`sw` at `0x8006E7EC`: `0x801CB058 + view * 0x110`). A
+one-player race uses the first copy; two players use both. Reading the pointer at
+the end of a frame, after both views are drawn, finds only the second view's --
+which is how a raised distance once reached the second player's screen and not
+the first's.
 
 Two things that look like the source and are not. `0x458CA000` is exactly
 `4500.0f` and occurs several times around `0x800E63C4`, but in context it is a

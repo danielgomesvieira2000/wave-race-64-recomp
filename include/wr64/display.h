@@ -41,6 +41,11 @@ void set_window(::SDL_Window* window);
 // frame is not widened. The right edge mirrors it.
 float anchor_inset();
 
+// The window's width over its height, or 4:3 before there is a window. RT64
+// widens the world's frustum to it, so it is how much of the world is in view
+// sideways; patches/buoys.cpp sizes the buoys' view cone from it.
+float window_aspect();
+
 // Tells the renderer to present that region, scaled to fit the window, rather
 // than the whole framebuffer. Call once, before the first frame.
 void crop_to_content();

@@ -9,11 +9,12 @@
 // game's own culling, decided before anything reaches a display list. A renderer
 // cannot put back what was never submitted.
 //
-// **It is one number.** This was written first as a list of limits that would
-// grow as each was found, on the assumption that each kind of object had its
-// own. It does not. `func_8006E674` keeps a buoy only if its distance from the
-// camera is less than an integer at `+0xA4` of a per-course struct, whose
-// address the game leaves at `0x801C0C80`:
+// **It is one number, once per view.** This was written first as a list of
+// limits that would grow as each was found, on the assumption that each kind of
+// object had its own. It does not. `func_8006E674` keeps a buoy only if its
+// distance from the camera is less than an integer at `+0xA4` of the course's
+// environment struct -- one copy a view, at 0x801CB058 + view * 0x110, which the
+// game points 0x801C0C80 at before drawing that view:
 //
 //     0x8006EC30  mul.s   $f10, $f20, $f20     ; dx^2
 //     0x8006EC3C  mul.s   $f6,  $f22, $f22     ; dz^2
@@ -41,7 +42,8 @@
 // The furthest any object measured ever sat from the camera was 13,175, so
 // **16,192, the far plane, draws everything**: past it the geometry is clipped,
 // so no larger number can reveal anything at all. That is the cap, measured,
-// replacing an arbitrary four times.
+// replacing an arbitrary four times -- and the only step worth having above the
+// game's own, which is why the setting is Original or Extended.
 //
 // **Original writes nothing.** At the default no memory is touched, so the
 // default cannot be the cause of anything. Moving off it and back restores the
@@ -64,10 +66,11 @@
 //
 // It is one kind on one course, against the 49 of 57 that `+0xA4` governs.
 //
-// **The buoys have a second limit: 32 matrix slots a view**, handed out in table
-// order. At Maximum up to 120 are inside the distance, and the game left buoys
-// as near as 2,032 without a slot. patches/buoys.cpp gives the slots to the
-// nearest and allows 64 in a one-player race; see docs/GAME-INTERNALS.md.
+// **The buoys have a second limit: the game's matrix slots**, 32 small buoys and
+// 12 racing buoys a view, handed out in table order. Above Original up to 120 are
+// inside the distance and the game left buoys as near as 2,032 without a slot.
+// patches/buoys.cpp moves their matrices out of the game's buffer and draws every
+// one in view; see docs/GAME-INTERNALS.md.
 //
 // **A trap worth recording, because it nearly cost a measured result.** It is
 // tempting to argue such a kind is not distance-culled at all but *selected*,

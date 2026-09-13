@@ -12,20 +12,24 @@ namespace {
 
 // Where the number lives.
 //
-// The struct is not indexed by course. The game leaves a pointer to the current
-// course's environment at 0x801C0C80 and its own code dereferences exactly that,
-// so following the same pointer needs no stride and cannot be wrong about one.
-// The pointer reads 0x801CB058 on every course -- the game *copies* into a
-// single struct rather than indexing an array -- which is why nothing here may
-// use the pointer's value to notice that the course changed.
-constexpr uint32_t kStructPointer = 0x001C0C80;   // RDRAM offset of the pointer
+// The struct is not indexed by course -- the game copies each course's values
+// into it -- but it is indexed by view. func_8006E674 points 0x801C0C80 at view
+// n's copy before it draws that view (`sw` at 0x8006E7EC: 0x801CB058 +
+// view * 0x110), and every cull in the view reads the field through that
+// pointer. One player uses the first copy; two players use both.
+//
+// This used to follow the pointer. It runs once a frame, after both views are
+// drawn, so the pointer always named the second view's copy: in two-player
+// races the second player's screen reached the setting and the first player's
+// kept the game's own distance. It writes each view's copy directly now.
+constexpr uint32_t kFirstStruct   = 0x001CB058;   // view 0's copy
+constexpr uint32_t kStructStride  = 0x110;        // view 1's is the next
 constexpr uint32_t kReachField    = 0xA4;         // the integer, inside the struct
 constexpr uint32_t kCourseNumber  = 0x000D8170;   // the course the game is on
+constexpr uint32_t kPlayers       = 0x000DAB28;   // 1 or 2
+constexpr uint32_t kViews         = 2;
 
 constexpr uint32_t kNoCourse = 0xFFFFFFFFu;
-
-// Expanded RDRAM, which is what librecomp allocates and what this game runs in.
-constexpr uint32_t kRdramBytes = 0x00800000u;
 
 // What the setting asks for, in world units. Zero is the game's own.
 std::atomic<int32_t> g_reach{ 0 };
@@ -45,10 +49,14 @@ std::atomic<int32_t> g_reach{ 0 };
 // The course number is the real identity and the game already keeps it, so this
 // keys on that, and treats an unexpected value as a second, independent reason
 // to recapture -- the game also rewrites the struct part-way through a course.
-int32_t  g_original = 0;
-int32_t  g_written = 0;
+// Per view, since each view's copy holds its own value.
+struct View {
+    int32_t original = 0;
+    int32_t written = 0;
+    bool    holding = false;      // true while the game's own value is overwritten
+};
+View     g_views[kViews];
 uint32_t g_course = kNoCourse;
-bool     g_holding = false;       // true while the game's own value is overwritten
 
 // After the course number changes, nothing here writes for this many frames.
 // The course number and the struct's contents do not change together -- the
@@ -79,8 +87,8 @@ bool trace_wanted() {
     return on;
 }
 
-int32_t* reach_field(uint8_t* rdram, uint32_t address) {
-    return reinterpret_cast<int32_t*>(rdram + address + kReachField);
+int32_t* reach_field(uint8_t* rdram, uint32_t view) {
+    return reinterpret_cast<int32_t*>(rdram + kFirstStruct + view * kStructStride + kReachField);
 }
 
 uint32_t read_word(const uint8_t* rdram, uint32_t offset) {
@@ -109,91 +117,105 @@ int32_t reach() {
 }
 
 void apply(uint8_t* rdram) {
-    // This writes through a pointer read out of the game's own memory, so it is
-    // checked before it is followed. A null one is the ordinary case -- before a
-    // course is loaded there is nothing to point at -- and anything outside
-    // RDRAM would be a corrupt read that must not become a corrupt write.
-    const uint32_t address = read_word(rdram, kStructPointer) & 0x00FFFFFFu;
-    if (address == 0 || address + kReachField + sizeof(int32_t) > kRdramBytes) return;
-    int32_t* value = reach_field(rdram, address);
-
     const int32_t wanted = g_reach.load(std::memory_order_relaxed);
-    if (wanted == 0) {
-        // Put the game's own number back once, then leave it alone. At the
-        // default nothing here writes to memory at all.
-        if (g_holding) {
-            *value = g_original;
-            g_holding = false;
-            g_course = kNoCourse;
+    const uint32_t views = read_word(rdram, kPlayers) == 2 ? 2 : 1;
+
+    // Put a view's own number back once, then leave that copy alone: at the
+    // default nothing here writes to memory at all, and a copy a race no longer
+    // uses -- two players back to one -- is returned as the game left it.
+    auto release = [&](uint32_t v) {
+        if (g_views[v].holding) {
+            *reach_field(rdram, v) = g_views[v].original;
+            g_views[v].holding = false;
         }
+    };
+    if (wanted == 0) {
+        for (uint32_t v = 0; v < kViews; ++v) release(v);
+        g_course = kNoCourse;
         return;
     }
+    for (uint32_t v = views; v < kViews; ++v) release(v);
 
     const uint32_t course = read_word(rdram, kCourseNumber);
     if (course != g_course) {
         g_course = course;
         g_settling = kSettleFrames;
-        g_holding = false;
+        for (View& view : g_views) view.holding = false;
     }
     if (g_settling > 0) {
         --g_settling;
         return;                   // the field is the game's to fill; leave it
     }
 
-    // Whatever is in the field now is the game's own, unless it is exactly what
-    // was written into it. Both halves are needed: the value catches the game
-    // rewriting the struct part-way through a course, and the settle above
-    // catches a new course whose own value happens to equal what was written
-    // for the last one -- 2500 doubled is 5000, which is another course's own
-    // limit, and that collision is what the first version of this got wrong.
-    const int32_t found = *value;
-    if (!g_holding || found != g_written) {
-        g_original = found;
-    }
-    if (g_original <= 0) return;
+    for (uint32_t v = 0; v < views; ++v) {
+        View& view = g_views[v];
+        int32_t* value = reach_field(rdram, v);
 
-    // A floor and a ceiling. Never below what the game asked for, so the setting
-    // cannot take away a marker a player needs; never above the far plane, past
-    // which the geometry is clipped and the submission is pure cost.
-    int32_t target = wanted < g_original ? g_original : wanted;
-    if (target > kFarPlane) target = kFarPlane;
+        // Whatever is in the field now is the game's own, unless it is exactly
+        // what was written into it. Both halves are needed: the value catches the
+        // game rewriting the struct part-way through a course, and the settle
+        // above catches a new course whose own value happens to equal what was
+        // written for the last one -- 2500 doubled is 5000, which is another
+        // course's own limit, and that collision is what the first version of
+        // this got wrong.
+        const int32_t found = *value;
+        if (!view.holding || found != view.written) {
+            view.original = found;
+        }
+        if (view.original <= 0) continue;
 
-    // Logged when the answer changes, not every time this recomputes it. The
-    // frontend hands the setting over twice at startup -- the default, then what
-    // was saved -- and every round trip through Original drops the hold and
-    // takes the game's value again, so one decision prints four times unless the
-    // last answer is remembered.
-    static uint32_t said_course = kNoCourse;
-    static int32_t said_original = 0;
-    static int32_t said_target = 0;
-    if (course != said_course || g_original != said_original || target != said_target) {
-        said_course = course;
-        said_original = g_original;
-        said_target = target;
-        std::fprintf(stderr, "[wr64] draw distance: course %u, %d -> %d\n",
-                     course, g_original, target);
-        std::fflush(stderr);
-    }
-    g_written = target;
-    g_holding = true;
-    *value = target;
+        // A floor and a ceiling. Never below what the game asked for, so the
+        // setting cannot take away a marker a player needs; never above the far
+        // plane, past which the geometry is clipped and the submission is pure
+        // cost.
+        int32_t target = wanted < view.original ? view.original : wanted;
+        if (target > kFarPlane) target = kFarPlane;
 
-    if (trace_wanted()) {
-        static uint64_t frame = 0;
-        static int32_t last_found = -1;
-        static int32_t last_written = -1;
-        ++frame;
-        // Printed when anything moves, and once every hundred frames regardless,
-        // so a stable limit is visible as a stable limit rather than as silence.
-        if (found != last_found || g_written != last_written || frame % 100 == 0) {
-            std::fprintf(stderr, "[wr64-dd] frame %llu: course %u, struct 0x%08X,"
-                                 " found %d, game's own %d, wrote %d%s\n",
-                         static_cast<unsigned long long>(frame), course, address,
-                         found, g_original, g_written,
-                         found != last_found ? "   <- the game changed it" : "");
+        // Logged when the answer changes, not every time this recomputes it. The
+        // frontend hands the setting over twice at startup -- the default, then
+        // what was saved -- and every round trip through Original drops the hold
+        // and takes the game's value again, so one decision prints four times
+        // unless the last answer is remembered.
+        static uint32_t said_course[kViews] = { kNoCourse, kNoCourse };
+        static int32_t said_original[kViews] = {};
+        static int32_t said_target[kViews] = {};
+        if (course != said_course[v] || view.original != said_original[v] || target != said_target[v]) {
+            said_course[v] = course;
+            said_original[v] = view.original;
+            said_target[v] = target;
+            if (views == 1) {
+                std::fprintf(stderr, "[wr64] draw distance: course %u, %d -> %d\n",
+                             course, view.original, target);
+            }
+            else {
+                std::fprintf(stderr, "[wr64] draw distance: course %u, player %u's view, %d -> %d\n",
+                             course, v + 1, view.original, target);
+            }
             std::fflush(stderr);
-            last_found = found;
-            last_written = g_written;
+        }
+        view.written = target;
+        view.holding = true;
+        *value = target;
+
+        if (trace_wanted()) {
+            static uint64_t frame[kViews] = {};
+            static int32_t last_found[kViews] = { -1, -1 };
+            static int32_t last_written[kViews] = { -1, -1 };
+            ++frame[v];
+            // Printed when anything moves, and once every hundred frames
+            // regardless, so a stable limit is visible as a stable limit rather
+            // than as silence.
+            if (found != last_found[v] || view.written != last_written[v] || frame[v] % 100 == 0) {
+                std::fprintf(stderr, "[wr64-dd] frame %llu: course %u, view %u, struct 0x%08X,"
+                                     " found %d, game's own %d, wrote %d%s\n",
+                             static_cast<unsigned long long>(frame[v]), course, v,
+                             0x80000000u | (kFirstStruct + v * kStructStride),
+                             found, view.original, view.written,
+                             found != last_found[v] ? "   <- the game changed it" : "");
+                std::fflush(stderr);
+                last_found[v] = found;
+                last_written[v] = view.written;
+            }
         }
     }
 }

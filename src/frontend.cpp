@@ -322,45 +322,46 @@ void init() {
     // static geometry. See include/wr64/drawdistance.h.
     graphics.add_enum_option(
         "object_draw_distance", "Draw Distance",
-        "How far away the game keeps drawing the course, in world units. "
-        "<recomp-color primary>Original</recomp-color> is the game's own behaviour, and at that "
-        "setting nothing is written to the game's memory at all.<br /><br />"
-        "One number in the game decides this, and it covers nearly all of a course's fixed "
-        "scenery: the buoys, the gate markers, the shoreline and the props were all measured "
-        "moving out together when it was raised. The game sets it per course, between 2,500 and "
-        "6,000, which is why these are distances rather than multipliers -- doubling a 2,500 "
-        "course only reaches what a 6,000 course has by default, while a distance means the same "
-        "thing everywhere. <recomp-color primary>Maximum</recomp-color> is the far plane: "
-        "nothing can be drawn past it, and the furthest object measured on any course sat at "
-        "13,175, so it draws the whole course.<br /><br />"
-        "It does not reach the course's direction arrows, which are chosen by where you are "
-        "rather than culled by distance.<br /><br />"
-        "Above Original it also <recomp-color primary>extends the sea</recomp-color>. The game "
-        "animates a patch of water 922 units across and paints everything beyond it onto the "
-        "sky, so the port draws the missing surface itself, out to the same distance and from "
-        "the same waves the game's own patch stands on. This works with the water renderer on "
-        "or at Original. Drawing more costs frame time, so if the game is already running below "
-        "its own frame rate, leave this on Original.",
+        "<recomp-color primary>Original</recomp-color> is the game's own: the course is drawn "
+        "to between 2,500 and 6,000 units depending on the course, and nothing is written to "
+        "the game's memory.<br /><br />"
+        "<recomp-color primary>Extended</recomp-color> draws the whole course: the scenery, the "
+        "gate markers and the shoreline out to the far plane, every buoy in view -- the game "
+        "otherwise has room for only 32 of the small buoys and 12 of the racing ones at a time, "
+        "which is what made distant buoys pop in -- and the sea out to the horizon, from the "
+        "same waves the game's own water stands on.<br /><br />"
+        "Drawing more costs frame time, so if the game is already running below its own frame "
+        "rate, leave this on Original.",
         std::vector<recomp::config::ConfigOptionEnumOption>{
             { 0u, "Original", "Original" },
-            { 1u, "Far", "Far (8,000)" },
-            { 2u, "VeryFar", "Very far (12,000)" },
-            { 3u, "Maximum", "Maximum (16,192)" },
+            { 1u, "Extended", "Extended" },
         },
         0u);
+    // Settings saved before there were two steps. Far, Very far and Maximum all
+    // come back as Extended, so a player who raised it keeps it raised; anything
+    // else, the multiplier names this setting carried before those, comes back
+    // as Original rather than misread. Without this, librecomp resolves an id it
+    // does not know to the default silently.
+    graphics.on_json_parse_option(
+        "object_draw_distance",
+        [](const nlohmann::json& saved) -> recomp::config::ConfigValueVariant {
+            if (saved.is_string()) {
+                const std::string id = saved.get<std::string>();
+                if (id == "Extended" || id == "Maximum" || id == "VeryFar" || id == "Far") {
+                    return 1u;
+                }
+            }
+            return 0u;
+        });
     graphics.add_option_change_callback(
         "object_draw_distance",
         [](recomp::config::ConfigValueVariant value, recomp::config::ConfigValueVariant,
            recomp::config::OptionChangeContext) {
-            // Distances, not multipliers. Zero is the game's own. A stored id
-            // this build does not know -- the multiplier names this setting used
-            // to carry -- loads as the default, which is Original, so an old
-            // configuration comes back switched off rather than misread.
-            static const int32_t steps[] = {
-                0, 8000, 12000, wr64::drawdistance::kFarPlane,
-            };
+            // A distance, and there is only one worth having above the game's:
+            // the far plane, past which nothing can be drawn. The furthest object
+            // measured on any course sat at 13,175. See include/wr64/drawdistance.h.
             if (const uint32_t* choice = std::get_if<uint32_t>(&value)) {
-                wr64::drawdistance::set_reach(steps[*choice < 4 ? *choice : 0]);
+                wr64::drawdistance::set_reach(*choice == 1u ? wr64::drawdistance::kFarPlane : 0);
             }
         });
 

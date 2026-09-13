@@ -10,14 +10,22 @@ notice changes.
 
 ## Unreleased
 
-- **Course buoys reach further at a raised Draw Distance.** The game draws at
-  most 32 of the yellow and red L and R buoys per view and chooses them in table
-  order, not by distance, so at Maximum buoys as close as 2,000 units were left
-  out -- or drawn in the wrong place -- and popped in as others left the view.
-  The slots now go to the nearest buoys, and a one-player race gets 64. Over a
-  race at Maximum the nearest buoy left out moved from 2,032 units to 11,243.
-  `WR64_BUOY_ORIGINAL=1` restores the game's behaviour. Building from source:
-  regenerate the game sources to pick this up (`docs/BUILDING.md`).
+- **Draw Distance is Original or Extended.** Extended is what Maximum was: the
+  course to the far plane and the sea to the horizon. A saved Far, Very far or
+  Maximum loads as Extended.
+- **Every buoy in view is drawn at Extended.** The game has room for 32 small
+  buoys and 12 racing buoys a view and hands the slots out in table order, so at
+  a raised distance buoys as close as 2,000 units were left out or drawn in the
+  wrong place: distant buoys popping in, and the purple edge buoys glitching and
+  vanishing near the end of a lap, where both ends of the row are in view. Their
+  matrices now live outside the game's buffer, one fixed slot per buoy, with no
+  cap; the view cone widens with the Field of View. Over a race, 10,455 buoys left
+  out became none, at the same display-list use. Original is untouched.
+  `WR64_BUOY_ORIGINAL=1` restores the game's behaviour.
+- **Extended reaches both screens in two-player races.** Each view has its own
+  copy of the course's distance, and only the second player's was being raised.
+- Building from source: regenerate the game sources to pick these up
+  (`docs/BUILDING.md`).
 
 ## [0.9.2](docs/releases/0.9.2.md) — Better water options
 

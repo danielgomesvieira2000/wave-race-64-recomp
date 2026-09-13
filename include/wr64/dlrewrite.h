@@ -31,4 +31,7 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr);
 // Called from the settings menu, read on the thread that submits display lists.
 void set_field_of_view(double degrees);
 
+// tan(field of view / 2) over tan(45 / 2): 1 at the game's own. Any thread.
+float fov_scale();
+
 }  // namespace wr64::dlrewrite
