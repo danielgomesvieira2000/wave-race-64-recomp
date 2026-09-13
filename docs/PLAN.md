@@ -260,8 +260,10 @@ nothing a player could see. The second round started from the picture.
    overlaps it on screen by half the smaller area. Log: 0 crossed where there
    were 99. Picture: smooth; flicker back with `WR64_NO_SCENE_REGIONS=1`. Frame
    rate identical over a 2P race.
-6. *Kept from round one:* a 150-unit limit on object pairs, which refuses the
-   glides the log shows but none of which was caught on screen.
+6. *Kept from round one:* a 150-unit limit on object pairs. The glides it
+   refuses were not caught in the demo race's captures, but they are the purple
+   course-edge buoys sliding in the opening sequence at maximum draw distance,
+   and with the limit that is confirmed gone in play.
 7. *The riders, reported next.* After the camera fix the riders' own
    interpolation had not improved. Grouping the log's transforms into riders
    while racing showed a part left unpaired -- its previous pose taken by a
@@ -279,8 +281,8 @@ regions, the racers' matrices).
 
 **Gate:** a captured 2P VS start shows no alternation in either view; riders
 hold together racing and on the select screen; and a race at maximum draw
-distance shows no sliding at the display's rate. *The first two are met; the
-third has not been caught on screen either way.*
+distance shows no sliding at the display's rate. *All three are met; the third
+confirmed in the opening sequence, where the course-edge buoys slid.*
 
 ## Standing constraints
 

@@ -1779,10 +1779,15 @@ score wins, with no limit on the distance. In an attract demo at maximum
 distance, 2,252 pairs over 28 seconds were drawn gliding more than 150 units
 between objects of that one call. The port now refuses any object pair further
 apart than 150 world units -- nothing in this game moves more than about 60
-between frames -- and the log shows no such pair after it. **None of those
-glides was caught on screen**, though: every one checked was out of shot or too
-small to see. The limit is sound and costs nothing, but whether it is what
-ended the sliding a player noticed is not yet shown by a picture.
+between frames -- and the log shows no such pair after it.
+
+**Resolved.** The sliding is plainest in the opening sequence before the attract
+demo race, at maximum draw distance: rows of purple course-edge buoys, each
+paired with the buoy one slot along as the table repacks, slide along the row.
+With the limit it is gone -- confirmed in play -- and the log of that sequence
+shows no pair over 150 units drawn. It took a while to see because the demo
+race's gliding rows happened to be out of shot; the opening sequence needs no
+input, which makes it the place to check.
 [TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) has the manual and the recipe.
 
 ---

@@ -35,12 +35,13 @@ notice changes.
   out of place over eight switches before, none after. Frame rate unchanged.
   `WR64_NO_MODEL_IDS=1` switches it off.
 
-- **Objects no longer pair across the course.** RT64 would interpolate a buoy
-  from one thousands of units away if nothing nearer was free; 2,252 such glides
-  in 28 seconds of the attract demo. A pair further apart than 150 world units
-  -- nothing here moves more than about 60 between frames -- is now refused.
-  None of these glides was caught on screen, so this is not yet shown to be what
-  a player saw as sliding buoys. `WR64_PAIRING_MAX_JUMP=0` switches it off.
+- **The purple course-edge buoys no longer slide.** RT64 would interpolate a
+  buoy from one hundreds or thousands of units away if nothing nearer was free,
+  and as the game repacks its table of buoys, whole rows slid along themselves --
+  plainest in the opening sequence at maximum draw distance. A pair further apart
+  than 150 world units -- nothing here moves more than about 60 between frames --
+  is now refused. Confirmed in play; the opening sequence's log shows no such pair
+  drawn. `WR64_PAIRING_MAX_JUMP=0` switches it off.
 
 - **Tools to see it.** A pairing log (`WR64_PAIRING_LOG`, read with
   `tools/pairing_log.py`) records every camera and object pair with a wall-clock
