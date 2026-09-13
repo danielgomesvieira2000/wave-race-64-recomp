@@ -372,6 +372,18 @@ matrices written is the number of buoys the game chose, and the choice is made
 before anything reaches the display list — a renderer cannot put back what was
 never submitted.
 
+**A buoy's identity is its place, and its place is exact.** The matrix a slot
+holds is written from the buoy's course position every frame, so its X and Z
+translation are bit-for-bit the same in every frame it is drawn --
+`(4200.0, 0.0, 4800.0)`, `(3900.0, 0.0, 5200.0)` -- and buoys along a straight
+stretch stand 400 units apart. The same holds for the gate markers and the
+stunt rings, drawn the same way (one plain matrix load, one call to a static
+list, both after the top level has pushed once, so at modelview depth 1).
+Since the slot changes and the address with it, the position is the only
+thing that names a buoy from one frame to the next, and it can be hashed as
+bits rather than rounded. [TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) is
+what uses that.
+
 **The choice is a distance cull at about 4,500 world units.** Measured over a
 race by locating the camera from the water lattice, which is built around it
 (below), and taking the distance to each drawn buoy:
@@ -803,6 +815,39 @@ cannot be distinguished from one that does not exist, so a cull that hides
 everything past some distance would leave no trace of the things it hid. What
 would settle it is catching one ring appearing and knowing roughly how far away
 it was.
+
+### The racers: how a rider is drawn
+
+Each racer is **one call at the top level to a list the game builds every frame
+in segment 2**, and every matrix of the rider and craft is loaded *inside* that
+list -- nothing about a racer is visible from the top level but the call.
+Measured over eight consecutive frames of a four-racer Time Trial start, from a
+3D trace (`WR64_3D_TRACE_STATE=28 WR64_3D_TRACE_FRAMES=8`):
+
+| | |
+|---|---|
+| Calls per frame | 4, one per racer, e.g. `0x02000000`, `0x02000290`, `0x02000668`, `0x020008F8` |
+| Matrix loads per racer | **18**, plain loads (`G_MTX_LOAD`, no push), from segment 3 |
+| Matrix addresses | **`0x0300E108 + limb * 0x100 + racer * 0x40`** -- a fixed table, the same segmented addresses in both of the game's alternating lists |
+| Load order within a racer | fixed: `E108, E208, ..., E708, E908, EB08, ED08, EF08, F108, E808, EA08, EC08, EE08, F008, F208` (+ `racer * 0x40`) |
+| Nested calls | 18 per racer, to model parts in segment 8, vertices only -- no matrix loads |
+| At the start line | the four stand 100-250 units apart |
+
+Two things about identity follow, and both were measured rather than assumed:
+
+- **A racer's list address is not its identity.** One racer was drawn from
+  `0x02000668` for three frames and from `0x02000520` for the next three, with
+  the same matrices inside. The slot a racer's list occupies in segment 2 can
+  move mid-run.
+- **A matrix's address is.** `0x0300E188` was the third racer's first limb in
+  every frame, whichever list it was drawn from. So anything that has to pair
+  a limb with itself across frames -- the renderer's interpolation is the case
+  here -- should key on the matrix's segmented address, not on the list or on
+  the load's ordinal within it.
+
+A racer's **spray** is separate: a cloud of a few dozen single-matrix draws
+around the craft, each rebuilt every frame, moving 15-75 units a frame and
+shuffling among themselves. They are particles, not parts, and nothing keys them.
 
 ### The gate markers: identified, and what limits them
 

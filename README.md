@@ -69,7 +69,10 @@ running natively:
 - **High frame rate.** The game keeps its own update rate -- 30 Hz in a race, 20
   in the menus and Time Trial, by its own choice -- and RT64 interpolates each
   object's movement between game frames, so it presents at your display's refresh
-  rate. Physics, camera and timers are untouched.
+  rate. Physics, camera and timers are untouched. The port tells RT64 which
+  object is which -- every buoy by its place, every limb of every racer by its
+  matrix -- and refuses any pairing no object could have made, so nothing
+  slides between two objects at a camera cut or as the course scrolls past.
 - **Field of View**, 45 to 110 degrees. The game draws at 45; higher shows more
   of the world without stretching anything.
 - **Modern water**, in the Water tab, which keeps the cartridge's waves, physics

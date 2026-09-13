@@ -1536,10 +1536,34 @@ Practical rules this port arrived at:
 ### Interpolation: what RT64 can and cannot do on its own
 
 RT64 draws frames between the game's by pairing each object's transform with the
-previous frame's. It pairs about 98% of transforms. The mechanism is a draw-call
-hash, then matrix index within the call -- **not** nearest position, which enters
-only as a refinement; see *Geometry that bursts apart at the start of a race*
-below, where the difference matters. Two things follow:
+previous frame's. It pairs about 98% of transforms. The mechanism, read from
+`GameFrame::match` and then confirmed pair by pair with the pairing log
+([TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md)), is in three stages, and this
+document had the middle one wrong for two releases:
+
+1. **Explicit ids first.** A transform whose group carries an id and
+   `G_EX_ORDER_LINEAR` is paired with a transform of the same id in the previous
+   frame, in submission order, and never reaches the heuristic.
+2. **Then the call hash.** Every remaining draw call is hashed on its combiner,
+   other modes, geometry mode, triangle count and the folded ids of its
+   matrices. For each previous-frame call with the same hash *and the same
+   matrix count*, the matrices are paired **by index within the call** and each
+   such pair becomes a candidate. A call spanning one matrix -- every buoy,
+   every marker, every limb and every particle in this game -- therefore has one
+   candidate per hash-equal previous call, which is *all* the buoys, or all the
+   limbs of all four racers that share its triangle count.
+3. **Then the nearest.** Candidates are scored (world distance + orientation +
+   screen-space distance, all weighted 1), sorted, and assigned greedily. There
+   is **no distance limit**: a pair 10,000 units apart is as valid as one 2
+   apart if nothing nearer is free. The screen-space term is unbounded as an
+   object passes the camera plane, so an object near the camera routinely
+   loses its own match.
+
+And one thing that turns a wrong pair into a second of wrong pairs: the rigid
+body refuses to *lerp* a translation whose velocity is more than ten times the
+previous one, but it still **records** the jump as the velocity, and the next
+frame's match predicts from it. See *Geometry that bursts apart* below for
+what that looks like measured. Two things follow:
 
 - **An unpaired transform costs nothing by itself.** It is drawn at its current
   matrix, so an object that is not moving looks no different. The plain count of
@@ -1739,6 +1763,18 @@ the sliding easier to notice by putting more objects in the table, but the fault
 is the pairing, it is there at the game's own distance too, and nothing done to
 the distance setting will fix it.
 
+**Resolved, and the mechanism was not quite the one above.** The pairing log
+showed each buoy is its own one-matrix draw call, so the index step never
+happens; instead every buoy is a candidate for every other (all hash the same)
+and the nearest by score wins, where "nearest" includes an unbounded
+screen-space term. A buoy the camera is passing loses its own match to that
+term and takes one hundreds or thousands of units away; a buoy just entering
+the table takes whichever previous buoy was left over. Fixed by giving each
+buoy an identity from its exact position, so RT64 pairs it with itself by id,
+and by a jump limit in the matcher for the frame a buoy has no identity yet.
+Measured: 306 buoy pairs over 100 units in 701 race frames before, none after.
+[TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) has the manual and the recipe.
+
 ---
 
 ### Geometry that bursts apart at the start of a race
@@ -1763,9 +1799,11 @@ if ((curWorldMatrixCount == prevWorldMatrixCount) && curIt.second.doTransformMat
         transformCheckSet.emplace(curWorldMatrix, prevWorldMatrix);
 ```
 
-Position enters only as a refinement afterwards. An explicit matrix id is folded
-into the call's hash (`matrixIdHash = matrixIdHash * 33 ^ group.matrixId`), so an
-id does not merely label a transform -- it **distinguishes one call from
+Position enters afterwards -- but as the *decider* between all the same-index
+candidates from every hash-equal call, not as a refinement, and with no upper
+bound; see *Interpolation* above. An explicit matrix id is folded into the
+call's hash (`matrixIdHash = matrixIdHash * 33 ^ group.matrixId`), so an id
+does not merely label a transform -- it **distinguishes one call from
 another**.
 
 **What this game presents it with.** In a two-player race:
@@ -1779,10 +1817,20 @@ another**.
 | Top-level call per racer | `0x02000290`, `0x020003D8`, `0x02000520`, `0x02000668` -- distinct, evenly spaced, stable across both of the game's alternating display lists |
 
 Two racers are the same model with the same textures and the same geometry mode,
-so their calls hash identically. That is the leading explanation for the burst:
-RT64 cannot tell them apart and pairs one rider's limbs with the other's, and a
-limb interpolated between two riders' poses is exactly geometry coming apart. It
-is consistent with every measurement so far but **is not proven**.
+so their calls hash identically. That was the leading explanation for the burst.
+**Measured with the pairing log, it is half right.** The burst is the two
+camera cuts before a race. At a cut nothing in the world moves, but every
+object's screen position does, and the screen-space term of RT64's score --
+unbounded for anything near or behind the new camera -- decides the pairing.
+In the cut frame of a one-player start, 46 of 137 transforms were paired
+across 400-10,000 units: buoys with buoys further along the course, gate
+markers with markers, and the same is open to the limbs of four racers
+standing 100-250 units apart. Then the cascade: each refused lerp still
+recorded its jump as the object's velocity, the next frame's prediction put
+every object where the wrong one had been, the ratio test now *accepted* the
+lerp, and for fifteen frames buoys and markers slid between neighbours 400 to
+1,600 units apart. That is the second it takes to settle. In two players there
+are two views, two cuts and twice the transforms.
 
 **What has been ruled out, with measurements:**
 
@@ -1816,19 +1864,38 @@ failed for a reason worth knowing:
    `LINEAR` switched matching **off** for every call it touched. Use `AUTO`
    ordering unless several transforms are meant to share one id.
 
-**Where to start next.** Wrapping each racer's top-level call in a group whose id
-is that call's address reaches all eighteen matrices inside it, which is the only
-handle the port has on them -- the rewriter emits a call and lets RT64 walk in,
-so it cannot tag those matrices directly. A first attempt at this correctly
-identified all four racers and still made the counter worse (48.8), most likely
-because it passed `G_EX_INTERPOLATE_DECOMPOSE` and `G_EX_COMPONENT_AUTO` for
-every component including `vert` and `tc` -- changing *how* the racers are
-interpolated rather than only labelling them. Change the id and nothing else.
+   A third thing the counter could not say: wrapping a racer's call in a group
+   with an id and `G_EX_ORDER_AUTO` folds that id into the hash of every limb's
+   call, which does separate the racers from each other -- but leaves the
+   symmetric limbs inside one racer, which hash alike, to the nearest-score
+   guess, and does nothing for the buoys.
 
-**A fallback that is known to work.** Suppressing interpolation for the first
-second of a race would remove the burst where it is most visible, at the cost of
-those frames not gliding. The check at the top of this section proves it would
-work. It has not been done, because the fault is worth understanding.
+**Resolved.** Three parts, all in
+[TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) with the manual and the recipe:
+
+- **A jump limit in the matcher** (`WR64_PAIRING_MAX_JUMP`, 150 world units
+  built in, from a measured legitimate maximum of 58). A candidate further
+  apart than that is refused before it is scored, so a cut leaves objects
+  unpaired and drawn in place for one frame rather than paired wrongly and
+  carried for fifteen. Taken on the raw translations, before the velocity
+  prediction, so a polluted velocity cannot launder a second wrong pair.
+- **Identities for fixed sites.** A plain top-level matrix load followed by a
+  call to a static list, whose exact X/Z translation was also drawn in the
+  previous frame, gets a group with an id hashed from that place and
+  `G_EX_ORDER_LINEAR`; RT64 then pairs the buoy, marker or prop with itself,
+  by id, before the heuristic runs. A moving object never matches the
+  previous frame's set and keeps the heuristic.
+- **Identities for the racers**, by inlining each racer's call into the scratch
+  list and setting a group before each of its matrix loads, with an id from the
+  matrix's own segmented address -- the only thing that was stable: the list a
+  racer is drawn from moved between slots mid-run
+  ([GAME-INTERNALS.md §6](GAME-INTERNALS.md#6-graphics), *The racers*).
+
+Measured on the same scripted race: 631 pairs over 100 units in 701 race
+frames before, **4 in 2,515 frames** after, none over 200, and the cut frame
+paired 88 of 120 transforms correctly with 32 left in place and no cascade.
+The fallback of suppressing interpolation for the first second was never
+needed.
 
 
 ---
@@ -1847,6 +1914,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **3D frame trace** (`WR64_3D_TRACE`) | Writes a few whole frames -- every matrix load, vertex load, call and triangle batch, with each vertex block's FNV-1a hash and clip-space extent. Two consecutive frames diffed against each other say which geometry the game **rebuilds** rather than moves, which is exactly the geometry RT64 cannot interpolate unaided. This is how the sky and water were found. |
 | **Spaced 3D frames** (`WR64_3D_TRACE_EVERY`) | The same trace with its frames spread over the run rather than consecutive. Consecutive frames answer what the renderer can pair between them; spaced frames answer whether an object is submitted at all from a distance, which is the question behind every report of things popping in. Diffing the display lists called in each frame separates "the game never submitted it" from "something downstream dropped it", and the modelview translation logged before each call gives the object's world position, so a culled set can be plotted rather than guessed at. |
 | **Lattice trace** (`WR64_LATTICE`) | Whether a mesh the game rebuilds every frame can be paired between frames at all. For each frame, and for each rebuilt mesh (the water through segment 3, the sky through segment 6), it writes how many vertex blocks moved in X or Z since the previous frame, how many moved only in height, the largest step in each, and **how many moved by the same step as the first** -- which is what separates a mesh being carried whole from one re-assigning its slots. A handful of frames of identical vertices proves nothing: with the camera parked, a mesh built around the camera is indistinguishable from a fixed one. |
+| **Pairing log** (`WR64_PAIRING_LOG`, via `tools/patch_rt64.py`; read with `tools/pairing_log.py`) | Which previous-frame transform every world transform was paired with, by which path, in which draw call, and how far the two are apart -- the number the two-second counter above cannot give, because an unpaired transform costs nothing and a wrongly paired one is the whole defect. It is what turned "the racers must be hashing alike" into "46 of 137 transforms paired across 400-10,000 units in the cut frame, then carried for fifteen". **[docs/TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) is the manual and the recipe.** |
 | **Rectangle log** (`WR64_RECT_LOG`, via `tools/patch_rt64_rectlog.py`) | Where every rectangle actually lands on the widened framebuffer, in RT64's own arithmetic: the game's coordinates, the origins and aspect flag the port set, the framebuffer width and scissor, and the resulting position. The port can say what it emitted and a screenshot can say what showed; only this says what the renderer did in between. |
 | **Race trace** (`WR64_HAPTICS_TRACE`) | Every frame of every race as a CSV row -- speed, vertical velocity, airborne, wetness, impact, lap, buoy, misses, power, countdown -- with the feedback events each frame produced. Written to check that a set of RDRAM addresses really means what it is supposed to: the countdown counts down, speed rises under throttle, misses appear where the HUD says MISS. A value that looks plausible in one frame is not evidence; a column that behaves across a race is. |
 | **Audio queue statistics** (`WR64_AUDIO_STATS`) | Whether the crackle is samples arriving late. Every two seconds: how many buffers the game produced and how big they were, the queue depth at its trough and average, the device period they have to cover, and -- the number it exists for -- how many frames of silence SDL had to insert. The device consumes at the sample rate whether or not anything is queued, so `elapsed x rate` minus the frames handed over (less the change in queue depth) is the shortfall, measured rather than inferred. It also prints what the machine's default device actually runs at, which `SDL_OpenAudioDevice` hides when `SDL_AUDIO_ALLOW_ANY_CHANGE` is unset: the spec it hands back mirrors the request no matter what the hardware does. |
@@ -1856,7 +1924,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **2D draw trace** (`WR64_HUD_TRACE`) | Prints every 2D draw with its identity, extent and assigned class, and reports elements whose class changes between frames. |
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
-| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
+| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_NO_SITE_IDS`, `WR64_NO_MODEL_IDS`, `WR64_PAIRING_MAX_JUMP=0`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
 
 ---
 

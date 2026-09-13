@@ -75,6 +75,7 @@ Each of these is the whole thing from a clean clone, in the order
 | Script | Purpose |
 |---|---|
 | `capture_window.ps1` | Photographs the running port at intervals, in physical pixels. |
+| `pairing_log.py` | Reads the transform-pairing log RT64 writes under `WR64_PAIRING_LOG`: which previous-frame transform each world transform was paired with and how far apart the two are. Prints the jump distribution, the frames in which any pair jumped further than a limit with the offending pairs, and a per-draw-call table that finds a repeated object by its hash. See [../docs/TRANSFORM-PAIRING.md](../docs/TRANSFORM-PAIRING.md). |
 | `instrument_funcs.py` | Traces when specific recompiled functions run. |
 | `wsl_check_pc16.sh` | Checks whether the `R_MIPS_PC16` relocations in the overlay sections are safe to discard. |
 | `wsl_diag_asm.sh` | Explains why assembling splat's output fails, when it does. |

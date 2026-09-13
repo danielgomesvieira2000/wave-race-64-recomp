@@ -234,6 +234,41 @@ only a side-by-side can answer.
 **Gate:** HUD Placement and Aspect Ratio each do what their names say on
 every screen, and a full championship shows no interpolation artefact.
 
+### 08 — Matrix interpolation that pairs the right objects
+
+Two artefacts survived 07's gate: buoys that slid as they came into view, and
+animated models that burst apart for a second at the start of every race. Both
+were RT64 pairing a transform with the wrong previous one, and the plan was to
+measure the pairing itself before touching it, then fix it in the renderer
+generally and in the port precisely. Done, in this order:
+
+1. *A pairing log.* `tools/patch_rt64.py` has RT64 write, per frame, which
+   previous transform each world transform was paired with, by which path, in
+   which draw call, and how far apart the two are; `tools/pairing_log.py` reads
+   it. It replaced the 07 counter, which could only say how many transforms
+   found no pair -- the wrong number, since an unpaired transform is drawn in
+   place and cannot tear. It showed the burst is the two camera cuts before a
+   race, where RT64's unbounded screen-space score pairs 46 of 137 transforms
+   across 400-10,000 units and the rigid body then carries each wrong jump as
+   a velocity for fifteen frames.
+2. *A jump limit in the matcher.* 150 world units, against a measured legitimate
+   maximum of 58; refused before scoring, on the raw translations.
+3. *Identities.* The rewriter gives every fixed site (a plain load whose exact
+   place was also drawn last frame, followed by a call to a static list) an id
+   from that place, and every racer's limbs ids from their matrices' addresses,
+   by inlining the racer's call. RT64 pairs an id with linear ordering by
+   identity before the heuristic runs.
+4. *Measured.* 631 pairs over 100 units in 701 race frames before; 4 in 2,515
+   frames after, none over 200. Frame cost measured with `WR64_FRAME_STATS`
+   over the attract sequence, fixes off and on. Each part has a switch.
+
+Documented in `docs/TRANSFORM-PAIRING.md` (manual and recipe), `PORTING.md` §7
+(the mechanism, corrected) and `GAME-INTERNALS.md` §6 (the racers' matrices, the
+buoys' identity).
+
+**Gate:** a scripted race logs no pair over the limit outside a scene cut, and
+the race start and a raised draw distance show no sliding at the display's rate.
+
 ## Standing constraints
 
 - No ROM, asset, or ROM-derived file is ever committed. The user supplies the

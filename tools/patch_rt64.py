@@ -343,6 +343,234 @@ namespace RT64 {
     // GameFrame
 """
 
+# ---- the pairing log, and the jump limit -----------------------------------
+#
+# The counters above say how many transforms found no pair. The log says which
+# pair each one found, which is the number that matters: an unpaired transform
+# is drawn where it is and cannot tear anything, but a transform paired with
+# the wrong previous transform is interpolated from wherever that other object
+# was. WR64_PAIRING_LOG names a file; nothing is written without it.
+#
+# One line per transform per interpolated frame:
+#
+#   F <frame>                                  a new game frame
+#   T <t> <prev> <path> id=<id> call=<hash> range=<min>-<max> cur=<x,y,z>
+#       prev=<x,y,z> jump=<units> lerp=<0|1> pvel=<units>
+#   U <t> id=<id> call=<hash> range=<min>-<max> cur=<x,y,z>
+#   S frame=<n> total=<n> paired=<n> j50=<n> j100=<n> j200=<n> max=<units>
+#       refused=<n>
+#
+# <path> is "id" for a transform paired by explicit id (G_EX_ORDER_LINEAR) and
+# "auto" for one paired by the call-hash heuristic. <call> is RT64's own hash
+# of the draw call the transform sits in, and <range> the world-matrix indices
+# that call spans -- two transforms with the same call hash and count are what
+# the heuristic pairs by index. <jump> is the distance between the previous
+# and current translations, <lerp> whether the rigid body agreed to move the
+# object between them, and <pvel> the previous frame's velocity for that
+# object, which is what the rigid body judged the jump against. <refused> is
+# the number of candidates the jump limit below turned away this frame.
+#
+# The jump limit. RT64's matcher has no notion of an impossible pair: any
+# candidate that is not a mirror image is accepted, and a 500-unit jump is
+# interpolated as motion. Nothing in this game moves more than a few tens of
+# units per game frame (measured with the log above), so a candidate further
+# away than WR64_PAIRING_MAX_JUMP world units is refused before it can be
+# scored; the transform is then drawn at its current matrix if nothing else
+# claims it, which is a one-frame step rather than a slide. The environment
+# overrides the built-in default for experiments; 0 switches the limit off.
+
+# The built-in jump limit, in world units, as a C float literal. Set from the
+# measurement in docs/TRANSFORM-PAIRING.md: nothing in a race moves more than
+# 58 units between two game frames, the buoys stand 400 apart, and the racers'
+# limbs pair by identity and never reach this. "0.0f" switches the limit off.
+PAIRING_MAX_JUMP_DEFAULT = "150.0f"
+
+PAIRING_LOG_INCLUDE_ANCHOR = """// wr64: for the transform-pairing counters below.
+#include <unordered_set>
+"""
+
+PAIRING_LOG_INCLUDE_REPLACEMENT = """// wr64: for the transform-pairing counters below.
+#include <unordered_set>
+
+// wr64: for the pairing log and the jump limit.
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+"""
+
+# Inserted immediately before the counters block above, not inside or after
+# it. Inside would break the counters patch: patch() decides "already applied"
+# by looking for its whole replacement, so a later patch that edits text inside
+# an earlier replacement makes the earlier one apply again on the next run.
+# After would break the water renderer's patch, whose first hunk in this file
+# has "namespace RT64 { // GameFrame" and the blank line after it as context.
+PAIRING_LOG_GLOBALS_ANCHOR = """// wr64: running totals of the transform pairing, read by the port through the
+"""
+
+PAIRING_LOG_GLOBALS_BEGIN = "// wr64-pairing-globals-begin\n"
+PAIRING_LOG_GLOBALS_END = "// wr64-pairing-globals-end\n"
+
+PAIRING_LOG_GLOBALS_REGION = """// wr64-pairing-globals-begin
+// wr64: the pairing log (WR64_PAIRING_LOG names a file) and the jump limit
+// (WR64_PAIRING_MAX_JUMP, world units; 0 switches it off). Both are read once.
+static FILE *wr64PairingLog() {
+    static FILE *file = [] {
+        const char *path = std::getenv("WR64_PAIRING_LOG");
+        return (path != nullptr && path[0] != '\\0') ? std::fopen(path, "w") : nullptr;
+    }();
+    return file;
+}
+
+static float wr64PairingMaxJump() {
+    static const float value = [] {
+        const char *text = std::getenv("WR64_PAIRING_MAX_JUMP");
+        return (text != nullptr && text[0] != '\\0') ? float(std::atof(text)) : WR64_PAIRING_MAX_JUMP_DEFAULT;
+    }();
+    return value;
+}
+
+static uint64_t wr64PairingRefused = 0;
+// wr64-pairing-globals-end
+"""
+
+PAIRING_JUMP_ANCHOR ="""        // Compute the difference between the translation components of the 4x4 matrices.
+        const hlslpp::float3 curPos = curTransform[3].xyz;
+        hlslpp::float3 prevPos = prevTransform[3].xyz;
+"""
+
+PAIRING_JUMP_REPLACEMENT = """        // Compute the difference between the translation components of the 4x4 matrices.
+        const hlslpp::float3 curPos = curTransform[3].xyz;
+        hlslpp::float3 prevPos = prevTransform[3].xyz;
+
+        // wr64: refuse a pair no object could have made. The distance is taken
+        // between the raw translations, before the velocity prediction below,
+        // so that a velocity polluted by an earlier wrong pair cannot make a
+        // second wrong pair look plausible.
+        {
+            const float maxJump = wr64PairingMaxJump();
+            if (maxJump > 0.0f) {
+                const float rawJump = hlslpp::length(curPos - prevPos);
+                if (rawJump > maxJump) {
+                    wr64PairingRefused++;
+                    return matchResult;
+                }
+            }
+        }
+"""
+
+PAIRING_LOG_ANCHOR = """            wr64PairingFrames++;
+            wr64PairingTotal += total;
+            wr64PairingUnpaired += unpaired;
+            wr64PairingUnpairedMoved += unpairedMoved;
+        }
+"""
+
+PAIRING_LOG_REPLACEMENT = """            wr64PairingFrames++;
+            wr64PairingTotal += total;
+            wr64PairingUnpaired += unpaired;
+            wr64PairingUnpairedMoved += unpairedMoved;
+        }
+
+        // wr64: the pairing log. See tools/patch_rt64.py for the format.
+        if (FILE *log = wr64PairingLog()) {
+            static uint64_t logFrame = 0;
+            static uint64_t refusedBefore = 0;
+            logFrame++;
+            std::fprintf(log, "F %llu\\n", (unsigned long long)logFrame);
+
+            struct CallContext { uint64_t hash; uint32_t min; uint32_t max; };
+            thread_local std::vector<CallContext> context;
+            uint32_t total = 0, paired = 0, over50 = 0, over100 = 0, over200 = 0;
+            float maxJump = 0.0f;
+            for (uint32_t w : workloads) {
+                const GameFrameMap::WorkloadMap &map = frameMap.workloads[w];
+                const Workload &curWorkload = workloadQueue.workloads[w];
+                const Workload *prevWorkload = map.mapped ? &workloadQueue.workloads[map.prevWorkloadIndex] : nullptr;
+                const GameFrameMap::WorkloadMap *prevMap = nullptr;
+                if (map.mapped && prevFrame.matched && prevFrame.frameMap.workloads[map.prevWorkloadIndex].mapped) {
+                    prevMap = &prevFrame.frameMap.workloads[map.prevWorkloadIndex];
+                }
+
+                // The call each transform sits in, hashed as the matcher hashes it.
+                const size_t transformCount = curWorkload.drawData.worldTransforms.size();
+                context.assign(transformCount, CallContext{ 0, 0, 0 });
+                for (uint32_t f = 0; f < curWorkload.fbPairCount; f++) {
+                    const FramebufferPair &fbPair = curWorkload.fbPairs[f];
+                    for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                        const Projection &proj = fbPair.projections[p];
+                        for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+                            const GameCall &call = proj.gameCalls[c];
+                            const uint32_t minMatrix = call.callDesc.minWorldMatrix;
+                            const uint32_t maxMatrix = call.callDesc.maxWorldMatrix;
+                            if (minMatrix > maxMatrix) {
+                                continue;
+                            }
+
+                            uint32_t matrixIdHash = 0;
+                            for (uint32_t m = minMatrix; m <= maxMatrix && m < transformCount; m++) {
+                                const uint32_t groupIndex = curWorkload.drawData.worldTransformGroups[m];
+                                matrixIdHash = matrixIdHash * 33 ^ curWorkload.drawData.transformGroups[groupIndex].matrixId;
+                            }
+
+                            const uint64_t hash = hashFromCall(call, matrixIdHash);
+                            for (uint32_t m = minMatrix; m <= maxMatrix && m < transformCount; m++) {
+                                context[m] = CallContext{ hash, minMatrix, maxMatrix };
+                            }
+                        }
+                    }
+                }
+
+                for (size_t t = 0; t < map.transforms.size() && t < transformCount; t++) {
+                    total++;
+                    float cur[16];
+                    std::memcpy(cur, &curWorkload.drawData.worldTransforms[t], sizeof(cur));
+                    const uint32_t groupIndex = curWorkload.drawData.worldTransformGroups[t];
+                    const TransformGroup &group = curWorkload.drawData.transformGroups[groupIndex];
+                    const CallContext &ctx = context[t];
+                    if (!map.transforms[t].mapped || prevWorkload == nullptr) {
+                        std::fprintf(log, "U %zu id=%08X call=%016llX range=%u-%u cur=%.1f,%.1f,%.1f\\n",
+                                     t, group.matrixId, (unsigned long long)ctx.hash, ctx.min, ctx.max,
+                                     cur[12], cur[13], cur[14]);
+                        continue;
+                    }
+
+                    paired++;
+                    const uint32_t prevIndex = map.transforms[t].prevTransformIndex;
+                    float prev[16] = {};
+                    if (prevIndex < prevWorkload->drawData.worldTransforms.size()) {
+                        std::memcpy(prev, &prevWorkload->drawData.worldTransforms[prevIndex], sizeof(prev));
+                    }
+
+                    const float dx = cur[12] - prev[12], dy = cur[13] - prev[13], dz = cur[14] - prev[14];
+                    const float jump = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (jump > 50.0f) over50++;
+                    if (jump > 100.0f) over100++;
+                    if (jump > 200.0f) over200++;
+                    if (jump > maxJump) maxJump = jump;
+
+                    float prevVelocity = 0.0f;
+                    if (prevMap != nullptr && prevIndex < prevMap->transforms.size()) {
+                        const hlslpp::float3 &v = prevMap->transforms[prevIndex].rigidBody.linearVelocity;
+                        prevVelocity = hlslpp::length(v);
+                    }
+
+                    const bool byId = (group.matrixId != G_EX_ID_AUTO) && (group.matrixId != G_EX_ID_IGNORE) && (group.ordering == G_EX_ORDER_LINEAR);
+                    std::fprintf(log, "T %zu %u %s id=%08X call=%016llX range=%u-%u cur=%.1f,%.1f,%.1f prev=%.1f,%.1f,%.1f jump=%.1f lerp=%d pvel=%.1f\\n",
+                                 t, prevIndex, byId ? "id" : "auto", group.matrixId, (unsigned long long)ctx.hash,
+                                 ctx.min, ctx.max, cur[12], cur[13], cur[14], prev[12], prev[13], prev[14],
+                                 jump, map.transforms[t].rigidBody.lerpTranslation ? 1 : 0, prevVelocity);
+                }
+            }
+
+            std::fprintf(log, "S frame=%llu total=%u paired=%u j50=%u j100=%u j200=%u max=%.1f refused=%llu\\n",
+                         (unsigned long long)logFrame, total, paired, over50, over100, over200, maxJump,
+                         (unsigned long long)(wr64PairingRefused - refusedBefore));
+            refusedBefore = wr64PairingRefused;
+            std::fflush(log);
+        }
+"""
+
 
 def patch(target, anchor, replacement, name):
     text = target.read_text()
@@ -354,6 +582,31 @@ def patch(target, anchor, replacement, name):
                  f"and this patch needs revisiting")
     target.write_text(text.replace(anchor, replacement, 1))
     print(f"  {target.name}: {name} patched")
+
+
+def patch_region(target, anchor, begin, end, region, name):
+    """Like patch(), for a block whose text may change between runs: the block is
+    delimited by marker lines, inserted before the anchor the first time and
+    replaced in place every time after, so a changed default never duplicates
+    it."""
+    text = target.read_text()
+    if region in text:
+        print(f"  {target.name}: {name} already patched")
+        return
+    start = text.find(begin)
+    if start >= 0:
+        stop = text.find(end, start)
+        if stop < 0:
+            sys.exit(f"{name}: begin marker without end marker in {target}")
+        text = text[:start] + region + text[stop + len(end):]
+        print(f"  {target.name}: {name} re-patched")
+    else:
+        if anchor not in text:
+            sys.exit(f"anchor for {name} not found in {target}; upstream has changed "
+                     f"and this patch needs revisiting")
+        text = text.replace(anchor, region + anchor, 1)
+        print(f"  {target.name}: {name} patched")
+    target.write_text(text)
 
 
 def main():
@@ -370,6 +623,12 @@ def main():
     patch(GAME_FRAME, PAIRING_INCLUDE_ANCHOR, PAIRING_INCLUDE_REPLACEMENT, "pairing counters (include)")
     patch(GAME_FRAME, PAIRING_COUNTERS_ANCHOR, PAIRING_COUNTERS_REPLACEMENT, "pairing counters (accessor)")
     patch(GAME_FRAME, PAIRING_ANCHOR, PAIRING_REPLACEMENT, "pairing counters (count)")
+    patch(GAME_FRAME, PAIRING_LOG_INCLUDE_ANCHOR, PAIRING_LOG_INCLUDE_REPLACEMENT, "pairing log (include)")
+    patch_region(GAME_FRAME, PAIRING_LOG_GLOBALS_ANCHOR, PAIRING_LOG_GLOBALS_BEGIN, PAIRING_LOG_GLOBALS_END,
+                 PAIRING_LOG_GLOBALS_REGION.replace("WR64_PAIRING_MAX_JUMP_DEFAULT", PAIRING_MAX_JUMP_DEFAULT),
+                 "pairing log (globals)")
+    patch(GAME_FRAME, PAIRING_JUMP_ANCHOR, PAIRING_JUMP_REPLACEMENT, "pairing jump limit")
+    patch(GAME_FRAME, PAIRING_LOG_ANCHOR, PAIRING_LOG_REPLACEMENT, "pairing log (write)")
 
     # The inspector hook lives in its own script because it answers a different
     # question, but the port links against the symbol it adds, so a build needs

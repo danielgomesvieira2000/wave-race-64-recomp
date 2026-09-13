@@ -10,6 +10,27 @@ notice changes.
 
 ## Unreleased
 
+- **The race-start burst and the sliding buoys are gone, and interpolation
+  pairs by identity.** Both were RT64 pairing this frame's objects with the
+  wrong ones from the last: every buoy hashes the same, so a buoy near the
+  camera or one just entering the table took a buoy thousands of units away;
+  and at the two camera cuts before a race, 46 of 137 transforms paired across
+  400 to 10,000 units, then slid between neighbours for fifteen frames on the
+  velocity that wrong pair left behind. Three things fix it. A **pairing log**
+  (`WR64_PAIRING_LOG`, read with `tools/pairing_log.py`) that names every pair,
+  which is how the above was measured rather than guessed. A **jump limit** in
+  RT64's matcher: a candidate further apart than 150 world units -- nothing here
+  moves more than 58 between frames -- is refused before it is scored, so a cut
+  leaves an object in place for one frame instead of sliding for a second. And
+  **identities**: the rewriter gives every buoy, marker and prop an id from its
+  exact position, and every limb of every racer an id from its matrix's address,
+  so RT64 pairs them with themselves before its heuristic runs. Measured on a
+  scripted race: 631 pairs over 100 units in 701 frames before, 4 in 2,515
+  after, none over 200. `WR64_NO_SITE_IDS`, `WR64_NO_MODEL_IDS` and
+  `WR64_PAIRING_MAX_JUMP=0` switch each part off.
+  [docs/TRANSFORM-PAIRING.md](docs/TRANSFORM-PAIRING.md) is the manual and the
+  recipe.
+
 - **Measured, on both platforms.** The sea extension and the raised draw
   distance cost nothing measurable: across five configurations of the same
   attract demo, 84 two-second windows each, the port held the game's own 20
