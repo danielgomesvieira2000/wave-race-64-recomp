@@ -19,18 +19,17 @@
 
 namespace wr64::water {
 namespace {
-// High (the menu's Best) and Aqua by default, which is what the fork this came
-// from shipped and what the water was tuned against. It is not free -- expect
-// the time spent drawing a frame to roughly double, see docs/WATER.md -- and the
-// Water tab steps it down to Enhanced or all the way to Original, which is a true
-// bypass.
+// Modern (the menu's Enhanced) and the Modern style (the menu's Deep) by default,
+// with clarity at 85% and Aqua brightness at 80%: the look chosen for release.
+// It is not free -- see docs/WATER.md -- and the Water tab steps it up to Best or
+// down to Original, which is a true bypass.
 //
 // With saved settings, the config's Load callback runs before the first frame
 // and overwrites whatever is here. On a first run there is no water.json and no
 // callback, so these apply -- keep them equal to src/frontend.cpp's defaults.
-std::atomic<uint32_t> selected{uint32_t(Quality::High)};
-std::atomic<uint32_t> selectedStyle{uint32_t(Style::Aqua)};
-std::atomic<float> aquaBrightness{0.5f}, aquaTint{0.5f}, aquaClarity{0.5f};
+std::atomic<uint32_t> selected{uint32_t(Quality::Modern)};
+std::atomic<uint32_t> selectedStyle{uint32_t(Style::Modern)};
+std::atomic<float> aquaBrightness{0.8f}, aquaTint{0.5f}, aquaClarity{0.85f};
 std::atomic<uint32_t> selectedRipples{uint32_t(RippleDetail::Normal)};
 std::atomic<bool> selectedSpray{true};
 std::atomic<uint32_t> debugView{0};
@@ -38,8 +37,8 @@ std::atomic<bool> comparisonFlip{false};
 std::atomic<bool> raceResetRequested{false};
 interop::WaterMaterial frame{};
 uint32_t frameRipples=uint32_t(RippleDetail::Normal);
-Style frameStyle=Style::Aqua;
-float frameBrightness=0.5f, frameTint=0.5f, frameClarity=0.5f;
+Style frameStyle=Style::Modern;
+float frameBrightness=0.8f, frameTint=0.5f, frameClarity=0.85f;
 bool frameOnePlayer=true;
 struct PendingFrame { uint32_t list; interop::WaterMaterial material; bool onePlayer; };
 std::deque<PendingFrame> pendingFrames;

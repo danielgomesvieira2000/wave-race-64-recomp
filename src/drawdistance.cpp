@@ -31,8 +31,10 @@ constexpr uint32_t kViews         = 2;
 
 constexpr uint32_t kNoCourse = 0xFFFFFFFFu;
 
-// What the setting asks for, in world units. Zero is the game's own.
-std::atomic<int32_t> g_reach{ 0 };
+// What the setting asks for, in world units. Zero is the game's own. Starts at
+// Extended, the menu's default, so a first run with no settings file -- which
+// calls no setting callback -- draws the same as the menu says.
+std::atomic<int32_t> g_reach{ kFarPlane };
 
 // What the game itself last put in the field, and what was written over it.
 //

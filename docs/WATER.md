@@ -11,10 +11,10 @@ project**](#putting-it-in-another-project).
 [WATER-IMPLEMENTATION.md](WATER-IMPLEMENTATION.md) is the full account of how
 the fork built it and where this repository differs.
 
-**Best quality with the Aqua style is the default**, on every platform -- what the fork
-this came from shipped, and what the water was tuned against. It is not free:
-expect the time spent drawing a frame to roughly double, see [What it
-costs](#what-it-costs). **Original** is the first entry in the Water tab and is
+**Enhanced quality with the Deep style is the default**, on every platform, with
+Clarity at 85% -- the look chosen for release. It is not free: expect the time
+spent drawing a frame to rise noticeably, and to roughly double at Best, see
+[What it costs](#what-it-costs). **Original** is the first entry in the Water tab and is
 a true bypass, not a degraded mode -- on that setting the renderer is not
 engaged at all and the water is exactly the cartridge's.
 
@@ -38,14 +38,14 @@ when it belongs to a different style.
 | Water quality | What it does |
 |---|---|
 | **Original** | The game's own water. The renderer is not engaged, nothing below has any effect, and every option below is greyed out. |
-| **Enhanced** | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
-| **Best** *(default)* | Enhanced, plus screen-space reflections of scenery in view, and fine airborne spray. |
+| **Enhanced** *(default)* | Sun and sky lighting, colour that deepens with the water, refraction, persistent wakes behind each craft, wash along the shoreline. |
+| **Best** | Enhanced, plus screen-space reflections of scenery in view, and fine airborne spray. |
 
 | Option | Shown | What it does |
 |---|---|---|
-| **Water style** | Enhanced, Best | Least to most departure from the cartridge. **Classic** keeps its own colours, transparency, fog and broad highlights and adds only the effects. **Deep** is richer and darker. **Aqua** *(default)* is Deep with a lighter teal and clearer shallows. |
-| **Clarity** | Deep, Aqua | 50% is each style's usual look. Below it the water turns murkier; above it the water shows more and more of what the game draws under the surface. See [Clarity](#clarity). |
-| **Aqua brightness** | Aqua | 0.4x to 2.5x the water's own colour; 50% is the usual look. |
+| **Water style** | Enhanced, Best | Least to most departure from the cartridge. **Classic** keeps its own colours, transparency, fog and broad highlights and adds only the effects. **Deep** *(default)* is richer and darker. **Aqua** is Deep with a lighter teal and clearer shallows. |
+| **Clarity** | Deep, Aqua | 50% is each style's own look; the default is 85%. Below it the water turns murkier; above it the water shows more and more of what the game draws under the surface. See [Clarity](#clarity). |
+| **Aqua brightness** | Aqua | 0.4x to 2.5x the water's own colour; 50% is the style's own look, and the default is 80%. |
 | **Aqua tint** | Aqua | Deep blue at 0% to green turquoise at 100%. |
 | **Surface ripples** | Enhanced, Best | Soft / **Normal** / Strong. Fine detail added on top of the game's waves, never replacing them. |
 | **Spray** | Best | The *added* airborne spray. Off keeps the surface foam, the wakes and the game's own splashes. |

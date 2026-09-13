@@ -19,6 +19,9 @@ notice changes.
   default was being set after the settings file had already been written, so it
   never took effect.
 - Unused code, stale comments and out-of-date documentation removed or corrected.
+- **New defaults**, for a first run: Draw Distance **Extended**, Water Quality
+  **Enhanced** with the **Deep** style, Clarity **85%** and Aqua Brightness **80%**.
+  Settings already saved are kept.
 - **A sun editor in the F1 menu.** *Wave Race water: sun* sets the water's sun per
   course -- bearing, height and strength, with a button that aims it where the
   camera faces -- saves to `water_sun.json`, and `tools/promote_water_sun.py`

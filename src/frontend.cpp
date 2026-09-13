@@ -364,7 +364,7 @@ void init() {
             { 0u, "Original", "Original" },
             { 1u, "Extended", "Extended" },
         },
-        0u);
+        1u);
     // Settings saved before there were two steps. Far, Very far and Maximum all
     // come back as Extended, so a player who raised it keeps it raised; anything
     // else, the multiplier names this setting carried before those, comes back
@@ -424,7 +424,7 @@ void init() {
     // nothing does not fail loudly, it quietly resolves to some other entry.
     //
 
-    // Best by default, which is what the water was tuned against. With a saved
+    // Enhanced and Deep by default, the look chosen for release. With a saved
     // water.json its Load callback sets the renderer before the first frame; on a
     // first run there is no file and no callback, so the defaults in
     // src/water.cpp apply -- keep the two the same.
@@ -441,7 +441,7 @@ void init() {
             { 1u, "modern", "Enhanced" },
             { 2u, "high", "Best" },
         },
-        2u);
+        1u);
     water.add_option_change_callback("water_quality", on_choice([](uint32_t choice) {
         wr64::water::set_quality(static_cast<wr64::water::Quality>(choice));
     }));
@@ -465,28 +465,29 @@ void init() {
             { 0u, "modern", "Deep" },
             { 2u, "aqua", "Aqua" },
         },
-        2u);
+        0u);
     water.add_option_change_callback("water_style", on_choice([](uint32_t choice) {
         wr64::water::set_style(static_cast<wr64::water::Style>(choice));
     }));
 
     // Clarity keeps the id aqua_clarity from when it was Aqua-only, so a value
-    // saved then is still read. 50% is each style's usual look.
+    // saved then is still read. 50% is each style's own look; the default is
+    // clearer than that.
     water.add_percent_number_option(
         "aqua_clarity", "Clarity",
-        "How clear the water is. 50% is the usual look. Lower is murkier; higher shows the "
-        "sea floor and fish below, fully see-through at 100%. In two-player races only lower "
-        "values have an effect.",
-        50.0);
+        "How clear the water is. 50% is the style's own look. Lower is murkier; higher shows "
+        "the sea floor and fish below, fully see-through at 100%. In two-player races only "
+        "lower values have an effect.",
+        85.0);
     water.add_option_change_callback("aqua_clarity", on_percent([](float percent) {
         wr64::water::set_clarity(percent);
     }));
 
     water.add_percent_number_option(
         "aqua_brightness", "Aqua Brightness",
-        "Darkens or lightens the Aqua water. 50% is the usual look. Reflections and foam keep "
-        "their own brightness.",
-        50.0);
+        "Darkens or lightens the Aqua water. 50% is the style's own look. Reflections and "
+        "foam keep their own brightness.",
+        80.0);
     water.add_option_change_callback("aqua_brightness", on_percent([](float percent) {
         wr64::water::set_aqua_brightness(percent);
     }));

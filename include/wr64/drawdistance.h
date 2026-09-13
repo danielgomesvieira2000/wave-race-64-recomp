@@ -45,9 +45,9 @@
 // replacing an arbitrary four times -- and the only step worth having above the
 // game's own, which is why the setting is Original or Extended.
 //
-// **Original writes nothing.** At the default no memory is touched, so the
-// default cannot be the cause of anything. Moving off it and back restores the
-// game's own value.
+// **Original writes nothing.** At Original no memory is touched, so it cannot be
+// the cause of anything. Moving off it and back restores the game's own value.
+// Extended is the menu's default.
 //
 // **Not reached by this, and why**
 //
@@ -98,7 +98,7 @@
 namespace wr64::drawdistance {
 
 // The furthest the game should keep drawing its course geometry, in world
-// units. Zero -- the default -- means the game's own value, and writes nothing.
+// units. Zero means the game's own value, and writes nothing.
 //
 // The number is a floor and a ceiling both: it never lowers a course below what
 // the game itself asked for, so the setting cannot hide a buoy a player needs,
