@@ -61,6 +61,31 @@ nothing hides them, and RT64 makes two decisions that go wrong because of them.
    not moving looks no different for it. A port reads the running totals through
    an extern "C" accessor and reports the rates; see patches/framerate.cpp.
 
+5. There is no way to see which pair was made.
+
+   The counters above say how many transforms went unpaired, which costs
+   nothing; the defects are wrong pairs. WR64_PAIRING_LOG names a file, and RT64
+   writes into it, per frame, every world transform's pair with its call hash,
+   path and jump, and every camera's pair with its framebuffer and screen
+   region. tools/pairing_log.py reads it. See docs/TRANSFORM-PAIRING.md.
+
+6. A split-screen view is drawn through the other view's camera.
+
+   RT64 pairs each frame's cameras with the previous frame's by matrix
+   difference alone. In a 2P VS start the two views film the same riders while
+   the intro camera sweeps, the other view's camera is often the closer one,
+   and for over a second each view flickered between two shots on every generated
+   frame. A camera now only continues a previous camera on the same
+   framebuffer slot that drew into mostly the same part of the screen.
+   WR64_NO_SCENE_REGIONS=1 switches it off.
+
+7. A pair no object could have made is interpolated anyway.
+
+   RT64 accepts any candidate pair whatever the distance, so a buoy took one
+   400 to 10,000 units away. A candidate further apart than 150 world units is
+   refused before it is scored; nothing in this game moves more than about 60
+   between frames. WR64_PAIRING_MAX_JUMP sets the limit; 0 switches it off.
+
 Scripted and idempotent because they patch a submodule: a submodule update
 would otherwise revert them silently.
 
@@ -353,12 +378,22 @@ namespace RT64 {
 #
 # One line per transform per interpolated frame:
 #
-#   F <frame>                                  a new game frame
+#   F <frame> wall=<ms>                        a new game frame
+#   V <persp|ortho> cur=<i>/<n> fb=<slot> n=<projections> scissor=<x0,y0,x1,y1>
+#       prev=<j>/<n> fb=<slot> n=<projections> scissor=<x0,y0,x1,y1> diff=<d>
 #   T <t> <prev> <path> id=<id> call=<hash> range=<min>-<max> cur=<x,y,z>
 #       prev=<x,y,z> jump=<units> lerp=<0|1> pvel=<units>
 #   U <t> id=<id> call=<hash> range=<min>-<max> cur=<x,y,z>
 #   S frame=<n> total=<n> paired=<n> j50=<n> j100=<n> j200=<n> max=<units>
 #       refused=<n>
+#
+# <wall> is milliseconds since the Unix epoch, to line a frame up with a
+# capture (tools/capture_frames.py writes the launch time in the same units).
+# A V line is one camera pairing as matchScenes decided it: scene i of this
+# frame's n with scene j of the previous frame's, the framebuffer slot of each
+# scene's first projection, the union of its projections' scissors in quarter
+# pixels (INT_MAX,INT_MAX,INT_MIN,INT_MIN for a scene that drew nothing), and
+# RT64's matrix difference between the two cameras.
 #
 # <path> is "id" for a transform paired by explicit id (G_EX_ORDER_LINEAR) and
 # "auto" for one paired by the call-hash heuristic. <call> is RT64's own hash
@@ -381,8 +416,8 @@ namespace RT64 {
 
 # The built-in jump limit, in world units, as a C float literal. Set from the
 # measurement in docs/TRANSFORM-PAIRING.md: nothing in a race moves more than
-# 58 units between two game frames, the buoys stand 400 apart, and the racers'
-# limbs pair by identity and never reach this. "0.0f" switches the limit off.
+# about 60 units between two game frames (largest seen in a 2P start: 63), and
+# the course's repeated objects stand 400 apart. "0.0f" switches it off.
 PAIRING_MAX_JUMP_DEFAULT = "150.0f"
 
 PAIRING_LOG_INCLUDE_ANCHOR = """// wr64: for the transform-pairing counters below.
@@ -412,6 +447,7 @@ PAIRING_LOG_GLOBALS_BEGIN = "// wr64-pairing-globals-begin\n"
 PAIRING_LOG_GLOBALS_END = "// wr64-pairing-globals-end\n"
 
 PAIRING_LOG_GLOBALS_REGION = """// wr64-pairing-globals-begin
+#include <chrono>
 // wr64: the pairing log (WR64_PAIRING_LOG names a file) and the jump limit
 // (WR64_PAIRING_MAX_JUMP, world units; 0 switches it off). Both are read once.
 static FILE *wr64PairingLog() {
@@ -431,6 +467,11 @@ static float wr64PairingMaxJump() {
 }
 
 static uint64_t wr64PairingRefused = 0;
+
+// wr64: the scene matches of the current frame, for the pairing log. Filled by
+// matchScenes only while the log is open, and emptied as it is written.
+struct Wr64SceneMatch { uint32_t curIndex; uint32_t prevIndex; float difference; bool perspective; };
+static thread_local std::vector<Wr64SceneMatch> wr64SceneMatches;
 // wr64-pairing-globals-end
 """
 
@@ -466,18 +507,50 @@ PAIRING_LOG_ANCHOR = """            wr64PairingFrames++;
         }
 """
 
-PAIRING_LOG_REPLACEMENT = """            wr64PairingFrames++;
-            wr64PairingTotal += total;
-            wr64PairingUnpaired += unpaired;
-            wr64PairingUnpairedMoved += unpairedMoved;
-        }
+# The log block goes after the counters, delimited by markers and replaced in
+# place by patch_region(), because its text changes as the log grows: an
+# anchored patch whose replacement changed would be inserted a second time.
+PAIRING_LOG_BEGIN = "        // wr64-pairing-log-begin\n"
+PAIRING_LOG_END = "        // wr64-pairing-log-end\n"
 
+PAIRING_LOG_REGION = """        // wr64-pairing-log-begin
         // wr64: the pairing log. See tools/patch_rt64.py for the format.
         if (FILE *log = wr64PairingLog()) {
             static uint64_t logFrame = 0;
             static uint64_t refusedBefore = 0;
             logFrame++;
-            std::fprintf(log, "F %llu\\n", (unsigned long long)logFrame);
+            const long long wallMs = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            std::fprintf(log, "F %llu wall=%lld\\n", (unsigned long long)logFrame, wallMs);
+
+            // Which previous scene each current scene was matched with, as
+            // matchScenes decided it (recorded there), with the part of the
+            // screen each drew into. A scene is one camera on one framebuffer;
+            // a split-screen view matched with the other view's camera is drawn
+            // through the wrong camera on every generated frame.
+            auto sceneBounds = [&](const GameScene &scene, uint32_t &fbPairIndex) {
+                FixedRect bounds;
+                fbPairIndex = scene.projections.empty() ? UINT32_MAX : scene.projections[0].fbPairIndex;
+                for (const GameIndices::Projection &pi : scene.projections) {
+                    const Projection &pp = workloadQueue.workloads[pi.workloadIndex].fbPairs[pi.fbPairIndex].projections[pi.projectionIndex];
+                    if (!pp.scissorRect.isNull()) {
+                        bounds.merge(pp.scissorRect);
+                    }
+                }
+                return bounds;
+            };
+
+            for (const Wr64SceneMatch &m : wr64SceneMatches) {
+                const std::vector<GameScene> &cur = m.perspective ? perspectiveScenes : orthographicScenes;
+                const std::vector<GameScene> &prev = m.perspective ? prevFrame.perspectiveScenes : prevFrame.orthographicScenes;
+                uint32_t curFb = 0, prevFb = 0;
+                const FixedRect cb = sceneBounds(cur[m.curIndex], curFb);
+                const FixedRect pb = sceneBounds(prev[m.prevIndex], prevFb);
+                std::fprintf(log, "V %s cur=%u/%zu fb=%u n=%zu scissor=%d,%d,%d,%d prev=%u/%zu fb=%u n=%zu scissor=%d,%d,%d,%d diff=%.2f\\n",
+                             m.perspective ? "persp" : "ortho", m.curIndex, cur.size(), curFb, cur[m.curIndex].projections.size(),
+                             cb.ulx, cb.uly, cb.lrx, cb.lry, m.prevIndex, prev.size(), prevFb, prev[m.prevIndex].projections.size(),
+                             pb.ulx, pb.uly, pb.lrx, pb.lry, m.difference);
+            }
+            wr64SceneMatches.clear();
 
             struct CallContext { uint64_t hash; uint32_t min; uint32_t max; };
             thread_local std::vector<CallContext> context;
@@ -569,6 +642,112 @@ PAIRING_LOG_REPLACEMENT = """            wr64PairingFrames++;
             refusedBefore = wr64PairingRefused;
             std::fflush(log);
         }
+        // wr64-pairing-log-end
+"""
+
+
+# ---- scene matching by screen region --------------------------------------
+#
+# RT64 pairs each camera ("scene": one view and projection on one framebuffer)
+# of a frame with one of the previous frame's by matrix difference alone, then
+# interpolates the camera between the two and pairs the objects drawn under it.
+# In a split-screen race the two views' cameras film the same riders from
+# nearby, and while the intro camera sweeps, the other view's previous camera is
+# often closer than the view's own. Measured with the pairing log in a 2P VS
+# start: for 33 consecutive game frames the top view took the bottom view's
+# camera, the bottom view took an empty scene on another framebuffer, and that
+# took the top view's. Every generated frame then drew each view through the
+# wrong camera, and the views flickered between two shots for a second -- the
+# "burst" at the start of a two-player race.
+#
+# A camera that draws into a different framebuffer, or a different part of the
+# screen, is a different camera whatever its matrices. So a candidate pair is
+# kept only if both scenes' first projections use the same framebuffer slot of
+# the frame with the same format, and the screen regions their draw calls cover
+# overlap by at least half of the smaller one (two scenes that draw nothing are
+# alike). Among the pairs that remain, the smallest matrix difference still
+# wins. The framebuffer's address is deliberately not compared: the game
+# alternates between two framebuffers every frame. WR64_NO_SCENE_REGIONS=1
+# switches this off.
+
+SCENE_REGION_HELPER_ANCHOR = """        auto matchScenes = [&](const std::vector<GameScene> &curScenes, const std::vector<GameScene> &prevScenes) {
+"""
+
+SCENE_REGION_HELPER_REPLACEMENT = """        // wr64: a scene may only continue a previous scene that draws to the same
+        // framebuffer slot and mostly the same part of the screen. See
+        // tools/patch_rt64.py, "scene matching by screen region".
+        static const bool wr64SceneRegionsOff = []() {
+            const char *value = std::getenv("WR64_NO_SCENE_REGIONS");
+            return (value != nullptr) && (value[0] != '\\0') && (value[0] != '0');
+        }();
+
+        auto wr64SceneRegion = [&](const GameScene &scene) {
+            FixedRect region;
+            for (const GameIndices::Projection &pi : scene.projections) {
+                const Projection &pp = workloadQueue.workloads[pi.workloadIndex].fbPairs[pi.fbPairIndex].projections[pi.projectionIndex];
+                if (!pp.scissorRect.isNull()) {
+                    region.merge(pp.scissorRect);
+                }
+            }
+
+            return region;
+        };
+
+        auto wr64ScenesCompatible = [&](const GameScene &cur, const GameScene &prev) {
+            if (wr64SceneRegionsOff) {
+                return true;
+            }
+
+            const GameIndices::Projection &ci = cur.projections[0];
+            const GameIndices::Projection &pi = prev.projections[0];
+            if (ci.fbPairIndex != pi.fbPairIndex) {
+                return false;
+            }
+
+            const auto &cc = workloadQueue.workloads[ci.workloadIndex].fbPairs[ci.fbPairIndex].colorImage;
+            const auto &pc = workloadQueue.workloads[pi.workloadIndex].fbPairs[pi.fbPairIndex].colorImage;
+            if ((cc.fmt != pc.fmt) || (cc.siz != pc.siz) || (cc.width != pc.width)) {
+                return false;
+            }
+
+            const FixedRect cr = wr64SceneRegion(cur);
+            const FixedRect pr = wr64SceneRegion(prev);
+            if (cr.isNull() || pr.isNull()) {
+                return cr.isNull() && pr.isNull();
+            }
+
+            const FixedRect overlap = cr.intersection(pr);
+            if (overlap.isNull()) {
+                return false;
+            }
+
+            auto area = [](const FixedRect &r) { return int64_t(r.lrx - r.ulx) * int64_t(r.lry - r.uly); };
+            return (2 * area(overlap)) >= std::min(area(cr), area(pr));
+        };
+
+        auto matchScenes = [&](const std::vector<GameScene> &curScenes, const std::vector<GameScene> &prevScenes) {
+"""
+
+SCENE_REGION_FILTER_ANCHOR = """                    matchCandidates.emplace_back(i, j, matrixDifference(curViewTransform, prevViewTransform) + matrixDifference(curProjTransform, prevProjTransform));
+"""
+
+SCENE_REGION_FILTER_REPLACEMENT = """                    // wr64: see wr64ScenesCompatible above.
+                    if (!wr64ScenesCompatible(curScenes[i], prevScenes[j])) {
+                        continue;
+                    }
+
+                    matchCandidates.emplace_back(i, j, matrixDifference(curViewTransform, prevViewTransform) + matrixDifference(curProjTransform, prevProjTransform));
+"""
+
+PAIRING_SCENE_ANCHOR = """                matchScene(workloadQueue, prevFrame, curScenes[candidate.curIndex], prevScenes[candidate.prevIndex], workloadsModified, tileInterpolationUsed, lookAtInterpolationUsed);
+"""
+
+PAIRING_SCENE_REPLACEMENT = """                // wr64: record the decision for the pairing log.
+                if (wr64PairingLog() != nullptr) {
+                    wr64SceneMatches.push_back({ candidate.curIndex, candidate.prevIndex, candidate.difference, &curScenes == &perspectiveScenes });
+                }
+
+                matchScene(workloadQueue, prevFrame, curScenes[candidate.curIndex], prevScenes[candidate.prevIndex], workloadsModified, tileInterpolationUsed, lookAtInterpolationUsed);
 """
 
 
@@ -584,11 +763,11 @@ def patch(target, anchor, replacement, name):
     print(f"  {target.name}: {name} patched")
 
 
-def patch_region(target, anchor, begin, end, region, name):
+def patch_region(target, anchor, begin, end, region, name, after=False):
     """Like patch(), for a block whose text may change between runs: the block is
-    delimited by marker lines, inserted before the anchor the first time and
-    replaced in place every time after, so a changed default never duplicates
-    it."""
+    delimited by marker lines, inserted before the anchor (after it, with
+    after=True) the first time and replaced in place every time after, so a
+    changed block never duplicates."""
     text = target.read_text()
     if region in text:
         print(f"  {target.name}: {name} already patched")
@@ -604,7 +783,7 @@ def patch_region(target, anchor, begin, end, region, name):
         if anchor not in text:
             sys.exit(f"anchor for {name} not found in {target}; upstream has changed "
                      f"and this patch needs revisiting")
-        text = text.replace(anchor, region + anchor, 1)
+        text = text.replace(anchor, (anchor + region) if after else (region + anchor), 1)
         print(f"  {target.name}: {name} patched")
     target.write_text(text)
 
@@ -628,7 +807,11 @@ def main():
                  PAIRING_LOG_GLOBALS_REGION.replace("WR64_PAIRING_MAX_JUMP_DEFAULT", PAIRING_MAX_JUMP_DEFAULT),
                  "pairing log (globals)")
     patch(GAME_FRAME, PAIRING_JUMP_ANCHOR, PAIRING_JUMP_REPLACEMENT, "pairing jump limit")
-    patch(GAME_FRAME, PAIRING_LOG_ANCHOR, PAIRING_LOG_REPLACEMENT, "pairing log (write)")
+    patch(GAME_FRAME, PAIRING_SCENE_ANCHOR, PAIRING_SCENE_REPLACEMENT, "pairing log (scene matches)")
+    patch(GAME_FRAME, SCENE_REGION_HELPER_ANCHOR, SCENE_REGION_HELPER_REPLACEMENT, "scene regions (helpers)")
+    patch(GAME_FRAME, SCENE_REGION_FILTER_ANCHOR, SCENE_REGION_FILTER_REPLACEMENT, "scene regions (filter)")
+    patch_region(GAME_FRAME, PAIRING_LOG_ANCHOR, PAIRING_LOG_BEGIN, PAIRING_LOG_END, PAIRING_LOG_REGION,
+                 "pairing log (write)", after=True)
 
     # The inspector hook lives in its own script because it answers a different
     # question, but the port links against the symbol it adds, so a build needs

@@ -75,10 +75,12 @@ Each of these is the whole thing from a clean clone, in the order
 | Script | Purpose |
 |---|---|
 | `capture_window.ps1` | Photographs the running port at intervals, in physical pixels. |
-| `pairing_log.py` | Reads the transform-pairing log RT64 writes under `WR64_PAIRING_LOG`: which previous-frame transform each world transform was paired with and how far apart the two are. Prints the jump distribution, the frames in which any pair jumped further than a limit with the offending pairs, and a per-draw-call table that finds a repeated object by its hash. See [../docs/TRANSFORM-PAIRING.md](../docs/TRANSFORM-PAIRING.md). |
+| `pairing_log.py` | Reads the pairing log RT64 writes under `WR64_PAIRING_LOG`. By default the object pairs: the jump distribution and the frames with a pair further apart than a limit. `--scenes`: camera pairs that crossed framebuffer slots or screen regions, the 2P burst's signature. `--calls`: object pairs by draw-call hash. See [../docs/TRANSFORM-PAIRING.md](../docs/TRANSFORM-PAIRING.md). |
+| `capture_frames.py` | Launches the port and saves every frame its window presents between two times, even with another window on top -- Windows Graphics Capture, not a desktop grab. 30-40 frames a second at half size, named by milliseconds since launch, with the launch time recorded to line up with the pairing log. `--env` sets variables for one run. Windows only; `pip install windows-capture opencv-python`. |
+| `contact_sheet.py` | Tiles a span of captured frames into one labelled image, optionally cropped -- to one split-screen view, say -- so consecutive frames can be compared at a glance. Needs Pillow. |
 | `instrument_funcs.py` | Traces when specific recompiled functions run. |
 | `wsl_check_pc16.sh` | Checks whether the `R_MIPS_PC16` relocations in the overlay sections are safe to discard. |
 | `wsl_diag_asm.sh` | Explains why assembling splat's output fails, when it does. |
 | `wsl_reloc_types.sh` | Lists which relocation types the assembled ELF contains. |
 | `probe_delta.py`, `probe_layout.py`, `probe_piecewise.py` | Phase 01 measurements of how the Rev A segment map relates to the v1.0 dump, kept for the record. |
-| `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race. |
+| `scripts/` | Timed input scripts for `WR64_INPUT_SCRIPT`; `race.txt` drives the game from boot into a race, `race-2p.txt` both players into a 2P VS race. Buttons prefixed `2:` are player two's. |

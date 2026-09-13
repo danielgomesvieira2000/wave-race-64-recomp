@@ -380,9 +380,8 @@ stretch stand 400 units apart. The same holds for the gate markers and the
 stunt rings, drawn the same way (one plain matrix load, one call to a static
 list, both after the top level has pushed once, so at modelview depth 1).
 Since the slot changes and the address with it, the position is the only
-thing that names a buoy from one frame to the next, and it can be hashed as
-bits rather than rounded. [TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) is
-what uses that.
+thing that names a buoy from one frame to the next, and it can be compared as
+bits rather than rounded.
 
 **The choice is a distance cull at about 4,500 world units.** Measured over a
 race by locating the camera from the water lattice, which is built around it
@@ -816,6 +815,33 @@ everything past some distance would leave no trace of the things it hid. What
 would settle it is catching one ring appearing and knowing roughly how far away
 it was.
 
+### A two-player frame
+
+Measured from RT64's camera pairing in a 2P VS start on Sunny Beach, with the
+pairing log's camera lines (`WR64_PAIRING_LOG`):
+
+| Camera ("scene") | Framebuffer slot | Screen region, game pixels |
+|---|---:|---|
+| Top view | 1 | (8,12)-(311,120) |
+| Bottom view | 1 | (8,122)-(311,229) |
+| Both views at once, when their cameras coincide | 1 | (8,12)-(311,229) |
+| A perspective projection that draws nothing | 0 | none |
+
+- **The two views are separate cameras on the same framebuffer**, one above the
+  other. A renderer tells them apart by matrices alone unless told otherwise.
+- **Slot 0 carries an empty perspective scene in every race frame**, one player
+  or two. It draws nothing, but a renderer that pairs cameras by matrix alone
+  will pair it with a real view.
+- **The intro camera is continuous.** From the fade-in (~34.2 s after launch with
+  `tools/scripts/race-2p.txt`) through the close-ups to the start line, each
+  view's camera changes smoothly -- RT64's matrix difference rises to ~320 a
+  frame during the sweep and falls under 5 at the line -- with no hard cut. Both
+  views film the same riders from nearby for the first second and a half, which
+  is why their cameras are easy to confuse.
+- **This race asks for 20 frames a second** (divider 3), measured in two runs,
+  and so did the one-player race `tools/scripts/race.txt` reaches. That is not
+  what the table under *Video timing* says for a race; see the note there.
+
 ### The racers: how a rider is drawn
 
 Each racer is **one call at the top level to a list the game builds every frame
@@ -1201,6 +1227,13 @@ decompilation's layout). The rate is `60 / divider`:
 | boot, briefly | 1 | 60 |
 | a race (championship, 2P) | 2 | 30 |
 | menus, attract demo, Time Trial | 3 | 20 |
+
+**Note, September 2026:** the port's frame-rate report measured a 2P VS race on
+Sunny Beach, and the race `tools/scripts/race.txt` reaches from the championship
+menu, both asking for **20** (divider 3) from the moment the race state began,
+with 30 only on the course select and the results screens. The race row above
+may describe a different moment of a race, or be wrong; it has not been
+re-checked against the decompilation.
 
 `osViSwapBuffer` is called exactly once per frame the game finishes, which makes
 it the right place to measure the rate the game is actually achieving against the

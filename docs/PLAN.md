@@ -234,40 +234,42 @@ only a side-by-side can answer.
 **Gate:** HUD Placement and Aspect Ratio each do what their names say on
 every screen, and a full championship shows no interpolation artefact.
 
-### 08 — Matrix interpolation that pairs the right objects
+### 08 — Interpolation that pairs the right cameras and objects
 
 Two artefacts survived 07's gate: buoys that slid as they came into view, and
-animated models that burst apart for a second at the start of every race. Both
-were RT64 pairing a transform with the wrong previous one, and the plan was to
-measure the pairing itself before touching it, then fix it in the renderer
-generally and in the port precisely. Done, in this order:
+models that seemed to burst apart for a second at the start of a race, worst in
+two players. Both were blamed on RT64 pairing an object with the wrong previous
+one. The first round measured that pairing, fixed what it measured, and changed
+nothing a player could see. The second round started from the picture.
 
-1. *A pairing log.* `tools/patch_rt64.py` has RT64 write, per frame, which
-   previous transform each world transform was paired with, by which path, in
-   which draw call, and how far apart the two are; `tools/pairing_log.py` reads
-   it. It replaced the 07 counter, which could only say how many transforms
-   found no pair -- the wrong number, since an unpaired transform is drawn in
-   place and cannot tear. It showed the burst is the two camera cuts before a
-   race, where RT64's unbounded screen-space score pairs 46 of 137 transforms
-   across 400-10,000 units and the rigid body then carries each wrong jump as
-   a velocity for fifteen frames.
-2. *A jump limit in the matcher.* 150 world units, against a measured legitimate
-   maximum of 58; refused before scoring, on the raw translations.
-3. *Identities.* The rewriter gives every fixed site (a plain load whose exact
-   place was also drawn last frame, followed by a call to a static list) an id
-   from that place, and every racer's limbs ids from their matrices' addresses,
-   by inlining the racer's call. RT64 pairs an id with linear ordering by
-   identity before the heuristic runs.
-4. *Measured.* 631 pairs over 100 units in 701 race frames before; 4 in 2,515
-   frames after, none over 200. Frame cost measured with `WR64_FRAME_STATS`
-   over the attract sequence, fixes off and on. Each part has a switch.
+1. *A pairing log.* `tools/patch_rt64.py` has RT64 write, per frame, every
+   object pair (call hash, path, jump) and every camera pair (framebuffer slot,
+   screen region), with a wall-clock time; `tools/pairing_log.py` reads it.
+2. *First round, withdrawn.* Identities for buoys (from their exact position)
+   and racer limbs (by inlining each racer's list) cut logged object jumps over
+   100 units from 631 to 4. Tested in a 2P race: burst unchanged, no visible
+   improvement. Removed.
+3. *The picture.* A script that drives both players (`tools/scripts/race-2p.txt`,
+   with `2:` for player two) and a window capture that ignores what covers the
+   game (`tools/capture_frames.py`). Frame by frame, the bottom view alternated
+   between two shots from ~35 s: generated frames drawn through another camera.
+4. *The mechanism.* RT64 pairs cameras by matrix difference alone; for 33
+   consecutive frames the top view took the bottom view's camera, the bottom an
+   empty scene's, the empty scene the top's.
+5. *The fix.* A camera only continues one on the same framebuffer slot that
+   overlaps it on screen by half the smaller area. Log: 0 crossed where there
+   were 99. Picture: smooth; flicker back with `WR64_NO_SCENE_REGIONS=1`. Frame
+   rate identical over a 2P race.
+6. *Kept from round one:* a 150-unit limit on object pairs, which refuses the
+   glides the log shows but none of which was caught on screen.
 
 Documented in `docs/TRANSFORM-PAIRING.md` (manual and recipe), `PORTING.md` §7
-(the mechanism, corrected) and `GAME-INTERNALS.md` §6 (the racers' matrices, the
-buoys' identity).
+(the mechanism and the wrong turns) and `GAME-INTERNALS.md` §6 (split-screen
+regions, the racers' matrices).
 
-**Gate:** a scripted race logs no pair over the limit outside a scene cut, and
-the race start and a raised draw distance show no sliding at the display's rate.
+**Gate:** a captured 2P VS start shows no alternation in either view, and a
+race at maximum draw distance shows no sliding at the display's rate. *The
+first half is met; the second has not been caught on screen either way.*
 
 ## Standing constraints
 

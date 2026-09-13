@@ -10,6 +10,7 @@ the numbers mean.
     python tools/pairing_log.py pairing.log --over 100
     python tools/pairing_log.py pairing.log --frames 800-900 --over 50 --lines
     python tools/pairing_log.py pairing.log --calls
+    python tools/pairing_log.py pairing.log --scenes
 
 Default output: per-run totals, the distribution of the jumps every pair
 made, and the frames in which any pair jumped further than --over world units
@@ -17,6 +18,13 @@ made, and the frames in which any pair jumped further than --over world units
 RT64's draw-call hash instead, which is how a repeated object -- the buoys, a
 racer's limbs -- is found: the same hash every frame, and a wide matrix range
 if the call spans many matrices.
+
+--scenes reports the camera pairing instead: for every frame, which previous
+scene (camera and framebuffer) each scene was paired with, and how many pairs
+joined scenes on different framebuffer slots or different parts of the screen.
+In a split-screen race those are views drawn through the other view's camera,
+which is what the two-player "burst" was. Scenes that did not overlap are
+listed by frame with their scissor regions.
 """
 
 import argparse
@@ -29,6 +37,8 @@ T_LINE = re.compile(
     r"cur=([-\d.]+),([-\d.]+),([-\d.]+) prev=([-\d.]+),([-\d.]+),([-\d.]+) "
     r"jump=([-\d.]+) lerp=(\d) pvel=([-\d.]+)$")
 U_LINE = re.compile(r"^U (\d+) id=([0-9A-F]+) call=([0-9A-F]+) range=(\d+)-(\d+) cur=([-\d.]+),([-\d.]+),([-\d.]+)$")
+V_LINE = re.compile(r"^V (persp|ortho) cur=(\d+)/(\d+) fb=(\d+) n=(\d+) scissor=(-?\d+),(-?\d+),(-?\d+),(-?\d+) "
+                    r"prev=(\d+)/(\d+) fb=(\d+) n=(\d+) scissor=(-?\d+),(-?\d+),(-?\d+),(-?\d+) diff=([-\d.]+)$")
 S_LINE = re.compile(r"^S frame=(\d+) total=(\d+) paired=(\d+) j50=(\d+) j100=(\d+) j200=(\d+) max=([-\d.]+) refused=(\d+)$")
 
 
@@ -52,10 +62,11 @@ class Pair:
 
 
 class Frame:
-    __slots__ = ("number", "pairs", "unpaired", "summary")
+    __slots__ = ("number", "wall", "pairs", "unpaired", "summary")
 
     def __init__(self, number):
         self.number = number
+        self.wall = None
         self.pairs = []
         self.unpaired = []
         self.summary = None
@@ -68,8 +79,11 @@ def read(path, lo, hi):
         for raw in f:
             line = raw.rstrip("\n")
             if line.startswith("F "):
-                number = int(line[2:])
+                fields = line[2:].split()
+                number = int(fields[0])
                 frame = Frame(number) if lo <= number <= hi else None
+                if frame is not None and len(fields) > 1 and fields[1].startswith("wall="):
+                    frame.wall = int(fields[1][5:])
                 if frame is not None:
                     frames.append(frame)
                 continue
@@ -98,6 +112,70 @@ def percentile(values, p):
     return values[k]
 
 
+def region(x0, y0, x1, y1):
+    """A scissor from the log, in quarter pixels; None for a scene that drew nothing."""
+    if x0 > x1 or y0 > y1:
+        return None
+    return (x0, y0, x1, y1)
+
+
+def overlapping(a, b):
+    """The rule the renderer applies: both empty, or overlapping by half the smaller."""
+    if a is None or b is None:
+        return a is None and b is None
+    ix = min(a[2], b[2]) - max(a[0], b[0])
+    iy = min(a[3], b[3]) - max(a[1], b[1])
+    if ix <= 0 or iy <= 0:
+        return False
+    area = lambda r: (r[2] - r[0]) * (r[3] - r[1])
+    return 2 * ix * iy >= min(area(a), area(b))
+
+
+def show(r):
+    return "nothing drawn" if r is None else "(%d,%d)-(%d,%d)" % (r[0] // 4, r[1] // 4, r[2] // 4, r[3] // 4)
+
+
+def scenes(path, lo, hi, max_frames):
+    frame = None
+    pairs = 0
+    crossed = []
+    unpaired = 0
+    per_frame = {}
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            line = raw.rstrip("\n")
+            if line.startswith("F "):
+                frame = int(line[2:].split()[0])
+                continue
+            if frame is None or not (lo <= frame <= hi) or not line.startswith("V "):
+                continue
+            m = V_LINE.match(line)
+            if not m:
+                continue
+            g = m.groups()
+            cur = region(*map(int, g[5:9]))
+            prev = region(*map(int, g[13:17]))
+            pairs += 1
+            count = per_frame.setdefault(frame, [0, int(g[2])])
+            count[0] += 1
+            if g[3] != g[11] or not overlapping(cur, prev):
+                crossed.append((frame, g[0], g[3], cur, g[11], prev, float(g[17])))
+    for matched, total in per_frame.values():
+        if matched < total:
+            unpaired += 1
+    print("%d frames, %d scene pairs; %d paired across framebuffer slots or screen regions; "
+          "%d frames with a scene left unpaired (a new view, or no compatible one)"
+          % (len(per_frame), pairs, len(crossed), unpaired))
+    shown = set()
+    for fr, kind, cfb, cur, pfb, prev, diff in crossed:
+        if fr not in shown:
+            if len(shown) >= max_frames:
+                print("  ...")
+                break
+            shown.add(fr)
+        print("  frame %d %s: fb %s %s  <-  fb %s %s  (difference %.1f)" % (fr, kind, cfb, show(cur), pfb, show(prev), diff))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log")
@@ -105,6 +183,7 @@ def main():
     ap.add_argument("--frames", default=None, help="only frames A-B of the log")
     ap.add_argument("--lines", action="store_true", help="print the offending log lines in full")
     ap.add_argument("--calls", action="store_true", help="group the pairs by draw-call hash")
+    ap.add_argument("--scenes", action="store_true", help="report how cameras were paired between frames")
     ap.add_argument("--max-frames", type=int, default=40, help="how many offending frames to list")
     args = ap.parse_args()
 
@@ -113,6 +192,10 @@ def main():
         a, _, b = args.frames.partition("-")
         lo = int(a or 0)
         hi = int(b or hi)
+
+    if args.scenes:
+        scenes(args.log, lo, hi, args.max_frames)
+        return
 
     frames = read(args.log, lo, hi)
     if not frames:
@@ -166,7 +249,8 @@ def main():
             break
         s = fr.summary
         summary = f"total {s[0]} paired {s[1]} refused {s[6]}" if s else ""
-        print(f"  frame {fr.number}: {len(bad)} pairs over, largest {max(p.jump for p in bad):.1f}  ({summary})")
+        wall = f" wall={fr.wall}" if fr.wall is not None else ""
+        print(f"  frame {fr.number}{wall}: {len(bad)} pairs over, largest {max(p.jump for p in bad):.1f}  ({summary})")
         for p in sorted(bad, key=lambda p: -p.jump)[:12]:
             if args.lines:
                 print("    " + p.line)

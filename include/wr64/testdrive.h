@@ -35,6 +35,15 @@ bool input_script_active();
 // hand while it plays.
 void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y);
 
+// The same for a given player: 0 is player one, 1 is player two. A script line
+// whose buttons carry a "2:" prefix ("2:A", "2:-") belongs to player two.
+void input_script_state(int player, uint16_t* buttons, float* stick_x, float* stick_y);
+
+// Whether the loaded script drives player two at all. When it does, the port
+// reports a second controller connected, so two-player modes can be reached
+// and verified without a second pad plugged in.
+bool input_script_has_player_two();
+
 // Reports every change of gGameState, by name. Called once per frame from the
 // main loop; needs the RDRAM base, which only the runtime hooks have.
 void set_rdram_base(uint8_t* rdram);

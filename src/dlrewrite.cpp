@@ -48,20 +48,6 @@
 //    well, and an explicit transform id so the pairing they depend on cannot
 //    be lost to a tie. See the sky and water sections below.
 //
-// 5. Identities (phase 08). RT64 pairs each frame's world transforms with the
-//    previous frame's by a hash of the draw call and then the nearest score,
-//    with no limit on the distance, so a buoy took a buoy thousands of units
-//    away and at a camera cut a rider took another rider's limbs. Every fixed
-//    site -- a plain top-level matrix load whose exact place was also drawn
-//    last frame, followed by a call to a static list -- is given a group with
-//    an id hashed from that place, and every racer's list is inlined so that
-//    each of its matrix loads can be given an id from the matrix's address;
-//    RT64 pairs an id with linear ordering by identity before its heuristic
-//    runs. See the fixed sites and animated models sections below, and
-//    docs/TRANSFORM-PAIRING.md. WR64_NO_SITE_IDS=1 and WR64_NO_MODEL_IDS=1
-//    switch each off; the jump limit that backs them lives in RT64
-//    (tools/patch_rt64.py, WR64_PAIRING_MAX_JUMP).
-//
 // How the list is read. The game builds one top-level list per frame with
 // every matrix load inline, and calls its model and HUD lists from it. This
 // walks the top-level list, copying each command, following branches in
@@ -125,10 +111,8 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <initializer_list>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1034,7 +1018,6 @@ struct Walker {
     // G_EX_ID_IGNORE (0) and G_EX_ID_AUTO (~0); nothing else in this port
     // gives a transform an id.
     void vertex_interp_group(uint32_t id) {
-        site_group_open = false;    // this group replaces any site's; closing it restores the defaults
         const bool on = id != G_EX_ID_AUTO;
         const uint32_t v = on ? G_EX_COMPONENT_INTERPOLATE : G_EX_COMPONENT_SKIP;
         const uint32_t order = on ? G_EX_ORDER_LINEAR : G_EX_ORDER_AUTO;
@@ -1069,247 +1052,6 @@ struct Walker {
             vertex_interp_group(G_EX_ID_AUTO);
             sky = SkySection::Done;
         }
-    }
-
-    // ---- fixed sites -----------------------------------------------------
-    //
-    // The buoys, the gate markers, the rings and the rest of the course's
-    // scenery are drawn one matrix load and one call at a time from tables the
-    // game repacks every frame, so which slot an object occupies changes as
-    // the camera moves. RT64 pairs a draw call with the previous frame's by a
-    // hash of its state and then by index within the call, and every buoy's
-    // call hashes the same, so all of them are candidates for each other and
-    // the nearest by RT64's score wins. That score has a screen-space term
-    // that is unbounded as an object passes the camera plane, so a buoy being
-    // passed loses its own match, and a buoy that has just entered the table
-    // takes whichever previous buoy was left over, however far away. Either
-    // way it is then interpolated from where a different buoy was. Measured
-    // with the pairing log (WR64_PAIRING_LOG): jumps of hundreds to thousands
-    // of world units in a fifth of attract-demo frames, all in the buoy call.
-    //
-    // The fix is to give each such object an identity RT64 can pair by. An
-    // explicit transform id with linear ordering is matched by identity,
-    // before and instead of the heuristic (GameFrame::match), so a buoy is
-    // paired with itself whatever slot it is in. The identity is the object's
-    // place: a hash of the loaded matrix's X and Z translation and of the
-    // list it is drawn with. Only a load whose place was also drawn in the
-    // previous frame is tagged -- an object that moves would get a different
-    // hash every frame and never pair at all, so a moving object keeps RT64's
-    // heuristic, and an object's first frame at a place is left to it too. A
-    // load counts as a site only when it is a plain load at the bottom of the
-    // modelview stack, in a race frame, under a perspective projection, and
-    // the next thing drawn with it is a call to a static list in a cartridge
-    // segment: a racer's root is a load with a push that calls a list in
-    // RDRAM, and it is exactly what this must not touch.
-    //
-    // The group is set before the load and carries RT64's defaults in every
-    // field but the id and the ordering, so a tagged object is interpolated
-    // exactly as an untagged one, only paired better; the defaults are put
-    // back before the next load that is not a site. WR64_NO_SITE_IDS switches
-    // it off, for comparison.
-
-    bool sites_on = true;
-    const std::unordered_set<uint64_t>* prev_sites = nullptr;   // last frame's places
-    std::unordered_set<uint64_t>* cur_sites = nullptr;          // this frame's
-    bool site_group_open = false;
-    uint32_t site_groups = 0;       // loads given an identity this frame
-
-    // FNV-1a over the two translations' bit patterns and the list address.
-    // Exact bits, not a rounding: the game writes a fixed site's matrix from
-    // the same numbers every frame, and a rounding boundary would make one
-    // place two identities.
-    static uint64_t fnv1a(std::initializer_list<uint32_t> words) {
-        uint64_t h = 0xCBF29CE484222325ull;
-        for (uint32_t v : words) {
-            for (int i = 0; i < 4; ++i) {
-                h ^= (v >> (8 * i)) & 0xFF;
-                h *= 0x100000001B3ull;
-            }
-        }
-        return h;
-    }
-
-    static uint64_t site_key(float x, float z, uint32_t list) {
-        uint32_t xb, zb;
-        std::memcpy(&xb, &x, sizeof xb);
-        std::memcpy(&zb, &z, sizeof zb);
-        return fnv1a({ xb, zb, list });
-    }
-
-    // Folded to 32 bits with the top bit set, clear of G_EX_ID_IGNORE (0),
-    // G_EX_ID_AUTO (~0) and the sky's and water's ids (0x57A0000x).
-    static uint32_t site_id(uint64_t key) {
-        uint32_t id = static_cast<uint32_t>(key ^ (key >> 32)) | 0x80000000u;
-        return id == G_EX_ID_AUTO ? 0xFFFFFFFEu : id;
-    }
-
-    // The static list the load at `cursor - 8` draws with, if the next drawing
-    // command after it is a call to one; 0 otherwise. Looks past state
-    // commands only.
-    uint32_t list_after_matrix(uint32_t cursor) const {
-        for (int i = 0; i < 8; ++i) {
-            const uint32_t* c = words(cursor);
-            const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
-            if (op == kOpDisplayList) {
-                return ((c[0] >> 16) & 0xFF) == 0 ? c[1] : 0;
-            }
-            if (op == kOpMtx || op == kOpVtx || op == kOpPopMtx || op == kOpEndDisplayList ||
-                is_rect(op)) {
-                return 0;
-            }
-            cursor += 8;
-        }
-        return 0;
-    }
-
-    // RT64's defaults, with only the id and the ordering set.
-    void site_group(uint32_t id) {
-        const uint32_t order = id != G_EX_ID_AUTO ? G_EX_ORDER_LINEAR : G_EX_ORDER_AUTO;
-        if (GfxCommand* cmd = reserve(2)) {
-            gEXMatrixGroup(cmd, id, G_EX_INTERPOLATE_DECOMPOSE, G_EX_NOPUSH, 0,
-                           G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,
-                           G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_SKIP,
-                           G_EX_COMPONENT_AUTO, order, G_EX_EDIT_NONE,
-                           G_EX_ASPECT_AUTO, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_AUTO);
-        }
-        site_group_open = id != G_EX_ID_AUTO;
-    }
-
-    // Called for every modelview matrix command the top-level list carries,
-    // after the walk has taken account of it and before it is written out.
-    // `cursor` is the command after it.
-    void site_matrix(uint32_t w0, uint32_t cursor) {
-        if (!sites_on || cur_sites == nullptr) return;
-        const uint32_t params = (w0 >> 16) & 0xFF;
-        bool site = false;
-        uint64_t key = 0;
-        if ((params & kMtxLoad) && !(params & kMtxPush) &&
-            have_projection && projection_is_perspective && race_test.race()) {
-            const uint32_t list = list_after_matrix(cursor);
-            const uint32_t segment = list >> 24;
-            if (list != 0 && segment != 0 && segment < 0x10) {
-                const Mat4& m = modelview[modelview_depth];
-                key = site_key(m.m[3][0], m.m[3][2], list);
-                cur_sites->insert(key);
-                site = prev_sites != nullptr && prev_sites->count(key) != 0;
-            }
-        }
-        if (site) {
-            site_group(site_id(key));
-            ++site_groups;
-        }
-        else if (site_group_open) {
-            site_group(G_EX_ID_AUTO);
-        }
-    }
-
-    void site_close() {
-        if (site_group_open) site_group(G_EX_ID_AUTO);
-    }
-
-    // ---- animated models -------------------------------------------------
-    //
-    // The racers are drawn from lists the game builds every frame in segment
-    // 2, one call per racer at the top level, each loading eighteen absolute
-    // matrices from segment 3 -- the limbs -- in a fixed order. RT64 hashes
-    // each limb's draw call and pairs it with a hash-equal call of the
-    // previous frame by the nearest score, and four racers of one model, with
-    // symmetric limbs that hash alike inside each, give every limb a dozen
-    // candidates within a couple of hundred units. At a camera cut the
-    // screen-space term of that score swamps the distance, the nearest is
-    // then often another racer's limb, and a rider is drawn from the pieces
-    // of two.
-    //
-    // The port cannot tag those matrices from outside: the rewriter emits a
-    // call and RT64 walks in. So the call is inlined -- its commands copied
-    // into the scratch list, nested calls left as calls -- with a group set
-    // before each matrix load whose id is made from the list's address and
-    // the load's ordinal within it, with linear ordering. Each limb is then
-    // paired by identity with the same limb of the same racer, before and
-    // instead of the heuristic. The group carries RT64's defaults otherwise,
-    // and the defaults are put back after the list. Only a top-level call to
-    // a segment 2 list in a race frame under a perspective projection is
-    // treated so, and only if the list loads a matrix at all.
-    // WR64_NO_MODEL_IDS switches it off.
-
-    bool models_on = true;
-    uint32_t model_groups = 0;      // loads given an identity this frame
-    uint32_t models_inlined = 0;
-
-    // The identity is the matrix's own segmented address. Measured over eight
-    // consecutive race frames: a racer's eighteen matrices sit at fixed
-    // segment 3 addresses -- 0x0300E108 + limb * 0x100 + racer * 0x40 -- in
-    // both of the game's alternating lists, while the list a racer is drawn
-    // from moved between two segment 2 slots mid-run. So the list's address
-    // is not the racer's identity, and neither is a load's ordinal within it;
-    // the matrix's address is.
-    static uint32_t model_id(uint32_t matrix_segmented) {
-        return site_id(fnv1a({ matrix_segmented, 0x4D4F444Cu }));
-    }
-
-    // Whether a list loads a modelview matrix of its own, following branches
-    // but not calls: the group set before a load is what its transform is
-    // created under, and nested calls here draw vertices only.
-    bool list_loads_matrix(uint32_t physical_addr) const {
-        uint32_t cursor = physical_addr;
-        for (uint32_t steps = 0; steps < 4096; ++steps) {
-            const uint32_t* c = words(cursor);
-            const uint8_t op = static_cast<uint8_t>(c[0] >> 24);
-            cursor += 8;
-            if (op == kOpEndDisplayList) return false;
-            if (op == kOpDisplayList) {
-                if (((c[0] >> 16) & 0xFF) != 0) cursor = physical(c[1]);
-                continue;
-            }
-            if (op == kOpMtx && !(((c[0] >> 16) & 0xFF) & kMtxProjection)) return true;
-        }
-        return false;
-    }
-
-    bool model_call(uint32_t segmented) const {
-        return models_on && (segmented >> 24) == 0x02 && have_projection &&
-               projection_is_perspective && race_test.race() &&
-               list_loads_matrix(physical(segmented));
-    }
-
-    // Copies the list in place of the call, a group before each matrix load.
-    // The walk's own modelview tracking follows the loads, as it would have
-    // had the game written them at the top level.
-    void inline_model(uint32_t segmented) {
-        uint32_t cursor = physical(segmented);
-        ++models_inlined;
-        for (uint32_t steps = 0; steps < 4096 && !overflow; ++steps) {
-            const uint32_t* c = words(cursor);
-            const uint32_t w0 = c[0];
-            const uint32_t w1 = c[1];
-            const uint8_t op = static_cast<uint8_t>(w0 >> 24);
-            cursor += 8;
-            if (op == kOpEndDisplayList) break;
-            if (op == kOpDisplayList) {
-                if (((w0 >> 16) & 0xFF) != 0) {
-                    cursor = physical(w1);
-                    continue;
-                }
-                emit(w0, w1);
-                continue;
-            }
-            if (op == kOpMtx) {
-                const uint32_t params = (w0 >> 16) & 0xFF;
-                if (!(params & kMtxProjection)) {
-                    site_group(model_id(w1));
-                    ++model_groups;
-                }
-                on_matrix(w0, w1);
-            }
-            else if (op == kOpPopMtx) {
-                if (modelview_depth > 0) --modelview_depth;
-            }
-            else if (op == kOpSetTextureImage) {
-                texture = w1;
-            }
-            emit(w0, w1);
-        }
-        site_group(G_EX_ID_AUTO);
     }
 
     // ---- the water ------------------------------------------------------
@@ -2842,17 +2584,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
     w.sky_interp = !sky_interp_off;
     static const bool water_interp_off = std::getenv("WR64_NO_WATER_INTERP") != nullptr;
     w.water_interp = !water_interp_off;
-    // The fixed sites' places, this frame's and the last's, swapped at the end
-    // of every list. See Walker::site_matrix.
-    static const bool sites_off = std::getenv("WR64_NO_SITE_IDS") != nullptr;
-    static std::unordered_set<uint64_t> site_sets[2];
-    static int site_flip = 0;
-    w.sites_on = !sites_off;
-    static const bool models_off = std::getenv("WR64_NO_MODEL_IDS") != nullptr;
-    w.models_on = !models_off;
-    w.prev_sites = &site_sets[site_flip];
-    w.cur_sites = &site_sets[site_flip ^ 1];
-    w.cur_sites->clear();
     static const bool lattice_trace = std::getenv("WR64_LATTICE") != nullptr ||
                                      std::getenv("WR64_LATTICE_VERTS") != nullptr ||
                                       std::getenv("WR64_WATER_LATTICE") != nullptr;
@@ -2911,7 +2642,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             w.leave_class(false);
             w.curtain(false);
             w.sky_close();
-            w.site_close();
             w.emit(w0, w1);
             break;
         }
@@ -2932,12 +2662,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 const Extent e = w.scan(w.physical(w1), 0, mv, depth, rects);
                 if (!e.empty()) w.classify_draw(e, w1);
                 if (!rects.empty()) w.classify_rect(rects, w1, {});
-            }
-            // An animated model's list is copied in place of the call, so its
-            // limbs can be given identities. See Walker::inline_model.
-            if (w.model_call(w1)) {
-                w.inline_model(w1);
-                continue;
             }
             // Screen-space geometry drawn from a static list: a projection
             // built at an aspect of one, and a viewport inside the called list
@@ -3074,7 +2798,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                 w.seen_ortho = true;
             }
             w.sky_matrix(params);
-            if (!(params & kMtxProjection)) w.site_matrix(w0, cursor);
 
             // Draw distance and field of view, applied to the world's own
             // frustum. Only in a race frame, and only to a perspective
@@ -3107,8 +2830,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
 
         w.emit(w0, w1);
     }
-
-    site_flip ^= 1;
 
     if (w.overflow) {
         static bool reported = false;
@@ -3192,23 +2913,6 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
                                  " (state 0x%02X)\n", w.released_sections, state);
             std::fflush(stderr);
         }
-    }
-
-    // The fixed sites are reported the first time a race frame tags any, so
-    // the log says the treatment reached the course at all.
-    static bool reported_sites = false;
-    if (w.site_groups > 0 && !reported_sites) {
-        reported_sites = true;
-        std::fprintf(stderr, "[wr64] fixed sites: %u matrix loads given an identity (state 0x%02X)\n",
-                     w.site_groups, state);
-        std::fflush(stderr);
-    }
-    static bool reported_models = false;
-    if (w.models_inlined > 0 && !reported_models) {
-        reported_models = true;
-        std::fprintf(stderr, "[wr64] animated models: %u lists inlined, %u matrix loads given an identity"
-                             " (state 0x%02X)\n", w.models_inlined, w.model_groups, state);
-        std::fflush(stderr);
     }
 
     static uint32_t lists = 0;

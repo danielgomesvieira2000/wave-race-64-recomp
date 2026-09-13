@@ -282,7 +282,9 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     // it has, and get_n64_input merges the two, so the keys and the pad both
     // play at any moment without either having to be chosen. Player two exists
     // only once a second pad has been plugged in.
-    if (controller_num == 1 && !recompinput::players::get_player_is_assigned(1)) {
+    // A test script that drives player two stands in for a second pad.
+    if (controller_num == 1 && !recompinput::players::get_player_is_assigned(1) &&
+        !wr64::input_script_has_player_two()) {
         return false;
     }
 
@@ -296,13 +298,13 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (!wr64::frontend::capturing_input()) {
         recompinput::profiles::get_n64_input(controller_num, &pressed, &stick_x, &stick_y);
 
-        // Scripted input is player one's, and is written in the N64's own
-        // +/-80 (see src/testdrive.cpp), so it is scaled to match.
-        if (controller_num == 0) {
+        // Scripted input is written in the N64's own +/-80 (see
+        // src/testdrive.cpp), so it is scaled to match.
+        {
             uint16_t scripted_buttons = 0;
             float scripted_x = 0.0f;
             float scripted_y = 0.0f;
-            wr64::input_script_state(&scripted_buttons, &scripted_x, &scripted_y);
+            wr64::input_script_state(controller_num, &scripted_buttons, &scripted_x, &scripted_y);
             pressed |= scripted_buttons;
             if (scripted_x != 0.0f) { stick_x = scripted_x / kN64Range; }
             if (scripted_y != 0.0f) { stick_y = scripted_y / kN64Range; }
@@ -428,7 +430,8 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
     // connected controller; the rest are empty. No Pak: the game reads the
     // Controller Pak for its records and has no rumble code of its own.
     if (controller_num == 0 ||
-        (controller_num == 1 && recompinput::players::get_player_is_assigned(1))) {
+        (controller_num == 1 && (recompinput::players::get_player_is_assigned(1) ||
+                                 wr64::input_script_has_player_two()))) {
         return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
     }
 #else

@@ -1,0 +1,49 @@
+# A scripted two-player race: both players from boot into a 2P VS race start.
+#
+# Written to reproduce the race-start interpolation burst, which is worst in two
+# players. Same format as race.txt (see src/testdrive.cpp), plus one addition:
+# buttons prefixed with "2:" are player two's. A script that mentions player two
+# makes the port report a second controller connected, so this runs with one pad
+# or none.
+#
+# The main menu reads CHAMPIONSHIP, TIME TRIALS, STUNT MODE, 2P VS., OPTIONS,
+# with the cursor on the first; 2P VS. is three steps down. After that every
+# screen takes A to confirm, so both players tap A until the race and then hold
+# it. A is never Start once the menus are past: Start would pause the race.
+#
+# The state transcript in the log says which press landed: grep it for "state:".
+
+3.0    3.4   START          # Start (title, while it animates in; may not land)
+7.0    7.4   START          # Start (title) -- the one race.txt relies on
+
+# The menu is on screen about a second and a half after the Start that lands.
+10.0   10.4  -       0 -60  # stick down
+11.0   11.4  -       0 -60  # stick down
+12.0   12.4  -       0 -60  # stick down (2P VS.)
+13.5   13.9  A              # choose 2P VS.
+
+# Both players confirm every selection screen as it appears.
+17.0   17.4  A
+17.0   17.4  2:A
+20.0   20.4  A
+20.0   20.4  2:A
+23.0   23.4  A
+23.0   23.4  2:A
+26.0   26.4  A
+26.0   26.4  2:A
+29.0   29.4  A
+29.0   29.4  2:A
+32.0   32.4  A
+32.0   32.4  2:A
+35.0   35.4  A
+35.0   35.4  2:A
+38.0   38.4  A
+38.0   38.4  2:A
+41.0   41.4  A
+41.0   41.4  2:A
+44.0   44.4  A
+44.0   44.4  2:A
+
+# The race: both accelerate.
+50.0   170.0 A              # P1 accelerate
+50.0   170.0 2:A            # P2 accelerate

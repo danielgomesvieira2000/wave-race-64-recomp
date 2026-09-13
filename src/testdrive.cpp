@@ -41,10 +41,12 @@ struct ScriptEntry {
     float stick_y = 0.0f;
     std::string note;
     bool announced = false;
+    int player = 0;     // 0 for player one; a "2:" prefix on the buttons makes it 1
 };
 
 std::vector<ScriptEntry> g_script;
 bool g_script_loaded = false;
+bool g_script_has_player_two = false;
 Uint64 g_script_start_ticks = 0;
 
 double now_seconds() {
@@ -91,6 +93,11 @@ namespace wr64 {
 // freely and are OR'd together, which is what makes both a tap (start 4.0, end
 // 4.2) and a hold (accelerate for thirty seconds while steering) expressible in
 // the same file without two syntaxes.
+//
+// Buttons prefixed with "2:" ("2:A", "2:-") are player two's. A script that
+// uses the prefix at all makes the port report a second controller connected
+// (see callbacks.cpp), which is what lets a script reach 2P VS without a second
+// pad -- tools/scripts/race-2p.txt drives both players into a race.
 bool load_input_script() {
     const char* path = std::getenv("WR64_INPUT_SCRIPT");
     if (path == nullptr) {
@@ -118,6 +125,14 @@ bool load_input_script() {
         std::string button_field;
         if (!(fields >> entry.start_seconds >> entry.end_seconds >> button_field)) {
             continue;  // blank or comment-only line
+        }
+        // "2:A" is player two's A, "2:-" player two holding the stick alone.
+        // A script that mentions player two makes that controller present, so
+        // two-player modes can be reached without a second pad.
+        if (button_field.rfind("2:", 0) == 0) {
+            entry.player = 1;
+            button_field = button_field.substr(2);
+            g_script_has_player_two = true;
         }
         if (!parse_buttons(button_field, &entry.buttons)) {
             std::fprintf(stderr, "[wr64] input script: %s:%d\n", path, line_number);
@@ -148,7 +163,15 @@ bool input_script_active() {
     return g_script_loaded;
 }
 
+bool input_script_has_player_two() {
+    return g_script_loaded && g_script_has_player_two;
+}
+
 void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y) {
+    input_script_state(0, buttons, stick_x, stick_y);
+}
+
+void input_script_state(int player, uint16_t* buttons, float* stick_x, float* stick_y) {
     *buttons = 0;
     *stick_x = 0.0f;
     *stick_y = 0.0f;
@@ -158,7 +181,7 @@ void input_script_state(uint16_t* buttons, float* stick_x, float* stick_y) {
 
     const double t = now_seconds();
     for (ScriptEntry& entry : g_script) {
-        if (t < entry.start_seconds || t >= entry.end_seconds) {
+        if (entry.player != player || t < entry.start_seconds || t >= entry.end_seconds) {
             continue;
         }
         if (!entry.announced) {
