@@ -8,8 +8,11 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
-## Unreleased
+## [1.0.2](docs/releases/1.0.2.md) — HUD fixes
 
+- **Race HUD placement fixes at widescreen**: four more HUD textures, among them
+  number glyphs, keep to the right edge with the rest of their group. Their tags,
+  set in the inspector, are now built into the port.
 - **Class changes in the F1 HUD inspector take effect immediately again**, for every
   element. A change to an element sharing a run of rectangles with a tagged texture --
   most of the race HUD, since 1.0.0 promoted its tags into the port -- was overwritten

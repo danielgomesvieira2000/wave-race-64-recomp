@@ -396,8 +396,8 @@ an archive that already exists, because a published checksum should not quietly
 start describing different bytes.
 
 ```
-powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -BuildDir build-fe -Version 1.0.1
-python3 tools/package_release.py --version 1.0.1
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -BuildDir build-fe -Version 1.0.2
+python3 tools/package_release.py --version 1.0.2
 ```
 
 The second one reads the platform it is running on: a `.tar.gz` on Linux with
@@ -421,7 +421,7 @@ bash tools/build_macos_dependencies.sh
 WR64_BUILD_DIR=build-macos-release \
 WR64_DEPENDENCY_PREFIX="$PWD/build-macos-deps/install" \
     bash tools/build_macos.sh
-python3 tools/package_release.py --version 1.0.1 --build-dir build-macos-release
+python3 tools/package_release.py --version 1.0.2 --build-dir build-macos-release
 ```
 
 SDL2, FreeType and libpng are pinned by version and by SHA-256 there, and the
