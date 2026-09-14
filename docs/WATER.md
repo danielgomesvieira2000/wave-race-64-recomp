@@ -334,6 +334,25 @@ only, and camera cuts, course changes and incompatible views reject the history
 outright rather than interpolating across them
 (`lib/RT64/src/hle/rt64_water_interpolation.h`).
 
+**The sampling searches every triangle in the water's transform, so nothing else
+may be in it.** From 0.9.1 to 1.0.0 the sea extension ring was, and on big swells
+patch vertices took their previous height from the ring's coarse triangles: the
+waves pulsed. The ring now has a transform of its own. See
+[PORTING.md](PORTING.md), *Waves that jitter on a big swell*.
+
+**The sampling applies at every quality, Original included.** It needs the
+snapshot's course, generation and animation times, which travel in the material.
+Up to 1.0.0 the port sent the cleared command at Original, so Original water fell
+back to index pairing. The snapshot is now sent with quality 0, which the
+renderer ignores and the interpolation accepts. `WR64_WATER_BY_INDEX=1` restores
+the old path for comparison, and `WR64_WATER_INTERP_STATS=1` reports the cost.
+
+**Known: the ring's own heights shimmer on big swells.** Its vertices slide with
+the camera and sample the wave field at new points every game frame, 110 units
+apart or more against a 64-unit field. Interpolation smooths it between frames
+but the content itself changes; anchoring the ring's vertices to world lattice
+points is the fix, not yet made.
+
 **One-player water tests depth without writing it, and then draws flat horizon
 quads after the moving grid.** Under the original blending that is fine. Under
 opaque compositing those quads overwrite nearer wave crests. The fix is a

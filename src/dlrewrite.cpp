@@ -121,6 +121,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -994,6 +995,7 @@ struct Walker {
 
     static constexpr uint32_t kSkyId = 0x57A00001u;
     static constexpr uint32_t kWaterId = 0x57A00002u;
+    static constexpr uint32_t kRingId = 0x57A00003u;
 
     enum class SkySection { Before, Open, Done };
     SkySection sky = SkySection::Before;
@@ -1162,6 +1164,37 @@ struct Walker {
                list_modelview_loads(physical(segmented)) >= 4;
     }
 
+    // A matrix address that means the same part in every frame.
+    //
+    // A segmented address already does: the game points the segment at this
+    // frame's buffer and the offset stays put, which is why the riders in a race
+    // pair by it. The watercraft on the select screen also load matrices by
+    // *direct* address, out of the per-frame pool the game double-buffers, so the
+    // same part is at one address in one frame and 0x1798 further on in the next
+    // (measured: 0x001CC348 and 0x001CDAE0), its id changed every frame, nothing
+    // was paired, and the craft turned at the game's 20 frames a second. Such an
+    // address is re-expressed against the nearest segment base below it within
+    // 64 KiB -- segment 7, there, which moves with the pool -- which gives the
+    // same number in both buffers. A direct address with no segment near it is
+    // kept as it is. Segmented addresses are returned unchanged, so nothing that
+    // paired before is keyed differently. WR64_MODEL_RAW_ADDRESS=1 keys every
+    // part by its raw address again, for comparison.
+    uint32_t stable_matrix_address(uint32_t address) const {
+        static const bool raw = std::getenv("WR64_MODEL_RAW_ADDRESS") != nullptr;
+        const uint32_t segment = (address >> 24) & 0xFF;
+        if (raw || (segment != 0x00 && segment != 0x80)) return address;
+        const uint32_t phys = address & 0x00FFFFFFu;
+        uint32_t best = 16, best_offset = 0x10000;
+        for (uint32_t s = 1; s < 16; ++s) {
+            const uint32_t base = segments[s];
+            if (base == 0 || base > phys) continue;
+            const uint32_t offset = phys - base;
+            if (offset < best_offset) { best = s; best_offset = offset; }
+        }
+        if (best == 16) return address;
+        return (best << 24) | best_offset | 0x00800000u;   // bit 23: re-expressed
+    }
+
     // The group for one part's matrix load: the part's identity, its translation
     // interpolated unless it moved further than a part can in one game frame.
     // Returns whether the part is drawn at its new place. `check_teleport`
@@ -1170,7 +1203,8 @@ struct Walker {
         const Mat4 m = read_matrix(physical(matrix_segmented));
         const std::array<float, 3> here = { m.m[3][0], m.m[3][1], m.m[3][2] };
         uint32_t position = step ? G_EX_COMPONENT_SKIP : G_EX_COMPONENT_INTERPOLATE;
-        const auto before = model_prev->find(matrix_segmented);
+        const uint32_t key = stable_matrix_address(matrix_segmented);
+        const auto before = model_prev->find(key);
         if (check_teleport && before != model_prev->end()) {
             const float dx = here[0] - before->second[0];
             const float dy = here[1] - before->second[1];
@@ -1180,8 +1214,8 @@ struct Walker {
                 ++model_teleports;
             }
         }
-        (*model_cur)[matrix_segmented] = here;
-        model_group(model_id(matrix_segmented), position);
+        (*model_cur)[key] = here;
+        model_group(model_id(key), position);
         ++model_loads;
         return position == G_EX_COMPONENT_SKIP;
     }
@@ -1276,7 +1310,7 @@ struct Walker {
             const uint32_t params = (w0 >> 16) & 0xFF;
             if (!loads_part(params, cursor, in_run)) return false;
             in_run = true;
-            if (model_prev->find(w1) == model_prev->end()) return true;
+            if (model_prev->find(stable_matrix_address(w1)) == model_prev->end()) return true;
         }
         return false;
     }
@@ -1401,9 +1435,11 @@ struct Walker {
     // across the frames in between, in the 31% of race frames that carry. The
     // heights and texture coordinates are worth interpolating and the
     // positions are not, which means pairing against the previous surface
-    // sampled at each current world XZ -- a change inside the renderer, not
-    // here. The group below is left as it is, and WR64_NO_WATER_INTERP=1
-    // switches it off for the comparison.
+    // sampled at each current world XZ -- a change inside RT64
+    // (rt64_water_interpolation.h), which it makes for a mesh carrying this
+    // group and a water material with a snapshot. water_material() below sends
+    // one at every quality for that reason. The group is left as it is, and
+    // WR64_NO_WATER_INTERP=1 switches it off for the comparison.
     //
     // The sky is the opposite case and the group there is sound: three bands
     // moving independently (all three share a step in 5% of frames), each a
@@ -1531,6 +1567,46 @@ struct Walker {
     // the water is drawn under, so world-space vertices are correct as they
     // stand; and the modern renderer's shading, since the material is still
     // attached.
+    // The ring in a transform of its own, opened before it and closed after.
+    //
+    // RT64 starts a world transform at the first vertex after a matrix command,
+    // and every vertex until the next one belongs to it. Emitted straight after
+    // the game's water, the ring was part of the water's transform, and the
+    // water's interpolation -- which samples the previous surface at each
+    // current world XZ (rt64_water_interpolation.h) -- searched the ring's
+    // triangles as well. They overlap the patch's outer band, 860 units out
+    // against a patch reaching 922, and their heights are coarse samples, so a
+    // patch vertex could take its previous height from the ring rather than from
+    // the water it stands on. Measured on a scripted Dolphin Park run with the
+    // ring on: 0.65 patch vertices a frame with a previous height more than 10
+    // units off the real one; with the ring off, none. On a big swell that is
+    // the waves jittering, and it came with the ring in 0.9.1.
+    //
+    // A push multiplied by identity leaves the modelview as it was and starts a
+    // new transform; the pop after the ring puts the stack back. The ring's own
+    // vertices are the same slots from frame to frame, carried with the camera
+    // continuously rather than in steps, so RT64's pairing by index is sound for
+    // them, and they get an id of their own so the water's is never shared.
+    // WR64_WATER_RING_SHARED=1 draws it in the water's transform again.
+    void water_ring_transform(bool open) {
+        static const bool shared = std::getenv("WR64_WATER_RING_SHARED") != nullptr;
+        if (shared) return;
+        if (open) {
+            if (matrix_cursor + 64 > kMatrixScratchSize) return;
+            const uint32_t address = kMatrixScratch + matrix_cursor;
+            matrix_cursor += 64;
+            write_matrix(address, Mat4::identity());
+            emit((uint32_t(kOpMtx) << 24) | (kMtxPush << 16) | 0x40, 0x80000000u | address);
+            ring_transform_open = true;
+            if (water_interp) vertex_interp_group(kRingId);
+        }
+        else if (ring_transform_open) {
+            emit(uint32_t(kOpPopMtx) << 24, 0);
+            ring_transform_open = false;
+        }
+    }
+    bool ring_transform_open = false;
+
     // Emits the ring, wearing the game's own water attributes.
     //
     // `sample` is the address of the first vertex of the game's own water list.
@@ -1649,15 +1725,27 @@ struct Walker {
     // the material has to travel in-band, immediately before the call that
     // draws the surface, and be cleared immediately after it.
     //
-    // An identity of zero means the player has Water set to Original, and the
-    // cleared command is what tells RT64 to draw the surface exactly as the
-    // game asked. That is why this is emitted at all in that case rather than
-    // skipped: leaving a stale material attached would be worse than sending
-    // an empty one.
+    // A quality of zero (identity.x) means the player has Water set to Original,
+    // and RT64 then draws the surface exactly as the game asked. The material is
+    // still sent in that case, because it is also what RT64's water
+    // interpolation reads: the course, the visual generation and the animation
+    // times that let it sample the previous surface at each current world XZ.
+    // Without them the water falls back to RT64's pairing by index, which slides
+    // the lattice by its 64-unit re-centring steps between game frames (see the
+    // water section above). WR64_WATER_BY_INDEX=1 sends the cleared command at
+    // Original again, for the comparison.
+    //
+    // The cleared command -- no snapshot for this list, or the call closing the
+    // bracket -- is emitted rather than skipped: leaving a stale material
+    // attached would be worse than sending an empty one.
     void water_material(bool enabled) {
         const uint32_t op = (RT64_EXTENDED_OPCODE << 24) | G_EX_WATER_MATERIAL_V1;
         const auto m = wr64::water::material(0);
-        if (!enabled || m.identity.x == 0) {
+        static const bool by_index = std::getenv("WR64_WATER_BY_INDEX") != nullptr;
+        // identity.w is the snapshot's visual generation, at least one in every
+        // snapshot water.cpp publishes; a list with none leaves it zero.
+        const bool snapshot = m.identity.w > 0 && m.identity.z <= 9;
+        if (!enabled || !snapshot || (by_index && m.identity.x == 0)) {
             emit(op, 0);
             return;
         }
@@ -1739,7 +1827,7 @@ struct Walker {
             if (out != nullptr) {
                 std::fprintf(out, "# Every water vertex, per frame. See "
                                   "tools/lattice_shift.py.\n"
-                                  "frame,course,block,index,x,y,z\n");
+                                  "frame,course,block,index,x,y,z,s,t\n");
             }
             return out;
         }();
@@ -1762,8 +1850,22 @@ struct Walker {
             const char* p = std::getenv("WR64_LATTICE_VERT_COURSE");
             return p != nullptr ? std::strtol(p, nullptr, 10) : -1;
         }();
+        // WR64_LATTICE_VERT_TRIGGER names a file: the run starts on the first
+        // frame after it exists. That is how a capture is taken at a place
+        // someone drove to by hand -- create the file once they are there.
+        static const char* trigger = std::getenv("WR64_LATTICE_VERT_TRIGGER");
         static int first_frame = -1;
-        if (wanted_course >= 0) {
+        if (trigger != nullptr) {
+            if (first_frame < 0) {
+                static int checked = -1;
+                if (checked == g_vertex_frame) return;   // one look per frame
+                checked = g_vertex_frame;
+                if (!std::filesystem::exists(trigger)) return;
+                first_frame = g_vertex_frame;
+            }
+            if (g_vertex_frame > first_frame + wanted) return;
+        }
+        else if (wanted_course >= 0) {
             if (first_frame < 0) {
                 if (int32_t(course) != int32_t(wanted_course)) return;
                 first_frame = g_vertex_frame;
@@ -1781,9 +1883,10 @@ struct Walker {
         // 16 bytes each: s16 x, y, z, flag, then texture coordinates and colour.
         for (uint32_t i = 0; i < count; ++i) {
             const uint32_t v = addr + i * 16;
-            std::fprintf(f, "%d,%u,%u,%u,%d,%d,%d\n", g_vertex_frame, course,
+            std::fprintf(f, "%d,%u,%u,%u,%d,%d,%d,%d,%d\n", g_vertex_frame, course,
                          vertex_block, i,
-                         signed_half(v), signed_half(v + 2), signed_half(v + 4));
+                         signed_half(v), signed_half(v + 2), signed_half(v + 4),
+                         signed_half(v + 8), signed_half(v + 10));
         }
         ++vertex_block;
     }
@@ -2995,22 +3098,27 @@ uint32_t rewrite(uint8_t* rdram, uint32_t list_vaddr) {
             // created at its first vertex rather than at its matrix load.
             if (w.lattice_trace) w.collect_lattice(w.physical(w1), 0);
             const bool water = w.draws_water(w1);
-            const bool modern_water = water && w.known_water_material(w1);
+            // One of the game's water lists: the material goes around it at every
+            // quality, since the interpolation reads it even at Original.
+            const bool known_water = water && w.known_water_material(w1);
             if (water && w.water_interp) w.vertex_interp_group(Walker::kWaterId);
-            if (modern_water) w.water_material(true);
+            if (known_water) w.water_material(true);
             w.emit(w0, w1);
             // The ring goes after the game's own surface and inside the same
             // material bracket: after, so the patch is drawn first and the
             // overlap between them is covered by the game's own vertices rather
             // than by these; inside, so the modern renderer shades both as one
-            // sea. It is claimed by list identity, so the two split-screen views
-            // each get their own.
-            if (modern_water) {
+            // sea and the interpolation samples both as one surface. It is
+            // claimed by list identity, so the two split-screen views each get
+            // their own.
+            if (known_water) {
                 if (const auto* ring = wr64::waterring::claim(list_vaddr)) {
+                    w.water_ring_transform(true);
                     w.water_ring(*ring, w.scan_first_vertex_address(w.physical(w1), 0));
+                    w.water_ring_transform(false);
                 }
             }
-            if (modern_water) w.water_material(false);
+            if (known_water) w.water_material(false);
             if (water && w.water_interp) w.vertex_interp_group(G_EX_ID_AUTO);
             if (curtain) w.curtain(false);
             continue;

@@ -8,6 +8,31 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## [1.0.1](docs/releases/1.0.1.md) — Water and watercraft fixes
+
+- **The waves no longer jitter on high water.** With Draw Distance at Extended
+  -- the default since 1.0.0 -- wave crests pulsed on big swells whenever the
+  frame rate was above the game's own, worst while moving. It came with the sea
+  extension in 0.9.1: the added sea was drawn as part of the game's water, and
+  the water's interpolation took some of its previous heights from the added
+  sea's coarse surface. The added sea now has its own transform. Measured on a
+  scripted Dolphin Park drive: wrong previous heights went from up to 0.65 per
+  game frame to none, and the interpolation's cost fell from about 4 ms to
+  1.8 ms. `WR64_WATER_RING_SHARED=1` restores the old behaviour for comparison.
+- **Original water interpolates like Enhanced and Best**, sampling the previous
+  surface at each world position instead of pairing vertices by index.
+  `WR64_WATER_BY_INDEX=1` restores the old path. Race frame rate unchanged on an
+  i5-1335U with Iris Xe graphics.
+- **The watercraft on the select screen turn smoothly** when selected, instead
+  of at the game's 20 frames a second. Their parts were identified by a memory
+  address that alternates between two buffers every frame, so they never
+  paired between frames; they are now identified by their place in the frame's
+  buffer. Over four spins, the selected craft changed on 43% of consecutive
+  captures before and on every one after. `WR64_MODEL_RAW_ADDRESS=1` restores
+  the old behaviour for comparison.
+- Known: the distant added sea can still shimmer a little on big swells.
+- Building from source: rerun `tools/patch_rt64.py`.
+
 ## [1.0.0](docs/releases/1.0.0.md) — Full release
 
 - **The dolphin in the opening sequence moves smoothly** with interpolation on.

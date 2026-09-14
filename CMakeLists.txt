@@ -9,7 +9,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(WaveRace64Recomp
-    VERSION 1.0.0
+    VERSION 1.0.1
     DESCRIPTION "Native PC port of Wave Race 64 via static recompilation"
     LANGUAGES C CXX)
 

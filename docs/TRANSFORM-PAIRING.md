@@ -37,6 +37,7 @@ All three fixes are on in every build.
 |---|---|
 | `WR64_NO_SCENE_REGIONS=1` | Cameras are paired by matrix alone again, as upstream RT64 does. The 2P burst comes back. |
 | `WR64_NO_MODEL_IDS=1` | Riders' parts are paired by RT64's heuristic again. Parts come apart in races and on the select screen. |
+| `WR64_MODEL_RAW_ADDRESS=1` | A part loaded by direct address is identified by that address again. The four watercraft thumbnails on the select screen stop pairing and turn at the game's 20 fps. |
 | `WR64_PAIRING_MAX_JUMP=<units>` | The object pair limit. Built in at **150**; `0` switches it off. |
 | `WR64_PAIRING_LOG=<file>` | Write the pairing log. Nothing is written without it. |
 | `WR64_PAIRING=1` | The two-second counter of unpaired transforms, beside the frame rate. |
@@ -176,6 +177,17 @@ reported.
 | Why a part was left unpaired (heuristic, moving riders) | own previous pose taken by another part: 36; own previous under a different draw call: 14 | -- |
 | Watercraft select, 8 switches: frames with an unpaired or snapped part | 16 (2-11 of 18-23 parts each switch) | 2, both a switch onto the 23-part rider, where the whole model takes its new pose together |
 | Seen on screen | parts snapping in races and on switching riders (reported in play) | none, in races and on the select screen (confirmed in play) |
+
+**The watercraft thumbnails** on the select screen (`rider-select.txt`, raw
+address against re-expressed; the selected thumbnail turns after each switch):
+
+| | raw address | re-expressed |
+|---|---:|---:|
+| Transforms paired, one select-screen frame | 24 of 42 | 36 of 37 |
+| Thumbnail parts (4 craft x 3) | 12 unpaired, ids alternating between two sets every frame | 12 paired by id |
+| Consecutive captures showing a new picture, 4 spins | 43% (2.35 captures per picture: the game's 20 fps) | **100%** (1.00) |
+| Race, pairing log `--models`: models with 2+ parts unpaired or snapped | 6 | 1 (the same 23-part appearance frame both runs show) |
+| Seen on screen | craft turns at 20 fps (reported in play) | smooth, parts together (captures; confirmed in play) |
 
 **The dolphin**, opening sequence 20-62 s after launch, the build before against
 the jointed rule:
@@ -330,6 +342,23 @@ list a rider is drawn from moved between segment 2 slots mid-run and the part
 meshes change with the selected rider. Hash the address to 32 bits, set the
 top bit, and keep clear of `G_EX_ID_IGNORE` (0) and `G_EX_ID_AUTO` (~0).
 
+**A direct address is not an identity in a double-buffered game.** The
+watercraft thumbnails load one matrix through segment 7 and three by direct
+address, out of the per-frame pool the game alternates between two buffers:
+`0x001CC348` in one frame, `0x001CDAE0` in the next, `0x1798` apart -- the same
+distance segment 7's base moves. Hashed raw, each part's id alternated between
+two values, no id ever matched the previous frame, and an id-grouped transform
+never reaches the heuristic either: every thumbnail was drawn at its current
+matrix. Re-express a direct address as `(nearest segment base below it within
+64 KiB, offset)` before hashing (`Walker::stable_matrix_address`); the offset
+(`0xC80` here) is the same in both buffers. Leave segmented addresses as they
+are. Key the teleport check and the new-part look-ahead by the same stable
+address.
+
+To spot it in the log: `U` lines carrying explicit ids (not `FFFFFFFF`) for an
+object that is visibly present every frame, with the ids differing between
+consecutive `F` blocks.
+
 **Where the matrix loads are.** Three forms, all handled:
 
 - *Inside a model list* (races): a top-level call to a segment 2 list that
@@ -337,7 +366,8 @@ top bit, and keep clear of `G_EX_ID_IGNORE` (0) and `G_EX_ID_AUTO` (~0).
   RT64 walk in, so it inlines the list -- copies its commands into the scratch
   list, nested calls left as calls -- and sets a group before each load.
 - *At the top level* (the watercraft select screen): a plain modelview load
-  whose next drawing command is a call into segment 8, the character bank.
+  whose next drawing command is a call into segment 8, the character bank. The
+  four craft thumbnails are drawn this way too, from direct addresses; see above.
 - *At the top level, jointed* (the dolphin): a plain load of a body matrix
   followed by `mul+push` part matrices, each followed by a call into segment 8
   and a pop. The load opens a run; a `mul+push` continues it only while a run

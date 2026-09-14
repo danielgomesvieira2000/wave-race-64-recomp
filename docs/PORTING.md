@@ -1757,6 +1757,83 @@ Two further details:
   list's transform is created under -- which means a whole mesh drawn from one
   static list can be wrapped without threading anything through it.
 
+### Waves that jitter on a big swell: added geometry in the water's transform
+
+**Symptom:** 1.0.0, Draw Distance **Extended** (the 1.0.0 default): on high
+water -- Dolphin Park's swells by the rock arch -- the crests pulse in a race at
+any presentation rate above the game's 20 fps, worse while the camera moves.
+Gone with interpolation off. Absent in 0.9.0, present from 0.9.1 (bisected on
+release builds).
+
+**Cause:** the sea extension ring (0.9.1) was emitted straight after the game's
+water call. RT64 starts a world transform at the first vertex after a matrix
+command, so the ring's ~830 vertices joined the water's transform, and the
+world-XZ interpolation (`PreviousMesh`) searched the ring's triangles too. The
+ring starts 860 units out; the patch reaches 922. A patch vertex in that band
+could take its previous height from a coarse ring triangle instead of its own
+water.
+
+| Scripted Dolphin Park drive, same input | patch vertices with previous height >10 off the real one, per game frame | vertices matched | sampling cost |
+|---|---:|---:|---:|
+| ring in the water's transform (1.0.0) | 0.14-0.65 | 96% | 3.5-4.0 ms |
+| ring off (`WR64_NO_WATER_RING=1`) | 0.000 | -- | -- |
+| ring in its own transform (fix) | **0.000** | **99.2%** | **1.8 ms** |
+
+**Fix** (`Walker::water_ring_transform`, `src/dlrewrite.cpp`): a `G_MTX` push
+multiplied by an identity matrix before the ring, and a pop after. The
+modelview is unchanged, but RT64 opens a new transform, grouped under its own id
+(`0x57A00003`). The ring's vertices are the same slots each frame, carried with
+the camera continuously, so RT64's pairing by index suits them.
+`WR64_WATER_RING_SHARED=1` puts the ring back in the water's transform.
+
+**Wrong turns, measured and reverted:**
+
+- *Pinned patch border.* The game pins its patch's outline to water level (100%
+  of outline vertices at 0, against 2-11% inside). Excluding the outline from
+  history lowered one counter, but a world-space measurement showed it made
+  hand-overs worse: mean jump at a world point 0.07 units with the fork's
+  sampling, 0.29 with the exclusion. A crest rising at the border is the game's
+  own picture changing, and interpolating it is correct.
+- *Cross-fade of fast crests.* A per-point height fade was modelled against a
+  motion-compensated slide on a vertex trace; the fade showed no measurable sag.
+
+**The general rules:**
+
+- **Geometry a port adds after a call belongs to that call's transform.** Give
+  it a matrix command of its own, or it inherits whatever interpolation the
+  game's geometry is getting.
+- **Measure interpolation as the jump at a world point when one game frame hands
+  over to the next.** Correct interpolation gives zero. Per-vertex velocity
+  counters flag real motion as readily as faults.
+- **Bisect a regression on release builds first.** Between 0.9.0 and 0.9.1 only
+  three changes touched the frame, which ended the search.
+
+### Original water gets the same world-XZ interpolation
+
+A separate change in the same release. The world-XZ sampling above sat behind
+the modern renderer's switch: RT64 tags a mesh for it (`waterMeshContext`)
+only when its material has `identity.x > 0`, the quality. At Original the port
+sent the *cleared* material, and the water fell back to pairing by index, the
+surge described above.
+
+| | before | after |
+|---|---|---|
+| material at Original | cleared command | full snapshot, `identity.x = 0` |
+| RT64 tag condition | `identity.x > 0` | `identity.x > 0` **or** `identity.w > 0` |
+| water meshes sampled by world XZ, Original, race | 0 of 300 | 300 of 300 |
+| sampling cost, RT64 workload thread | 0.008 ms | 1.8 ms per game frame |
+| race frame rate, i5-1335U / Iris Xe | 20 of 20 | 20 of 20 |
+
+- `identity.w` is the visual generation: at least 1 in every published snapshot,
+  0 in the cleared command. The renderer still requires `identity.x > 0`, so
+  Original stays a bypass for shading.
+- `WR64_WATER_BY_INDEX=1` restores index pairing at Original.
+  `WR64_WATER_INTERP_STATS=1` prints meshes sampled, vertices matched and the
+  cost every 300 meshes. The RT64 edit is anchored in
+  `tools/patch_rt64_water.py`, after the diff.
+- **Lesson:** interpolation history that rides in an optional renderer's
+  payload is switched off with that renderer. Gate it on "a snapshot exists".
+
 ### Window creation affects the aspect ratio
 
 RT64 derives the aspect ratio it expands the game into from the **swap chain's**
@@ -2032,6 +2109,19 @@ deliberate whole-model steps onto the 23-part rider. Frame rate over a 2P race
 unchanged. **Confirmed in play, in races and on the select screen.**
 [TRANSFORM-PAIRING.md](TRANSFORM-PAIRING.md) has the recipe.
 
+**Symptom, 1.0.0:** the watercraft thumbnails on the select screen turn at the
+game's 20 fps when selected, with everything else smooth. **Cause:** they load
+three of their four matrices by *direct* address from the per-frame pool the
+game double-buffers, so the address -- and the id made from it -- alternated
+between two values every frame (`0x001CC348` / `0x001CDAE0`), and nothing ever
+paired. An id-grouped transform does not fall back to the heuristic, so they were
+drawn at the current matrix. **Fix:** a direct address is re-expressed against
+the nearest segment base below it before hashing, which moves with the pool.
+Captures of four spins: a new picture on 43% of consecutive captures before,
+100% after. `WR64_MODEL_RAW_ADDRESS=1` restores the raw address. **Confirmed in
+play.** General rule: **in a double-buffered game, identify per-frame
+allocations by their offset in the frame's buffer, never by address.**
+
 **The dolphin needed a third form.** In the opening sequence it is a body load
 followed by five `mul+push` parts, each calling a segment 8 mesh (GAME-INTERNALS,
 "The dolphin"), which neither rule recognised: the body's next command is a
@@ -2076,7 +2166,7 @@ Every one of these was written to answer a specific failure and then kept.
 | **State watcher and input scripts** (`src/testdrive.cpp`) | A port stuck on the title screen and one quietly racing look identical from outside. Watching the game's state variable produces a transcript -- title, menu, rider select, racing -- and an optional file of timed inputs makes a session repeatable and commitable. Buttons prefixed `2:` are player two's, and a script that uses them makes a second controller present, so `tools/scripts/race-2p.txt` reaches a 2P VS race with no second pad. |
 | **Window capture** (`tools/capture_window.ps1`) | The transcript says which screen the game thinks it is on; only a photograph says whether it is drawn correctly. |
 | **Frame capture** (`tools/capture_frames.py`, `tools/contact_sheet.py`) | Every frame the window presents, 30-40 a second, through Windows Graphics Capture -- so a terminal on top of the game does not end up in the picture, which it silently does with the desktop grab above. A defect of RT64's generated frames shows as an **alternation between consecutive captures**. It is what finally showed the 2P burst after three rounds of argument from logs; the contact sheet crops one split-screen view so the alternation is readable. |
-| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_HUD_NO_ANCHORS`, `WR64_HUD_NOEMIT`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_NO_SCENE_REGIONS`, `WR64_NO_MODEL_IDS`, `WR64_PAIRING_MAX_JUMP=0`, `WR64_BUOY_ORIGINAL`, `WR64_NO_MUSIC_VOLUME`, `WR64_NO_HAPTICS`, `WR64_AUDIO_NO_RESAMPLE`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
+| **Bisect switches** | `WR64_SKIP_DL` (skip RT64's display-list processing), `WR64_NO_REWRITE`, `WR64_HUD_OFF`, `WR64_HUD_NO_ANCHORS`, `WR64_HUD_NOEMIT`, `WR64_NO_SKY_INTERP`, `WR64_NO_WATER_INTERP`, `WR64_WATER_BY_INDEX`, `WR64_WATER_RING_SHARED`, `WR64_NO_SCENE_REGIONS`, `WR64_NO_MODEL_IDS`, `WR64_PAIRING_MAX_JUMP=0`, `WR64_BUOY_ORIGINAL`, `WR64_NO_MUSIC_VOLUME`, `WR64_NO_HAPTICS`, `WR64_AUDIO_NO_RESAMPLE`. Whether a change is an improvement is often a question only a side-by-side can answer, and each switch also isolates a fault to one subsystem. |
 
 ---
 

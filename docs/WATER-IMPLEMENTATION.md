@@ -384,9 +384,21 @@ What was added to `dlrewrite.cpp`:
 |---|---|
 | `water::begin_frame(list_vaddr)` | at the top of `rewrite()`, claims the snapshot for this list |
 | `known_water_material(list)` | the four lists `0x010082F0`, `0x0100B590`, `0x0100D258`, `0x0100E680` |
-| `water_material(bool)` | emits `G_EX_WATER_MATERIAL_V1`, payload v2, or the cleared command |
+| `water_material(bool)` | emits `G_EX_WATER_MATERIAL_V1`, payload v2, whenever a snapshot exists (`identity.w > 0`, course ≤ 9), **at every quality**; otherwise the cleared command |
 | `draws_water()` | no longer gated on `water_interp` |
 | call site | material emitted around the draw, interpolation group gated separately |
+
+Differs from the fork, after 1.0.0: the fork emitted the cleared command at
+Original (`identity.x == 0`). That also switched off the world-XZ interpolation,
+which is tagged from the material, and left Original water pairing by index. The
+RT64 tag now accepts `identity.x > 0 || identity.w > 0`, an anchored edit in
+`tools/patch_rt64_water.py`. See [PORTING.md](PORTING.md), *Original water gets
+the same world-XZ interpolation*.
+
+The water ring is emitted inside the same material bracket but in a transform
+of its own (a push of an identity matrix, id `0x57A00003`), because the world-XZ
+sampling searches every triangle in the water's transform. See PORTING.md,
+*Waves that jitter on a big swell*.
 
 `draws_water()` answers "is this the water surface" well enough to hang an
 interpolation group off; `known_water_material()` is the stronger claim needed

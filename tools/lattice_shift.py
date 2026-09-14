@@ -48,9 +48,10 @@ def load(path: Path, courses: set):
         if not line or line.startswith("#") or line.startswith("frame,"):
             continue
         parts = line.split(",")
-        # 7 columns since the course was added; 6 is the older layout.
-        if len(parts) == 7:
-            frame, course, block, index, x, y, z = (int(v) for v in parts)
+        # 9 columns since the texture coordinates were added, 7 since the course
+        # was added; 6 is the oldest layout.
+        if len(parts) in (7, 9):
+            frame, course, block, index, x, y, z = (int(v) for v in parts[:7])
         elif len(parts) == 6:
             frame, block, index, x, y, z = (int(v) for v in parts)
             course = -1

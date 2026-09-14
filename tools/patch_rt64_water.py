@@ -159,19 +159,167 @@ def apply_guard() -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+#  The same interpolation at Original
+#
+#  Not the cause of the jittering water reported against 1.0.0 -- that was the
+#  sea extension ring sharing the water's transform; see src/dlrewrite.cpp,
+#  water_ring_transform, and docs/PORTING.md. This makes Original water
+#  interpolate the way Enhanced and Best already did.
+#
+#  The game carries its water lattice with the camera in 64-unit steps, so
+#  vertex n is not the same water from one game frame to the next, and RT64's
+#  own vertex interpolation, which pairs by index, slides the whole surface up
+#  to 128 units across the generated frames. The diff replaces that with
+#  sampling the previous surface at each current world XZ -- but only for a draw
+#  whose material has a quality above zero, which is to say only when the modern
+#  renderer shades it. At Original the port sent the cleared material, the mesh
+#  was never tagged, and the water fell back to pairing by index.
+#
+#  The history that sampling needs -- course, visual generation, the two
+#  animation times, the viewport -- has nothing to do with shading. The port now
+#  sends its snapshot at Original too, with quality zero so the renderer stays
+#  out of the draw, and the tag below accepts it: identity.w, the port's visual
+#  generation, is at least one in every snapshot and zero only in the cleared
+#  command.
+#
+#  WR64_WATER_INTERP_STATS=1 prints, every 300 water meshes matched, how many
+#  were sampled by world XZ, how many vertices found a previous surface, and the
+#  CPU time the sampling took on RT64's workload thread.
+# ---------------------------------------------------------------------------
+
+GAME_FRAME = SUBMODULE / "src" / "hle" / "rt64_game_frame.cpp"
+
+ORIGINAL_MARKER = "wr64: a snapshot at Original tags the mesh too"
+
+ORIGINAL_EDITS = [
+    (
+        """#include "rt64_water_interpolation.h"
+""",
+        """#include "rt64_water_interpolation.h"
+// wr64: for WR64_WATER_INTERP_STATS.
+#include <chrono>
+""",
+    ),
+    (
+        """                        if (transformIndex < desc.minWorldMatrix || transformIndex > desc.maxWorldMatrix || desc.waterMaterial.identity.x <= 0) continue;
+""",
+        """                        // wr64: a snapshot at Original tags the mesh too. identity.x is
+                        // the quality, and zero keeps the renderer out of the draw, but
+                        // the history below is as valid then; identity.w, the port's
+                        // visual generation, is zero only in the cleared command.
+                        if (transformIndex < desc.minWorldMatrix || transformIndex > desc.maxWorldMatrix ||
+                            (desc.waterMaterial.identity.x <= 0 && desc.waterMaterial.identity.w <= 0)) continue;
+""",
+    ),
+    (
+        """            const WaterMeshContext current = waterMeshContext(curWorkload, curTransformIndex);
+            if (current.tagged) {
+                float *positionVelocity = curWorkload.drawData.velFloats.data() + curVertexIndex * 3;
+                float *texcoordVelocity = curWorkload.drawData.tcVelFloats.data() + curVertexIndex * 2;
+                std::fill_n(positionVelocity, curVertexCount * 3, 0.0f);
+                std::fill_n(texcoordVelocity, curVertexCount * 2, 0.0f);
+                const WaterMeshContext previous = waterMeshContext(prevWorkload, prevTransformIndex);
+                if (prevVertexCount > 0 && waterViewsCompatible(curWorkload, current, prevWorkload, previous)) {
+                    const WaterInterpolation::PreviousMesh mesh(prevWorkload.drawData.posFloats.data() + prevVertexIndex * 3,
+                        prevWorkload.drawData.tcFloats.data() + prevVertexIndex * 2, prevVertexCount, previous.indices);
+                    mesh.velocities(curWorkload.drawData.posFloats.data() + curVertexIndex * 3,
+                        curWorkload.drawData.tcFloats.data() + curVertexIndex * 2, curVertexCount, positionVelocity, texcoordVelocity);
+                }
+                // New perimeter points and invalid history keep current data;
+                // extrapolating a different patch would invent visible waves.
+                modifiedBuffers.positionVelocity = true;
+                modifiedBuffers.texcoordVelocity = true;
+                return;
+            }
+""",
+        """            static const bool waterStats = std::getenv("WR64_WATER_INTERP_STATS") != nullptr;
+            const auto waterStart = waterStats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+            const WaterMeshContext current = waterMeshContext(curWorkload, curTransformIndex);
+            // WR64_WATER_INTERP_STATS: every mesh reaching here, the ones sampled by
+            // world XZ, their vertices and how many found a previous surface, and the
+            // time taken, printed every 300 meshes.
+            static uint64_t statMeshes = 0, statSampled = 0, statVertices = 0, statMatched = 0;
+            static double statMs = 0, statMaxMs = 0;
+            auto waterReport = [&](bool sampled, uint32_t matched) {
+                if (!waterStats) return;
+                const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waterStart).count();
+                ++statMeshes; statMs += ms; statMaxMs = std::max(statMaxMs, ms);
+                if (sampled) { ++statSampled; statVertices += curVertexCount; statMatched += matched; }
+                if (statMeshes % 300 == 0) {
+                    std::fprintf(stderr, "[water] interpolation: %llu of %llu meshes sampled by world XZ, %.1f%% of %llu vertices matched, %.3f ms mean, %.3f ms max\\n",
+                        (unsigned long long)statSampled, (unsigned long long)statMeshes,
+                        statVertices ? 100.0 * double(statMatched) / double(statVertices) : 0.0, (unsigned long long)statVertices,
+                        statMs / double(statMeshes), statMaxMs);
+                    statSampled = statVertices = statMatched = 0; statMs = statMaxMs = 0; statMeshes = 0;
+                }
+            };
+            if (current.tagged) {
+                float *positionVelocity = curWorkload.drawData.velFloats.data() + curVertexIndex * 3;
+                float *texcoordVelocity = curWorkload.drawData.tcVelFloats.data() + curVertexIndex * 2;
+                std::fill_n(positionVelocity, curVertexCount * 3, 0.0f);
+                std::fill_n(texcoordVelocity, curVertexCount * 2, 0.0f);
+                const WaterMeshContext previous = waterMeshContext(prevWorkload, prevTransformIndex);
+                bool sampled = false;
+                uint32_t matched = 0;
+                if (prevVertexCount > 0 && waterViewsCompatible(curWorkload, current, prevWorkload, previous)) {
+                    const WaterInterpolation::PreviousMesh mesh(prevWorkload.drawData.posFloats.data() + prevVertexIndex * 3,
+                        prevWorkload.drawData.tcFloats.data() + prevVertexIndex * 2, prevVertexCount, previous.indices);
+                    matched = mesh.velocities(curWorkload.drawData.posFloats.data() + curVertexIndex * 3,
+                        curWorkload.drawData.tcFloats.data() + curVertexIndex * 2, curVertexCount, positionVelocity, texcoordVelocity);
+                    sampled = true;
+                }
+                waterReport(sampled, matched);
+                // New perimeter points and invalid history keep current data;
+                // extrapolating a different patch would invent visible waves.
+                modifiedBuffers.positionVelocity = true;
+                modifiedBuffers.texcoordVelocity = true;
+                return;
+            }
+            // Untagged: left to RT64's pairing by index below.
+            waterReport(false, 0);
+""",
+    ),
+]
+
+
+def apply_edits(path: Path, edits: list, marker: str, what: str) -> int:
+    """Anchored replacements, all or nothing, idempotent by `marker`."""
+    text = path.read_text(encoding="utf-8")
+    if marker in text:
+        print(f"{NAME}: {what} already applied")
+        return 0
+    for anchor, _ in edits:
+        if text.count(anchor) != 1:
+            print(f"{NAME}: could not find an anchor for {what} in {path.name}.\n"
+                  "The water patch has moved; re-derive this edit before continuing.",
+                  file=sys.stderr)
+            return 1
+    for anchor, replacement in edits:
+        text = text.replace(anchor, replacement, 1)
+    path.write_text(text, encoding="utf-8")
+    print(f"{NAME}: {what} applied")
+    return 0
+
+
+def apply_original_interpolation() -> int:
+    return apply_edits(GAME_FRAME, ORIGINAL_EDITS, ORIGINAL_MARKER, "interpolation at Original")
+
+
 def main() -> int:
     # The guard below edits a line the diff itself introduced, so once it is in,
     # "git apply --reverse --check" no longer recognises the tree as patched.
-    # The guard's marker is therefore the authority on "fully applied", and it
-    # is checked before anything else is attempted.
+    # The guard's marker is therefore the authority on the diff and the guard
+    # having been applied; the edits after it carry markers of their own.
     if FB_RENDERER.is_file() and GUARD_MARKER in FB_RENDERER.read_text(encoding="utf-8"):
-        print(f"{NAME}: already applied")
-        return 0
-
-    result = apply_patch(SUBMODULE, PATCH, NAME)
-    if result != 0:
-        return result
-    return apply_guard()
+        print(f"{NAME}: diff and transform guard already applied")
+    else:
+        result = apply_patch(SUBMODULE, PATCH, NAME)
+        if result == 0:
+            result = apply_guard()
+        if result != 0:
+            return result
+    return apply_original_interpolation()
 
 
 if __name__ == "__main__":
