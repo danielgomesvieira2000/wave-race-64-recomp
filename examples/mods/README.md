@@ -72,6 +72,13 @@ the game is running**.
    [CONTRIBUTING.md](../../CONTRIBUTING.md).
 4. **Zip it.** Put `mod.json` beside `rt64.json` and run `tools/pack_mod.py`.
 
+### From a Dolphin texture pack
+
+A pack made for the Wii Virtual Console release under Dolphin names its images by
+Dolphin's hashes (`tex1_64x32_<hash>_5.png`), which cannot be turned into RT64's.
+`tools/match_texture_pack.py` matches its images to a texture dump by picture and writes
+the mod directory; see [../../docs/TEXTURE-PACK-MATCHING.md](../../docs/TEXTURE-PACK-MATCHING.md).
+
 `texture-pack-template/` is a working pack with no replacements in it: the port
 detects it, hands it to RT64 and RT64 loads it, changing nothing. Copy it and
 fill it in.

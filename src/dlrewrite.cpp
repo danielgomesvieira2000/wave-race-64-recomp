@@ -353,6 +353,8 @@ struct Tags {
         // hand-written entries go above the first marker, with their reasons.
         by_identity["tex:0x01005748"] = Class::Stretch;
         by_identity["tex:0x0100fab0"] = Class::Spill;
+        by_identity["tex:0x01032078"] = Class::Right;
+        by_identity["tex:0x01032b08"] = Class::Right;
         by_identity["tex:0x010331d0"] = Class::Right;
         by_identity["tex:0x01033cb8"] = Class::Auto;
         by_identity["tex:0x01033e98"] = Class::Auto;
@@ -368,8 +370,8 @@ struct Tags {
         by_identity["tex:0x010358d8"] = Class::Auto;
         by_identity["tex:0x010369b8"] = Class::Auto;
         by_identity["tex:0x01036b98"] = Class::Auto;
-        by_identity["tex:0x0103d8d8"] = Class::Auto;
-        by_identity["tex:0x0103ddd8"] = Class::Auto;
+        by_identity["tex:0x0103d8d8"] = Class::Right;
+        by_identity["tex:0x0103ddd8"] = Class::Right;
         by_identity["tex:0x0103e2d8"] = Class::Right;
         by_identity["tex:0x0103e7d8"] = Class::Right;
         by_identity["tex:0x0103ecd8"] = Class::Right;
@@ -2212,13 +2214,31 @@ struct Walker {
         tagged_run = tags != nullptr &&
                      (tags->lookup(tex_id, ignored) ||
                       (!dl_id.empty() && tags->lookup(dl_id, ignored)));
-        // A tag on any texture of the run applies to the run.
+        // A class chosen in the inspector for any texture of the run applies to
+        // the run, and it outranks every tag. The tag loop below used to run after
+        // classify() had already applied the panel's choice and overwrite it, so
+        // once 1.0.0 had promoted most of the race HUD into the built-in table, a
+        // change to a tagged element did nothing until it was saved to hud.json
+        // and the game restarted.
+        Class chosen;
+        bool overridden = inspector_class(tex_id, chosen) || inspector_class(dl_id, chosen);
         for (uint32_t t : textures) {
-            Class tagged;
-            if (tags != nullptr && tags->lookup(hex_identity("tex", t), tagged)) {
-                next = (tagged == Class::Stretch || anchors) ? tagged : Class::Auto;
-                tagged_run = true;
-                break;
+            if (overridden) break;
+            overridden = inspector_class(hex_identity("tex", t), chosen);
+        }
+        if (overridden) {
+            next = chosen;
+            tagged_run = true;   // an explicit class: hand the rect state back after the run
+        }
+        else {
+            // A tag on any texture of the run applies to the run.
+            for (uint32_t t : textures) {
+                Class tagged;
+                if (tags != nullptr && tags->lookup(hex_identity("tex", t), tagged)) {
+                    next = (tagged == Class::Stretch || anchors) ? tagged : Class::Auto;
+                    tagged_run = true;
+                    break;
+                }
             }
         }
         if (trace != nullptr) {
@@ -2273,20 +2293,29 @@ struct Walker {
         return (e.right_px() - e.left_px()) >= 0.9f * (right - left);
     }
 
+    // The class chosen for `identity` in the inspector's panel, if any. Every
+    // class the dropdown offers has a case: a class missing here is a choice
+    // that silently does nothing until it is saved and the game restarted,
+    // which is what spill was.
+    bool inspector_class(const std::string& identity, Class& out) const {
+        int chosen = 0;
+        if (identity.empty() || !wr64::inspector::override_class(identity.c_str(), &chosen)) return false;
+        switch (chosen) {
+            case wr64::inspector::kLeft:    out = anchors ? Class::Left : Class::Auto; break;
+            case wr64::inspector::kRight:   out = anchors ? Class::Right : Class::Auto; break;
+            case wr64::inspector::kStretch: out = Class::Stretch; break;
+            case wr64::inspector::kSpill:   out = Class::Spill; break;
+            default:                        out = Class::Auto; break;
+        }
+        return true;
+    }
+
     Class classify(const Extent& e, const std::string& identity, const std::string& identity2) {
         // The inspector's overrides come first, so that a class chosen in the
         // panel takes effect on the next frame and can be taken away again
         // without a restart. hud.json and the built-in table are below it.
-        int chosen = 0;
-        if (wr64::inspector::override_class(identity.c_str(), &chosen) ||
-            (!identity2.empty() && wr64::inspector::override_class(identity2.c_str(), &chosen))) {
-            switch (chosen) {
-                case wr64::inspector::kLeft:    return anchors ? Class::Left : Class::Auto;
-                case wr64::inspector::kRight:   return anchors ? Class::Right : Class::Auto;
-                case wr64::inspector::kStretch: return Class::Stretch;
-                default:                        return Class::Auto;
-            }
-        }
+        Class chosen;
+        if (inspector_class(identity, chosen) || inspector_class(identity2, chosen)) return chosen;
         Class tagged;
         if (tags != nullptr && (tags->lookup(identity, tagged) || tags->lookup(identity2, tagged))) {
             if (tagged == Class::Stretch || anchors) return tagged;

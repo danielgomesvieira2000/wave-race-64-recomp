@@ -8,6 +8,20 @@ Versions follow [semantic versioning](https://semver.org) loosely: while the
 project is below 1.0, the minor number moves when something a player would
 notice changes.
 
+## Unreleased
+
+- **Class changes in the F1 HUD inspector take effect immediately again**, for every
+  element. A change to an element sharing a run of rectangles with a tagged texture --
+  most of the race HUD, since 1.0.0 promoted its tags into the port -- was overwritten
+  by the tag every frame and only showed after saving and restarting. The panel's
+  choice now outranks every tag. Choosing **spill** also works live now; it did
+  nothing until saved. `WR64_TEST_HUD_OVERRIDE` sets an override from the command
+  line, for captures.
+- **Texture pack tools.** `tools/rt64_texture_dump.py` decodes an RT64 texture dump
+  to PNGs; `tools/match_texture_pack.py` turns a Dolphin-named texture pack into a
+  mod by matching pictures, including textures the Virtual Console padded and art
+  that was redrawn. See [docs/TEXTURE-PACK-MATCHING.md](docs/TEXTURE-PACK-MATCHING.md).
+
 ## [1.0.1](docs/releases/1.0.1.md) — Water and watercraft fixes
 
 - **The waves no longer jitter on high water.** With Draw Distance at Extended

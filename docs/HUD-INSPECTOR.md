@@ -125,10 +125,22 @@ costs people days; see PORTING.md §7, *Widescreen 2D*.
 2. Hover down the list until the yellow outline lands on the thing you want to
    fix. Click that row to pin the outline.
 3. Note the `identity`. That is the answer the screenshots could never give.
-4. Change the dropdown and watch the screen. The next frame uses the new class.
+4. Change the dropdown and watch the screen. The next frame uses the new class --
+   including for elements already tagged in `hud.json` or the built-in table, which
+   the dropdown outranks.
 5. When it looks right, press **Save to hud.json**.
 6. Run `python tools/promote_hud_tags.py` to copy what you saved into the port's
    built-in table, so it ships. See [Making a tag ship](#making-a-tag-ship).
+
+**Testing a class change without the panel.** `WR64_TEST_HUD_OVERRIDE=<identity>=<class>@<seconds>`
+sets the same override the dropdown does, that many seconds after the first frame,
+and logs `[wr64] test: HUD override ...`. Classes are the dropdown's names. With an
+input script and `tools/capture_frames.py` it shows an element moving at a known
+time -- how the live-change fix below was verified:
+
+```
+python tools/capture_frames.py shots 46 52 --env WR64_INPUT_SCRIPT=tools/scripts/race.txt --env WR64_TEST_HUD_OVERRIDE=tex:0x0103D8D8=left@47.5
+```
 
 ### Making a tag ship
 
@@ -338,22 +350,45 @@ That is all the instrumentation costs. In this project, `src/dlrewrite.cpp`:
 | `end_frame()` | After the display list has been walked |
 | `override_class(...)` | **First** in the classification chain, ahead of the on-disk tag table and the built-in table, so a change in the panel wins immediately and can be undone without a restart |
 
-The override path has to map back into the classifier's own enum, and honour the
-same preconditions the normal path does -- an anchored class is meaningless for an
-element the rewriter cannot anchor:
+The override path has to map back into the classifier's own enum, with **a case for
+every class the dropdown offers**, and honour the same preconditions the normal path
+does -- an anchored class is meaningless for an element the rewriter cannot anchor:
 
 ```cpp
-int chosen = 0;
-if (wr64::inspector::override_class(identity.c_str(), &chosen) ||
-    (!identity2.empty() && wr64::inspector::override_class(identity2.c_str(), &chosen))) {
+bool inspector_class(const std::string& identity, Class& out) const {
+    int chosen = 0;
+    if (identity.empty() || !wr64::inspector::override_class(identity.c_str(), &chosen)) return false;
     switch (chosen) {
-        case wr64::inspector::kLeft:    return anchors ? Class::Left : Class::Auto;
-        case wr64::inspector::kRight:   return anchors ? Class::Right : Class::Auto;
-        case wr64::inspector::kStretch: return Class::Stretch;
-        default:                        return Class::Auto;
+        case wr64::inspector::kLeft:    out = anchors ? Class::Left : Class::Auto; break;
+        case wr64::inspector::kRight:   out = anchors ? Class::Right : Class::Auto; break;
+        case wr64::inspector::kStretch: out = Class::Stretch; break;
+        case wr64::inspector::kSpill:   out = Class::Spill; break;
+        default:                        out = Class::Auto; break;
     }
+    return true;
 }
 ```
+
+**"First in the chain" has to hold at every step that assigns a class, not only in
+the classifier.** Two ways this broke here, both of which look like "the panel only
+works after saving and restarting":
+
+- **A class missing from the switch.** `spill` was added to the dropdown and not to
+  the mapping, so choosing it did nothing live -- while saving it worked, because the
+  tag table knows the class.
+- **A later step that re-applies tags.** Rectangles are classified as *runs*, and a tag
+  on any texture of a run applies to the whole run. That loop ran after the classifier
+  had applied the panel's choice and overwrote it. Once most of the race HUD had been
+  promoted into the built-in table, nearly every run contained a tagged texture, so live
+  changes to the race HUD stopped working. Measured with
+  `WR64_TEST_HUD_OVERRIDE=tex:0x0103D8D8=left@47.5` (the "0" glyph, in a run with the
+  Right-tagged `tex:0x0103E2D8`): the LAP and SPEED zeros did not move with the loop
+  after the override, and moved within a second with the override checked first across
+  every texture of the run.
+
+A run whose class came from the panel also hands the rectangle state back when it
+ends, exactly like a tagged run, so the choice cannot leak onto the rectangles drawn
+after it.
 
 Keep the interface's class enum a plain `int`, so the classifier's own enum stays
 private to it and the two files never have to include each other.

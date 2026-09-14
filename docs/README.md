@@ -8,6 +8,7 @@
 | [HUD-INSPECTOR.md](HUD-INSPECTOR.md) | The debug menu on **F1** — how to use it to find and fix something drawn in the wrong place, and a recipe for putting the same tool in another N64 port. |
 | [WATER.md](WATER.md) | The modern water renderer: what each setting does and what it costs, and a recipe for a shading replacement that leaves a game's own simulation alone. Original, a true bypass, by default. |
 | [RENDER-DISTANCE-CENSUS.md](RENDER-DISTANCE-CENSUS.md) | Measuring which objects a game stops drawing at a distance and which it does not — how to run the census here, and a recipe for the same measurement in another N64 port. |
+| [TEXTURE-PACK-MATCHING.md](TEXTURE-PACK-MATCHING.md) | Turning a texture pack made for another emulator (Dolphin, the Wii Virtual Console release) into a pack this port loads, by matching pictures against an RT64 dump -- how to run it, and how the dump decoding and matching work, for another port. |
 | [../examples/mods/README.md](../examples/mods/README.md) | Making a mod: the `.nrm` format, `mod.json`, and how to build a texture pack. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | The rules, chiefly about keeping the game's data out of this repository. |
 | [../CHANGELOG.md](../CHANGELOG.md) | What changed in each release. |

@@ -837,7 +837,9 @@ takes its own lock. This port's hook is `WR64_TEST_OPEN_SETTINGS=water@25`, in
 RT64's F1 menu opens the same way from a test, by posting the key rather than
 calling anything: `SDL_PushEvent` runs the event watches, and RT64 toggles its
 inspector from one on `SDL_SCANCODE_F1`. This port's hook is
-`WR64_TEST_INSPECTOR=25`.
+`WR64_TEST_INSPECTOR=25`. A panel *action* has one too:
+`WR64_TEST_HUD_OVERRIDE=<identity>=<class>@<seconds>` writes the HUD inspector's
+override table as the dropdown does, so a capture can show the change land.
 
 ### Separating one sound from another after the mix is impossible
 
@@ -1030,6 +1032,30 @@ that content simply by containing a file of that name, and the port is called
 when it is enabled or disabled -- with `allow_runtime_toggle` it can be flipped
 without restarting. That is the cheap way to make a mod format for data the port
 already understands, without any of the code-mod toolchain.
+
+### A texture pack made for another emulator
+
+**Symptom:** a pack for the game exists, but its file names are not RT64 hashes or
+Rice CRCs -- `tex1_64x32_21047e97ba2434d0_39e9f59e81e4bfeb_9.png` is Dolphin's naming,
+for the Wii Virtual Console release. Its hashes are of textures the Virtual Console's
+emulator converted, and nothing computes them from N64 data.
+
+**Match by picture.** The name carries the N64 texture's size; shrink the image to it
+and compare with a decoded RT64 dump. `tools/match_texture_pack.py` does it:
+Nicolas's 2,372-image pack against a 1,542-texture dump gave 940 replacements. Two traps
+kept the first version at 756: **the Virtual Console pads every texture to multiples of
+4** (an N64 80x3 strip is `tex1_80x4_...`, content top-left), and **redrawn lettering
+matches by shape at a colour error of 40-60**, so colour error alone rejects it. [TEXTURE-PACK-MATCHING.md](TEXTURE-PACK-MATCHING.md) is the
+manual and the recipe.
+
+Two facts about **RT64's texture dump** that decide whether decoding it works:
+
+| | |
+|---|---|
+| Image | None. Decode `<hash>.v5.rice.rdram` (+ `rice.palette.rdram`), not `.tmem`, whose layout is RT64-internal |
+| Size, row stride | Only as RT64's Rice hasher derives them (`texture_hasher.cpp`, `addRiceHash`); `line` alone shears textures |
+| Byte order | `rice.rdram` is **little-endian 32-bit words**: reverse every 4 bytes, then read texels big-endian. Forgotten, text scrambles in 4-byte runs and most textures are noise |
+| Hash for `rt64.json` | The file name without `.v5`; the database's `hashVersion` is 5 |
 
 ### Where settings go
 

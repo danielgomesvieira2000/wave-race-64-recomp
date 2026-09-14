@@ -141,6 +141,7 @@ frame; they do not persist and they are not settings.
 | `WR64_WATER_DEBUG` | `0`-`14`, the diagnostic views |
 | `WR64_TEST_OPEN_SETTINGS` | `water@25`: opens the settings menu on that tab after that many seconds, for a capture of the menu. Changes nothing saved |
 | `WR64_TEST_INSPECTOR` | `25`: presses F1 after that many seconds, opening the HUD inspector and the sun editor for a capture |
+| `WR64_TEST_HUD_OVERRIDE` | `tex:0x0103D8D8=left@47.5`: sets a HUD inspector class override after that many seconds, as the dropdown would. See HUD-INSPECTOR.md |
 | `WR64_WATER_PROFILES` | path to a `profiles.json` to use instead of the packaged one |
 | `WR64_WATER=ultra` | a quality above Best that the menu does not offer: the added spray's particle budget doubles |
 | `WR64_TEST_WATER_COMPARE_TICK` | a game tick; at it the water flips to Original once, as `F9` does, for a scripted comparison |

@@ -3,6 +3,7 @@
 #include "wr64/inspector.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -358,8 +359,42 @@ void install() {
     RT64_PortInspectorHook = draw_windows;
 }
 
+// Test hook: WR64_TEST_HUD_OVERRIDE=<identity>=<class>@<seconds> sets an override
+// through the same table the panel's dropdown writes, that many seconds after the
+// first frame -- so a capture can show a class change taking effect without anyone
+// using the panel. Classes are the dropdown's names: center, left, right, stretch,
+// spill.
+void test_override() {
+    static const char* spec = std::getenv("WR64_TEST_HUD_OVERRIDE");
+    if (spec == nullptr) return;
+    static bool done = false;
+    if (done) return;
+    static const auto start = std::chrono::steady_clock::now();
+    const std::string s(spec);
+    const size_t eq = s.rfind('='), at = s.rfind('@');
+    if (eq == std::string::npos || at == std::string::npos || at < eq) {
+        done = true;
+        return;
+    }
+    const double delay = std::atof(s.substr(at + 1).c_str());
+    if (std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() < delay) return;
+    const std::string identity = s.substr(0, eq), name = s.substr(eq + 1, at - eq - 1);
+    const char* names[] = { "center", "left", "right", "stretch", "spill" };
+    for (int c = 0; c < 5; ++c) {
+        if (name == names[c]) {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_overrides[identity] = c;
+            g_any_overrides.store(true, std::memory_order_relaxed);
+            std::fprintf(stderr, "[wr64] test: HUD override %s -> %s\n", identity.c_str(), name.c_str());
+            std::fflush(stderr);
+        }
+    }
+    done = true;
+}
+
 void begin_frame(uint32_t game_state) {
     if (!g_enabled) return;
+    test_override();
     g_building.game_state = game_state;
     g_building.number = ++g_frames;
     g_building.elements.clear();
