@@ -116,9 +116,12 @@ def main():
                  f"  bash tools/wsl_build_recompiler.sh   (wsl bash ... on Windows)")
 
     # splat reads the dump from inside the decompilation checkout, under the
-    # name its config names.
+    # name its config names. RSPRecomp resolves rom_file_path in
+    # recomp/aspMain.rsp.toml relative to that file, so it also needs
+    # baserom.us.rev1.z64 at the repository root.
     (DECOMP / "baserom.us.rev1.z64").write_bytes(data)
     shutil.copy2(DECOMP / "baserom.us.rev1.z64", REPO / "wr64.us.rev1.z64")
+    shutil.copy2(DECOMP / "baserom.us.rev1.z64", REPO / "baserom.us.rev1.z64")
 
     print("\n=== phase 01: disassemble, assemble, verify ===")
     run_bash("tools/wsl_build_all.sh")
