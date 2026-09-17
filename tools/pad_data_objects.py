@@ -112,17 +112,25 @@ def section_sizes(path):
     with tempfile.NamedTemporaryFile(suffix=".o", delete=False) as tmp:
         obj = tmp.name
     try:
+        # clang -E rather than cpp: macOS has no standalone cpp, and -x c is
+        # needed because clang would otherwise treat a .s file as assembly and
+        # preprocess it under different rules. Matches tools/wsl_build_elf.sh.
         pre = subprocess.run(
-            ["cpp", "-P", "-undef", "-std=c99", "-nostdinc"] + DEFINES + IINC
+            ["clang", "-E", "-x", "c", "-P", "-undef", "-Wundef", "-std=c99",
+             "-nostdinc"] + DEFINES + IINC
             + ["-I", str(path.parent), str(path)],
             cwd=DECOMP, capture_output=True, text=True)
         if pre.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"preprocess failed for {path} (exit {pre.returncode}):\n"
+                f"{pre.stderr or pre.stdout}")
         asm = subprocess.run(
             [AS] + ASFLAGS + IINC + ["-I", str(path.parent), "-o", obj],
             cwd=DECOMP, input=pre.stdout, capture_output=True, text=True)
         if asm.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"assemble failed for {path} (exit {asm.returncode}):\n"
+                f"{asm.stderr or asm.stdout}")
         out = subprocess.run([READELF, "-SW", obj], cwd=DECOMP,
                              capture_output=True, text=True).stdout
         sizes = {}
