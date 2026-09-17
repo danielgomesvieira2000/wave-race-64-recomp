@@ -62,6 +62,18 @@ set(WR64_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 # a subdirectory is too late for the ones added below.
 if(APPLE)
     enable_language(OBJC OBJCXX)
+    # Homebrew's libSDL2.dylib is the documented macOS dependency.
+    # CMAKE_FIND_FRAMEWORK defaults to FIRST, so a leftover
+    # ~/Library/Frameworks/SDL2.framework wins. That binary is typically
+    # referenced as @rpath/... with no LC_RPATH on the executable, and the
+    # app dies at launch: "Library not loaded". Search unix paths first;
+    # tools/build_macos_dependencies.sh already does this for redistributable
+    # builds. Override with -DCMAKE_FIND_FRAMEWORK=FIRST if a framework is
+    # genuinely what you want to link.
+    if(NOT CMAKE_FIND_FRAMEWORK)
+        set(CMAKE_FIND_FRAMEWORK LAST CACHE STRING
+            "Search unix library paths before macOS frameworks")
+    endif()
 endif()
 
 # SDL2. On Windows it comes from the copy RT64 vendors under

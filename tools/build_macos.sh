@@ -41,7 +41,13 @@ fi
 # binutils built by setup_macos.sh, and the splat virtualenv, ahead of the path.
 export PATH="$REPO/build-toolchain/install/bin:${WR64_VENV:-$REPO/.venv}/bin:$PATH"
 
-CMAKE_ARGS=(-DCMAKE_OSX_DEPLOYMENT_TARGET="${WR64_MACOS_TARGET:-15.0}")
+# CMAKE_FIND_FRAMEWORK=LAST so Homebrew's libSDL2.dylib is chosen over a
+# user-level SDL2.framework that ships as @rpath with no LC_RPATH. See
+# CMakeLists.txt. The redistributable dependency build already passes this.
+CMAKE_ARGS=(
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="${WR64_MACOS_TARGET:-15.0}"
+    -DCMAKE_FIND_FRAMEWORK=LAST
+)
 if [ -n "${WR64_DEPENDENCY_PREFIX:-}" ]; then
     # Homebrew bottles are built for the running OS and may require a newer one
     # than the bundle targets, so a redistributable build takes its libraries
