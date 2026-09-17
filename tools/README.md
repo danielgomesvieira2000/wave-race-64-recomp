@@ -35,7 +35,7 @@ or PowerShell does.
 | `wsl_run_splat_asmonly.sh` | Produces an assembly-only disassembly of the dump. |
 | `make_asm_only_yaml.py` | Derives the asm-only splat config from the decomp's config. |
 | `fix_asmonly_ld.py` | Repoints three orphan data objects in the asm-only linker script. |
-| `pad_data_objects.py` | Pads each generated object's data sections to their true length. |
+| `pad_data_objects.py` | Pads each generated object's data sections to their true length. Preprocesses with `clang -E`, as the ELF build does, and stops on any object it cannot measure. |
 | `pad_segment_tails.py` | Pads each segment out to its declared ROM length. |
 | `wsl_build_elf.sh` | Assembles the disassembly into an ELF with symbols. |
 | `wsl_verify_elf.sh` | Checks the assembled ELF is faithful to the ROM. |
@@ -63,7 +63,7 @@ Each of these is the whole thing from a clean clone, in the order
 | `setup_macos.sh` | The macOS equivalent, and additionally builds MIPS binutils from checksum-pinned source into `build-toolchain/`, since there is no formula worth relying on. |
 | `build_macos.sh` | As `build_linux.sh`, then bundles and ad-hoc signs the `.app`. |
 | `build_macos_dependencies.sh` | Builds SDL2, FreeType and libpng from pinned source against the bundle's deployment target, for a redistributable build. Homebrew's copies can require a newer macOS than the app targets. |
-| `package_macos.py` | Copies a built bundle's non-system dylibs into `Contents/Frameworks`, rewrites their install names, derives `LSMinimumSystemVersion` from what is actually shipped, and signs from the inside out. Run by `build_macos.sh`. |
+| `package_macos.py` | Copies a built bundle's non-system dylibs and frameworks (resolving `@rpath`, `@loader_path`, `@executable_path`) into `Contents/Frameworks`, rewrites their install names, derives `LSMinimumSystemVersion` from what is actually shipped, and signs from the inside out. Run by `build_macos.sh`. |
 | `generate_game.py` | Verifies a dump (converting byte order if needed), then runs the whole phase 01/02/05 pipeline over it: disassemble, assemble, verify, recompile the game, recompile the audio microcode. Runs natively on Linux and macOS and through WSL on Windows. |
 | `patch_macos.py` | Adds the `<stdlib.h>` that the pinned hlsl++ needs for `labs`, which only Apple's libc notices is missing. Idempotent, and chained into `patch_rt64.py`. |
 | `toolchain.py` | Finds `mips-linux-gnu-readelf`: natively where there is one, through WSL on Windows. |

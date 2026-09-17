@@ -78,6 +78,25 @@ The fix is in three parts:
 `.incbin`, not `.space`: `.space` invents zeros and produces an ELF that looks
 padded while being wrong.
 
+### The padding tool must preprocess exactly as the build does, and fail loudly
+
+**Symptom:** on a fresh macOS clone the pipeline reports an ELF fidelity error at
+the verify step -- 0 of 21 code sections found verbatim in the ROM -- four steps
+after the actual failure.
+
+`pad_data_objects.py` measures each object by preprocessing and assembling it. It
+called `cpp`, which macOS does not have, and treated a failed preprocess as
+"skipped". So every file was skipped (264), nothing was padded, and the drift
+from *splat drops trailing bytes* surfaced only at verification.
+
+| Rule | How it is met |
+|---|---|
+| Measure with the command the build uses | `clang -E -x c -P -undef -Wundef -std=c99 -nostdinc`, identical to `tools/wsl_build_elf.sh`. `-x c` stops clang preprocessing a `.s` file under assembler rules |
+| A failed measurement is an error, not a skip | Preprocess or assemble failure raises with the tool's stderr. "Skipped" is kept only for a section already longer than expected |
+
+After the change, macOS: 75 padded, 0 skipped, 21 of 21 code sections match
+(PR #23 by RobGreenUK; diagnosis by DoggyChicken, issue #20).
+
 ### Two fixes that look obviously right and do nothing
 
 Both were measured, twice, and neither changed the output by one byte:
@@ -614,6 +633,29 @@ The fix is for the second caller to do nothing: `if (!pthread_main_np()) return;
 at the top. The pad state it wanted was refreshed by the main thread microseconds
 earlier, and the snapshot is what the input path reads anyway.
 
+### A leftover `SDL2.framework` links, then kills the app at launch
+
+**Symptom:** the macOS build links cleanly and the app aborts before `main`:
+`dyld: Library not loaded: @rpath/SDL2.framework/Versions/A/SDL2`.
+
+CMake's `CMAKE_FIND_FRAMEWORK` defaults to `FIRST` on Apple, so
+`find_package(SDL2)` takes a `~/Library/Frameworks/SDL2.framework` (left behind by
+some other project's install) over Homebrew's `libSDL2.dylib`. That framework's
+install name is `@rpath/...`, and the executable has no `LC_RPATH`, so dyld has
+nowhere to look.
+
+| Piece | Fix |
+|---|---|
+| Which SDL2 is linked | `CMakeLists.txt` sets `CMAKE_FIND_FRAMEWORK=LAST` inside `if(APPLE)` unless already set; `build_macos.sh` and `build_macos_dependencies.sh` also pass it. `-DCMAKE_FIND_FRAMEWORK=FIRST` restores the old choice |
+| Bundling what was linked | `tools/package_macos.py` resolves `@rpath` (the binary's `LC_RPATH` entries, then the standard framework and Homebrew directories), `@loader_path` and `@executable_path`, and copies a whole `.framework` into `Contents/Frameworks` when the library lives in one |
+
+Verified on Apple Silicon with the Homebrew dylib by RobGreenUK (PR #25): `otool -L` shows
+`@executable_path/../Frameworks/libSDL2-2.0.0.dylib`, `codesign --verify --deep
+--strict` passes, a championship completes. **Not verified:** the framework-copy
+path, which only runs with `FIND_FRAMEWORK=FIRST`. It signs the Mach-O inside the
+framework rather than the `.framework` bundle, which `--deep --strict`
+verification may reject.
+
 ### Per-user paths are three conventions, not two
 
 `%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME` or `~/.local/share` on Linux, and
@@ -1075,6 +1117,19 @@ conventions, not two* above.
 The RSP recompiler is a separate tool (`RSPRecomp`) driven by its own TOML, and
 it emits **C++**, not C, because the generated code uses librecomp's RSP vector
 unit -- a C++ header of SSE intrinsics.
+
+### `rom_file_path` is relative to the TOML, not the working directory
+
+**Symptom:** phase 05 stops with `Failed to open rom file` on a fresh clone,
+though the dump was verified and phases 01-02 used it.
+
+RSPRecomp resolves `rom_file_path` against the directory of the config file.
+`recomp/aspMain.rsp.toml` says `../baserom.us.rev1.z64`, i.e. the repository
+root, but `generate_game.py` wrote the dump only as `reference/wr64-decomp/baserom.us.rev1.z64`
+(for splat) and `wr64.us.rev1.z64` (repo root). An old checkout works only
+because a hand-copied `baserom.us.rev1.z64` is still at the root. The script now
+writes that copy too (PR #24 by RobGreenUK; diagnosis by DoggyChicken, issue #21). Both names are covered by
+`.gitignore` (`*.z64`, `baserom*`).
 
 ### `text_address` is the IMEM address, and it is probably not `0x1000`
 

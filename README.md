@@ -57,6 +57,8 @@ Then run `build-fe\WaveRace64Recomp.exe`.
 - **RecompFrontend** by the N64Recomp contributors
 - **Wave Race 64 decompilation** by LLONSIT and contributors, for the function names and symbols
 - **[Elliott Tate](https://github.com/elliotttate)** for the modern water renderer, native macOS support, and the race addresses behind rumble
+- **[RobGreenUK](https://github.com/RobGreenUK)** for the macOS build fixes: section padding with `clang -E`, the RSP microcode's ROM path, and SDL2 linking and bundling in the `.app` — tested on Apple Silicon
+- **[DoggyChicken](https://github.com/DoggyChicken)** for diagnosing the macOS padding and RSP ROM path failures
 - WACOMalt and chronic8000, for earlier recompilation attempts
 - Written by Claude (Anthropic) in Claude Code, under the direction of Daniel Gomes Vieira
 
