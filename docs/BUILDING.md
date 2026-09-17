@@ -164,8 +164,13 @@ open build-macos/WaveRace64Recomp.app
 
 The product is a double-clickable bundle, ad-hoc signed for local use and not
 notarized. `tools/package_macos.py` -- which `build_macos.sh` runs -- copies the
-non-system dylibs into `Contents/Frameworks`, rewrites their install names, and
-signs from the inside out.
+non-system dylibs and frameworks into `Contents/Frameworks`, rewrites their
+install names, and signs from the inside out.
+
+CMake is told `CMAKE_FIND_FRAMEWORK=LAST` so Homebrew's `libSDL2.dylib` is
+chosen over a leftover `~/Library/Frameworks/SDL2.framework`. The framework
+build of SDL2 is typically an `@rpath` binary; linking it without adding an
+`LC_RPATH` makes the app abort at launch with "Library not loaded".
 
 Settings, saves and mods live in `~/Library/Application Support/WaveRace64Recomp`.
 The dump stays outside the bundle; pick it in the launcher and it is remembered.
