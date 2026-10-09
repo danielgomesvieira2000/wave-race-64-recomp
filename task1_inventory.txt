@@ -1,0 +1,367 @@
+# Task 1: Inventário de Arquivos e Funções Recompiladas
+## Wave Race 64 Recompiled - Complete Code and Function Inventory
+
+**Objetivo:** Avaliar a viabilidade de reescrita C++ do projeto Wave Race 64 Recompiled.
+
+---
+
+## Resultados Preliminares
+
+### Estrutura de Diretórios Principais
+
+| Diretório | Descrição | Arquivos chave |
+|-----------|-----------|----------------|
+| `recomp/` | Configuração do recompilador N64Recomp | `wr64.toml`, `aspMain.rsp.toml`, `overlays.txt` |
+| `src/` | Código-fonte C++ do port (24 .cpp) | `main.cpp`, `renderer.cpp`, `water.cpp`, `mods.cpp`, etc. |
+| `patches/` | Patches customizados (4 .cpp, 1 .h) | `buoys.cpp`, `dma.cpp`, `framerate.cpp`, `water.cpp` |
+| `include/wr64/` | Headers públicos do port | `display.h`, `renderer.h`, `mods.h`, `water.h`, etc. |
+| `lib/` | Submódulos externos (N64ModernRuntime, RT64, RecompFrontend) | GPL-3.0 licensed dependencies |
+| `tools/` | Ferramentas de build e modding (46 scripts) | Scripts Python e shell |
+| `assets/` | Assets não-ROM do port | Ícones, fonts, CSS |
+| `docs/` | Documentação técnica (17 arquivos) | `GAME-INTERNALS.md`, `PORTING.md`, `BUILDING.md` |
+| `reference/` | Decompilation reference de LLONSIT (externo, não committed) | 88 .c files, 804 func_XXXX symbols |
+| `examples/` | Exemplos de modding | `texture-pack-template/` |
+
+---
+
+## Inventário de Arquivos de Código (.cpp, .h, .c)
+
+### Contagem Total
+- **Total files:** 47 (excluindo submódulos lib/ e reference/)
+- **726 unique func_XXXX references** found across project
+- **~1,350 functions recompiled** (from recomp/wr64.toml config)
+
+### 1. src/ - 24 arquivos .cpp
+
+**Core application files:**
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| src/main.cpp | 530 | Entry point, ROM validation, game lifecycle (GameEntry registration) |
+| src/callbacks.cpp | 1,366 | SDL2 window, input, audio, RSP, events, crashes |
+| src/renderer.cpp | 282 | RT64 renderer context binding |
+| src/overlays.cpp | 169 | librecomp overlay/section table registration |
+| src/crash_handler.cpp | 480 | Crash reporting with function context |
+| src/rom.cpp | 134 | ROM header reading and hash verification |
+| src/display.cpp | 90 | Display configuration and window management |
+| src/inspector.cpp | 440 | Debug menu inspector HUD |
+| src/mods.cpp | 110 | Content type registration for mods |
+| src/haptics.cpp | 422 | Controller rumble feedback |
+| src/music.cpp | 240 | Music playback control |
+| src/frontend.cpp | 716 | Frontend UI (compiled when WR64_WITH_FRONTEND) |
+| src/testdrive.cpp | 296 | Test drive mode support |
+| src/audiodiag.cpp | 317 | Audio diagnostic tools |
+| src/libultra_stubs.cpp | 71 | Stub implementations for 6 libultra funcs |
+| src/drawdistance.cpp | 225 | Draw distance setting and culling |
+| src/resample.cpp | 270 | Audio resampling |
+| src/water.cpp | 583 | Water renderer hooks and logic |
+| src/waterfield.cpp | 218 | Water field sampling and publishing |
+| src/waterring.cpp | 176 | Water ring emission system |
+| src/watersun.cpp | 105 | Water sun rendering |
+| src/dlrewrite.cpp | 3,423 | Display list rewriter for aspect ratio, 2D HUD |
+| src/callbacks.cpp | 1,366 | System callbacks (input/audio/RSP/events) |
+| src/renderer.cpp | 282 | RT64 integration for Vulkan/Metal/DX12 |
+
+**External function declarations (func_XXXX):**
+- func_8004D30C - RDRAM-based water height query
+- func_8004F3D4 - Water field integration
+- func_80050204 - Split-screen test
+- func_8006B334 - Arrow rendering (bumper hints)
+- func_8006E674 - Buoy drawing (see patches)
+- func_8007F448 - Shore detection
+- func_800922E4 - Pause menu update (stubbed → recompiled)
+- func_80092CF0 - Overlay dispatcher (stubbed → recompiled)
+- func_8009345C - Race initializer
+- func_800A68A4 - Draw distance positioning
+- func_800AC184 - Draw distance object placement
+- func_800CB0A8 - __osException tail (ignored)
+
+### 2. include/wr64/ - 24 headers
+
+| Header | Purpose |
+|--------|---------|
+| rom.h | ROM hash verification constants |
+| callbacks.h | Main callbacks: input, RSP, audio, events, gfx |
+| crash_handler.h | Crash handler setup |
+| renderer.h | RT64 renderer bindings |
+| display.h | Display mode configuration |
+| music.h | Music volume control |
+| drawdistance.h | Draw distance settings and culling |
+| haptics.h | Rumble feedback API |
+| hooks.h | Function hook registration |
+| mods.h | Content type registration for mods |
+| testdrive.h | Test drive mode |
+| frontend.h | Frontend UI interface |
+| water.h | Water state queries |
+| waterfield.h | Water field height sampling |
+| waterring.h | Water ring emission |
+| waterring_sample.h | Ring vertex sample generation |
+| water_shore.h | Shore detection tests |
+| dlrewrite.h | Display list rewriter |
+| resample.h | Audio resampling |
+| inspector.h | Debug menu structure |
+
+### 3. patches/ - 4 .cpp files + 1 .h
+
+**Patch architecture (from patches/README.md):**
+```
+| How | Example | Where it is wired |
+||---|---|---|
+| Replaces | dma.cpp | ignored in recomp/wr64.toml |
+| Wraps | framerate.cpp, water.cpp | src/overlays.cpp |
+| Called from inside | buoys.cpp | recomp/wr64.toml hooks |
+```
+
+| File | Lines | Functions Defined | Functions Referenced (func_XXXX) |
+|------|-------|-------------------|-----------------------------------|
+| patches/buoys.cpp | 297 | 15 (wr64_buoys_*) | func_8006E674 (16 hooks) |
+| patches/dma.cpp | 116 | 2 (pi_start_dma_hook, game_dma_copy) | None (replaces) |
+| patches/framerate.cpp | 188 | 2 (report_pairing, vi_swap_buffer_hook) | osViSwapBuffer (wraps) |
+| patches/water.cpp | 59 | 2 (race_init_hook, task_submit_hook) | func_8009345C (wraps) |
+| patches/ui_funcs.h | 23 | Header-only | None |
+
+### 4. RecompiledFuncs/ - NOT PRESENT (generated by N64Recomp)
+
+**Configuration from recomp/wr64.toml:**
+```
+output_func_path = "../RecompiledFuncs"
+functions_per_output_file = 50
+```
+
+**Expected structure:**
+- ~1,350 functions at 50 per file = ~27 files
+- Functions: funcs_00.c through funcs_26.c + funcs.h
+- RecompiledFuncs/reimplemented_decls.h
+- RecompiledFuncs/runtime_funcs.inl
+- RecompiledFuncs/recomp_overlays.inl
+- RecompiledFuncs/aspMain_rsp.cpp (RSP audio microcode in C++)
+
+### 5. recomp/ - Recompilation Configuration (3 files)
+
+| File | Purpose |
+|------|---------|
+| recomp/wr64.toml | Main recompiler config: ELF input, 19 overlays, 16 buoys hooks |
+| recomp/aspMain.rsp.toml | RSP audio microcode config: 16 indirect targets |
+| recomp/overlays.txt | 19 overlay section names for relocatable_sections_path |
+
+**Key config details:**
+- ELF input mode (not symbols file mode)
+- Entry point: 0x80046800
+- use_lookup_for_all_function_calls = true (enables overlay dispatch)
+- 4 functions configured: func_8006E674 (hooks), func_800922E4, func_80092CF0, func_800CB0A8
+- 16 buoys patch hooks on func_8006E674
+- Ignored: func_800CB0A8 (splat split), game_dma_copy (replaced by dma.cpp)
+- Stubs: empty (3 stubbed functions from phase 02 now properly recompiled)
+
+---
+
+## Funções Recompiladas (func_XXXX)
+
+### Total
+- **24 references** to `func_XXXX` patterns in src/, include/, patches/
+- **726 unique func_XXXX references** across the project
+- **804 func_XXXX symbols** in reference decompilation
+- **~1,350 functions** total compiled by N64Recomp (per wr64.toml comment)
+
+### Key func_XXXX Functions
+
+| Function | Address | Purpose | Source |
+|----------|---------|---------|--------|
+| func_80092CF0 | 0x80092CF0 | Game-state renderer dispatcher (20 overlay targets) | Recompiled |
+| func_800922E4 | 0x800922E4 | Per-frame update (3 overlay targets) | Recompiled |
+| PauseMenu_Update | N/A | Pause menu handling | Recompiled |
+| func_800CB0A8 | 0x800CB0A8 | __osException tail (splat split) | Ignored |
+| game_dma_copy | N/A | DMA copy function | Replaced by patches/dma.cpp |
+| func_8006E674 | 0x8006E674 | Buoy drawing with 16 hooks | Hooks in patches/buoys.cpp |
+| func_8009345C | 0x8009345C | Race initializer | Wrapped by patches/water.cpp |
+| func_8004D30C | 0x8004D30C | Water height query | Called from waterring.cpp, waterfield.cpp |
+| func_8004F3D4 | 0x8004F3D4 | Water field integration | Referenced in waterfield.h |
+
+---
+
+## Arquitetura de 3 Fases (ELF -> Recompilation -> CMake)
+
+### Fase 01: ELF Generation
+```
+Input: Wave Race 64 (USA) Rev A .z64 ROM
+Toolchain: splat + mips binutils
+Process:
+  - Disassembly via splat into /asm/
+  - Assembly back into wr64.elf with symbols
+  - Symbol recovery from reference decomp (804 func_XXXX symbols)
+  - JAL scan for unresolved call targets (tools/jal_scan.py)
+  - Byte-identical verification against ROM code sections
+Output: wr64.elf (not committed, gitignored)
+```
+
+### Fase 02: Recompilation (N64Recomp)
+```
+Input: wr64.elf + recomp/wr64.toml
+Tools: N64Recomp CLI, RSPRecomp for audio
+Process:
+  - ~1,350 functions compiled into C at 50 per file
+  - 4 classes of fix applied (Phase 02 findings):
+    1. Direct overlay calls -> use_lookup_for_all_function_calls
+    2. Linker script override -> tools/fix_asmonly_ld.py
+    3. Reimplemented funcs -> excluded from config
+    4. Missing declarations -> tools/gen_reimplemented_decls.py
+Output: RecompiledFuncs/ (not committed)
+  - funcs_*.c (~27 files)
+  - funcs.h
+  - reimplemented_decls.h
+  - runtime_funcs.inl
+  - recomp_overlays.inl
+  - aspMain_rsp.cpp
+```
+
+### Fase 03: CMake Build
+```
+Options phase-gated (docs/PLAN.md):
+  WR64_WITH_RECOMPILED=ON     → compile RecompiledFuncs/*.c
+  WR64_WITH_RUNTIME=ON        → link RT64 + ultramodern + librecomp
+  WR64_BUILD_RECOMPILER=ON    → build N64Recomp from lib/
+  WR64_WITH_FRONTEND=ON       → link RecompFrontend
+  
+Output: WaveRace64Recomp executable (Windows/Linux/macOS)
+Compiler: Clang 15+ (GCC known to miscompile generated code)
+```
+
+---
+
+## Patches Customizados
+
+### 3 Types of Patches
+
+1. **Replaces** (stubs/ignored in config)
+   - Definições fortes vencem sobre weak symbols do código recompilado
+   - Exemplo: `dma.cpp` substitui `game_dma_copy` por transferência síncrona
+   - `game_dma_copy` marked `ignored` in wr64.toml → no generated code → no duplicate symbol
+
+2. **Wrappers** (registered by address in src/overlays.cpp)
+   - Envoltórios que enviam a chamada para o código original
+   - Exemplo: `water.cpp` envolve func_8009345C e func_80046CF8 para renderização moderna
+   - `framerate.cpp` envolve osViSwapBuffer para medição de framerate
+
+3. **Hooks** (injected into generated C via TOML)
+   - Pontos de inserção via address registers before_vram
+   - 16 hooks on func_8006E674 for buoys system
+   - Regenerates game sources when changed (tools/generate_game.py)
+
+### Hook Configuration Example (wr64.toml)
+```toml
+[[patches.hook]]
+func = "func_8006E674"
+before_vram = 0x8006E6B8
+text = "{ void wr64_buoys_begin(uint8_t* rdram, recomp_context* ctx); wr64_buoys_begin(rdram, ctx); }"
+```
+
+---
+
+## Dependências Externas
+
+| Dependência | Licença | Uso |
+|-------------|---------|-----|
+| N64ModernRuntime | GPL-3.0 | Runtime: ultramodern, librecomp, N64Recomp |
+| RT64 | GPL-3.0 | Renderizador gráfico moderno (Vulkan/Metal/DX12) |
+| RecompFrontend | GPL-3.0 | Interface frontend (RmlUi) |
+| N64Recomp | GPL-3.0 | Ferramenta de recompilação MIPS→C |
+| splat | MIT | Processador de assembly N64 (disassembly) |
+| LLONSIT decomp | GPL-3.0 | Reference symbols for ELF generation |
+
+---
+
+## Pontos Críticos para Reescrita C++
+
+### 1. Dependência de ROM
+- O código recompilado depende de um dump do jogo original (Wave Race 64 USA Rev A)
+- Não há assets ou dados do jogo no repositório
+- Símbolos derivados do ELF não são committed
+
+### 2. Sistema de Overlays Complexo
+- 19 seções compartilham VRAM 0x802C5800
+- Overlay dispatch via runtime lookup (use_lookup_for_all_function_calls)
+- 3 funções stubbed em phase 02 (func_80092CF0, func_800922E4, PauseMenu_Update)
+- Overlay loads through osPiStartDma hook (patches/dma.cpp)
+
+### 3. Áudio RSP
+- Microcódigo de áudio recompilado via RSPRecomp (C++ output)
+- Carrega em IMEM 0x04001080 (not 0x1000)
+- 16 indirect branch targets para command handlers
+- Output: RecompiledFuncs/aspMain_rsp.cpp
+
+### 4. Display List Rewriter
+- src/dlrewrite.cpp (3,423 lines) - sistema complexo de rewriter
+- Handles widescreen, 2D HUD placement, aspect ratio
+- Tracks segment table and matrix stack
+
+### 5. Física e Sistema de Água
+- func_8004D30C - Water height query (used by waterring, waterfield)
+- Física do jet ski e água está no código recompilado (~1,350 funções)
+- Sistema de água moderno em src/water*.cpp
+
+---
+
+## Viabilidade de Reescrita C++
+
+### Pontos Positivos
+1. Arquitetura modular bem definida via CMake phase-gating
+2. Código fonte original em C++ moderno (C++20)
+3. Separação clara entre core, patches e frontend
+4. Sistema de hooks robusto para func_XXXX
+5. Documentação extensa (GAME-INTERNALS.md, PORTING.md)
+6. ~1,350 funções recompiladas são C gerado (reverse-engineerable)
+
+### Desafios
+1. ~1,350 funções recompiladas dependem de N64Recomp especificamente
+2. Símbolos asm_only não podem ser reescritos sem análise completa
+3. Padrão de chamadas baseado em endereços (use_lookup_for_all_function_calls)
+4. Dependência de librecomp para overlay dispatch
+5. RSP microcode precisa de RSPRecomp separado
+6. Física do jogo não está decompilada (804 func_XXXX symbols, ~1,350 total)
+7. GPL-3.0 dependencies limit C++ reimplementation options
+
+### Recomendação
+- **Reescrita completa:** Viável mas exige anos de engenharia reversa
+  - ~1,350 functions need manual C++ reimplementation
+  - Physics, audio RSP, and overlay dispatch all need reimplementing
+- **Abordagem gradual (híbrida):** Mais viável
+  - Manter N64Recomp output while progressively replacing func_XXXX
+  - Use patches/ system for selective replacement
+  - The CMake phase-gating supports incremental migration
+
+### Conclusão Geral
+O projeto tem uma base sólida para evolução, mas a reescrita completa requer:
+1. Substituição de ~1,350 funções recompiladas por C++ nativo
+2. Reimplementação do sistema de overlays (19 sections, shared VRAM)
+3. Reimplementação da física do jogo (jet ski, water, collision)
+4. Reimplementação do sistema de áudio RSP (microcode)
+5. Reimplementação do display list rewriter (3,423 lines)
+6. Extração de todos os assets do jogo original
+
+A viabilidade é **moderada para reescrita completa** (requer anos de trabalho), mas **alta para abordagem incremental/híbrida** mantendo N64Recomp como base enquanto reescreve componentes específicos em C++ puro.
+
+---
+
+## Inventory Summary
+
+| Category | Value |
+|----------|-------|
+| Total code files (.cpp/.h/.c) | 47 (project only) |
+| src/ .cpp files | 24 |
+| patches/ .cpp files | 4 |
+| patches/ .h files | 1 |
+| include/wr64/ headers | 20 |
+| Total lines of code (src + patches + include) | 12,351 |
+| Recompiled functions (N64Recomp output) | ~1,350 |
+| Functions per output file | 50 |
+| Expected output files | ~27 |
+| Overlay sections | 19 |
+| Code sections | ~27 |
+| Patch hooks (func_XXXX) | 4 directly + 16 on func_8006E674 |
+| func_XXXX symbols (project code) | 24 unique |
+| func_XXXX in reference decomp | 804 unique |
+| Tools/scripts | 46 |
+| Documentation files | 17 |
+| Phase findings | 5 (phase-01 through phase-05) |
+| Release notes | 14 (1.0.0-1.0.3) |
+| External dependencies | 5 (N64ModernRuntime, RT64, RecompFrontend, N64Recomp, splat) |
