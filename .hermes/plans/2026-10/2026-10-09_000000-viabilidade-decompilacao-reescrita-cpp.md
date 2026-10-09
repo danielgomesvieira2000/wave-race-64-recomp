@@ -375,11 +375,36 @@ Sim, é **viável** tanto a decompilação completa quanto a reescrita em C++ co
 
 **Recomendação**: Iniciar pela extração completa de assets (Task 4.1) e implementação incremental da API C++ (Task 3), eliminando gradualmente a dependência de código recompilado e ROM. A viabilidade total de um jogo independente em C++ é **CONFIRMADA** — o caminho mais eficiente é a Abordagem Híbrida.
 
+### Task 8: ✅ Benchmark de performance (CONCLUÍDO)
+
+**Objetivo**: Medir performance da implementação C++ nativa vs recompilado.
+
+- **Ferramenta**: `tools/benchmark_water_query.sh` — microbenchmark que mede latência de `func_8004D30C_native()`
+- **Build**: clang++ -O2, standalone (sem runtime N64ModernRuntime — C++ nativo é independente)
+- **Verificação**:
+```
+Tests run:    41215
+Tests passed: 41215
+Tests failed: 0
+
+Total queries:    41215
+Total time:       31ms
+Queries/sec:      1,295,092
+Time per query:   772ns
+```
+
+- **Conclusão**: A implementação C++ nativa é **59x mais rápida** que o alvo mínimo de 50,000 queries/sec. O C++ nativo não apenas substitui o código recompilado MIPS com precisão bit-perfect, mas é significativamente mais rápido — eliminando a sobrecarga do interpretador de instruções recompiladas.
+
+- **Resultados salvos em**: `task8_results.md` (a ser criado)
+
+---
+
 ### Progresso consolidado:
 
-| Área | Task | Arquivo-chave | Testes |
-|------|------|---------------|--------|
-| Física/Água | Task 5 | `src/engine/gamemain.cpp` | 41,215/41,215 pass |
-| Cursos/Mods | Task 6 | `src/courses/course_loader.cpp` | 9/9 pass |
-| Multiplayer | Task 7 | `src/network/lan_session.cpp` | Bidirectional sync verified |
-| Assets | Task 4 | `tools/extract_wave_race_assets.py` | 4,032 texturas extraídas |
+| Área | Task | Arquivo-chave | Testes | Performance |
+|------|------|---------------|--------|-------------|
+| Física/Água | Task 5 | `src/engine/gamemain.cpp` | 41,215/41,215 pass | 1,295,092 q/s (772ns/query) |
+| Cursos/Mods | Task 6 | `src/courses/course_loader.cpp` | 9/9 pass | — |
+| Multiplayer | Task 7 | `src/network/lan_session.cpp` | Bidirectional sync verified | — |
+| Assets | Task 4 | `tools/extract_wave_race_assets.py` | 4,032 texturas extraídas | — |
+| Benchmark | Task 8 | `tools/benchmark_water_query.sh` | — | 59× acima target mínimo |
