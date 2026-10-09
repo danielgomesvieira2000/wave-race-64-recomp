@@ -34,6 +34,7 @@ option(WR64_WITH_RUNTIME    "Link ultramodern + librecomp + RT64 (phase 03)" OFF
 option(WR64_WITH_RECOMPILED "Compile generated code in RecompiledFuncs/ (phase 02)" OFF)
 option(WR64_BUILD_RECOMPILER "Also build the N64Recomp tool from lib/ (phase 02)" OFF)
 option(WR64_WITH_FRONTEND   "Link RecompFrontend for menus and input (phase 06)" OFF)
+option(WR64_WITH_NETWORK  "Enable ENet-based LAN multiplayer (task 07)" OFF)
 
 # ---------------------------------------------------------------------------
 #  Compiler policy
@@ -290,7 +291,7 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
                              src/inspector.cpp src/mods.cpp
                              src/drawdistance.cpp src/audiodiag.cpp
                              src/resample.cpp src/water.cpp src/waterfield.cpp src/watersun.cpp
-                             src/waterring.cpp)
+                             src/waterring.cpp src/courses/course_loader.cpp)
     if(WR64_WITH_FRONTEND)
         list(APPEND WR64_SOURCES src/frontend.cpp)
     endif()
@@ -299,6 +300,16 @@ if(WR64_WITH_RUNTIME AND WR64_WITH_RECOMPILED)
     # weak under Clang, so these strong definitions win at link time.
     file(GLOB WR64_PATCH_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/*.cpp")
     list(APPEND WR64_SOURCES ${WR64_PATCH_SOURCES})
+
+    # LAN multiplayer session (task 07): ENet-based player state sync.
+    # Requires the runtime (to read RDRAM) but not the recompiled code.
+    if(WR64_WITH_NETWORK)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(ENET REQUIRED IMPORTED_TARGET libenet)
+        list(APPEND WR64_SOURCES src/network/lan_session.cpp)
+        target_link_libraries(WaveRace64Recomp PRIVATE PkgConfig::ENET)
+        target_compile_definitions(WaveRace64Recomp PRIVATE WR64_WITH_NETWORK=1)
+    endif()
 endif()
 
 # The Windows resource compiler (llvm-rc, alongside clang-cl) is opt-in
@@ -333,7 +344,8 @@ else()
 endif()
 
 target_include_directories(WaveRace64Recomp PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
 # The version, from the one place it is declared. It was previously written out
 # by hand in three places -- project(), the runtime's Version struct and the
@@ -508,6 +520,7 @@ message(STATUS "  compiler          ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILE
 message(STATUS "  runtime + RT64    ${WR64_WITH_RUNTIME}")
 message(STATUS "  recompiled code   ${WR64_WITH_RECOMPILED}")
 message(STATUS "  frontend UI       ${WR64_WITH_FRONTEND}")
+message(STATUS "  LAN multiplayer   ${WR64_WITH_NETWORK}")
 message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILER}")
 
 
