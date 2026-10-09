@@ -7,12 +7,13 @@ Build: 2026-10-09
 WHAT THIS IS
 ------------
 A pure C++ reimplementation of Wave Race 64 that runs without any ROM file
-or recompiled MIPS code. Built with statically-linked SDL2 - no DLLs required.
+or recompiled MIPS code. Built with statically-linked SDL2.
 
 REQUIREMENTS
 ------------
 - Windows 10 or later (x64)
-- NO additional dependencies - everything is statically linked
+- NO install required - extract and run
+- Includes MinGW runtime DLLs (portable)
 
 TO RUN
 ------

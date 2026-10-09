@@ -24,9 +24,33 @@ else
     exit 1
 fi
 
-# SDL2.dll is NOT needed in the package - it's statically linked into WaveRace64Recomp.exe
-# The executable is fully portable Windows PE with no external DLL dependencies
-echo "SDL2 is statically linked - no DLL bundle needed"
+# SDL2 is statically linked into the exe, but MinGW runtime DLLs are needed
+# libgcc_s_seh-1.dll and libstdc++-6.dll are required at runtime on Windows
+# even with -static-libgcc -static-libstdc++ (due to how SDL2.a was built)
+echo "Copying MinGW runtime DLLs..."
+
+# Find MinGW GCC posix runtime libraries (required by SDL2)
+MINGW_GCC_DIR="/usr/lib/gcc/x86_64-w64-mingw32/13-posix"
+if [ -d "$MINGW_GCC_DIR" ]; then
+    if [ -f "$MINGW_GCC_DIR/libgcc_s_seh-1.dll" ]; then
+        cp "$MINGW_GCC_DIR/libgcc_s_seh-1.dll" "$OUT_DIR/"
+        echo "Copied: libgcc_s_seh-1.dll"
+    fi
+    if [ -f "$MINGW_GCC_DIR/libstdc++-6.dll" ]; then
+        cp "$MINGW_GCC_DIR/libstdc++-6.dll" "$OUT_DIR/"
+        echo "Copied: libstdc++-6.dll"
+    fi
+    # Also copy libwinpthread if needed (MinGW posix threads)
+    if [ -f "/usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll" ]; then
+        cp "/usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll" "$OUT_DIR/"
+        echo "Copied: libwinpthread-1.dll"
+    fi
+else
+    echo "WARNING: MinGW runtime DLLs not found at $MINGW_GCC_DIR"
+    echo "Users may need to install MinGW runtime separately."
+fi
+
+echo "All dependencies bundled - no install required"
 
 # Copy course files
 mkdir -p "$OUT_DIR/assets/courses"
@@ -54,12 +78,13 @@ Build: 2026-10-09
 WHAT THIS IS
 ------------
 A pure C++ reimplementation of Wave Race 64 that runs without any ROM file
-or recompiled MIPS code. Built with statically-linked SDL2 - no DLLs required.
+or recompiled MIPS code. Built with statically-linked SDL2.
 
 REQUIREMENTS
 ------------
 - Windows 10 or later (x64)
-- NO additional dependencies - everything is statically linked
+- NO install required - extract and run
+- Includes MinGW runtime DLLs (portable)
 
 TO RUN
 ------
