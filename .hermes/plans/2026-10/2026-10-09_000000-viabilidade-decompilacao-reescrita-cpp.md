@@ -342,8 +342,6 @@ time ./build/WaveRace64Recomp --identify dumps/test.z64
 
 ## Conclusão preliminar
 
-## Conclusão preliminar
-
 Sim, é **viável** tanto a decompilação completa quanto a reescrita em C++ como jogo independente.
 
 ### Status atual das Tasks:
