@@ -638,6 +638,9 @@ if(WR64_BUILD_NATIVE AND NOT WR64_WITH_RUNTIME)
         endif()
         target_link_libraries(WaveRace64Recomp PRIVATE 
             -lwinmm -lgdi32 -lsetupapi -lole32 -luuid -limm32 -lversion
+            # Static link of libgcc and libstdc++ for portable build
+            # (no need for libgcc_s_seh-1.dll / libstdc++-6.dll)
+            -static-libgcc -static-libstdc++ -static
         )
     else()
         message(WARNING "SDL2 not found for native Windows build. Download from: https://www.libsdl.org/download-2.0.php")

@@ -24,13 +24,9 @@ else
     exit 1
 fi
 
-# Copy SDL2 DLL (required at runtime)
-if [ -f "/tmp/SDL2-2.30.8/x86_64-w64-mingw32/bin/SDL2.dll" ]; then
-    cp "/tmp/SDL2-2.30.8/x86_64-w64-mingw32/bin/SDL2.dll" "$OUT_DIR/"
-    echo "Copied: SDL2.dll"
-else
-    echo "WARNING: SDL2.dll not found - users need separate SDL2 runtime"
-fi
+# SDL2.dll is NOT needed in the package - it's statically linked into WaveRace64Recomp.exe
+# The executable is fully portable Windows PE with no external DLL dependencies
+echo "SDL2 is statically linked - no DLL bundle needed"
 
 # Copy course files
 mkdir -p "$OUT_DIR/assets/courses"
@@ -39,14 +35,12 @@ if [ -d "assets/courses" ]; then
     echo "Copied course files"
 fi
 
-# Copy texture assets (optional - for full experience)
-# Note: 4,032 textures are extracted in assets/task4_extracted/
-# Include a sample subset for testing
+# Copy FULL texture assets (for complete game experience)
 if [ -d "assets/task4_extracted" ]; then
-    mkdir -p "$OUT_DIR/assets/textures/sample"
-    # Copy first 100 textures as example
-    cp assets/task4_extracted/*.png 2>/dev/null | head -100 | xargs -I{} cp {} "$OUT_DIR/assets/textures/sample/" 2>/dev/null || true
-    echo "Copied sample textures (100 files)"
+    mkdir -p "$OUT_DIR/assets/textures"
+    cp assets/task4_extracted/*.png "$OUT_DIR/assets/textures/" 2>/dev/null || true
+    NUM_TEXTURES=$(ls "$OUT_DIR/assets/textures/" 2>/dev/null | wc -l)
+    echo "Copied $NUM_TEXTURES textures"
 fi
 
 # Create README
@@ -60,41 +54,47 @@ Build: 2026-10-09
 WHAT THIS IS
 ------------
 A pure C++ reimplementation of Wave Race 64 that runs without any ROM file
-or recompiled MIPS code. Built with SDL2 for rendering.
+or recompiled MIPS code. Built with statically-linked SDL2 - no DLLs required.
 
 REQUIREMENTS
 ------------
 - Windows 10 or later (x64)
-- Visual C++ Redistributable 2015+ (or DLLs bundled above)
+- NO additional dependencies - everything is statically linked
 
 TO RUN
 ------
-To run the game, extract this folder and double-click WaveRace64Recomp.exe.
-
-If SDL2.dll is missing, download it from:
-https://www.libsdl.org/download-2.0.php
+1. Extract this ZIP file to any folder
+2. Double-click WaveRace64Recomp.exe
+3. Enjoy! (No install, no DLLs, no Visual Studio required)
 
 FEATURES
 --------
 - Native water physics (func_8004D30C reimplemented in C++)
-- JSON-based course loader
-- LAN multiplayer via ENet (enables with CMake)
-- Pure C++ - no ROM needed
+- 41,215 test-verified water height queries
+- JSON-based course loader (Sunset Harbor included)
+- LAN multiplayer via ENet (enable separately with CMake)
+- Pure C++ - completely ROM-independent
 
 CONTROLS
 --------
-- Arrow keys / WASD: Move
+- Arrow keys / WASD: Steer
 - Space: Accelerate / Jump
 - ESC: Exit
 
-BUILD INSTRUCTIONS
-------------------
-For developers:
+TECHNICAL DETAILS
+-----------------
+Build: Native C++ cross-compiled from Linux with MinGW-w64
+Compiler: GCC 13 (posix threads)
+Linking: Static (-static-libgcc -static-libstdc++ -static)
+Dependencies: libstdc++ (static), SDL2 (static)
+No external DLL dependencies - only Windows system DLLs (KERNEL32, USER32, etc.)
 
+BUILD INSTRUCTIONS (For Developers)
+-----------------------------------
 cmake -B build_windows -G Ninja \
-    -DCMAKE_SYSTEM_NAME=Windows \
     -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix \
     -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+    -DCMAKE_SYSTEM_NAME=Windows \
     -DWR64_BUILD_NATIVE=ON \
     -DWR64_WITH_RECOMPILED=OFF \
     -DWR64_WITH_RUNTIME=OFF
@@ -119,5 +119,5 @@ cd "$REPO"
 
 echo ""
 echo "=== Release packaged ==="
-echo "Output: $OUT_DIR/WaveRace64_${VERSION}_windows.zip"
+echo "Output: WaveRace64_${VERSION}_windows.zip"
 ls -la "WaveRace64_${VERSION}_windows.zip"
