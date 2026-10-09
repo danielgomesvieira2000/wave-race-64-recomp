@@ -36,6 +36,11 @@ option(WR64_BUILD_RECOMPILER "Also build the N64Recomp tool from lib/ (phase 02)
 option(WR64_WITH_FRONTEND   "Link RecompFrontend for menus and input (phase 06)" OFF)
 option(WR64_WITH_NETWORK  "Enable ENet-based LAN multiplayer (task 07)" OFF)
 
+# Phase 9: Standalone C++ native build (no ROM, no recompiled MIPS code)
+# Provides a native entry point (src/native_main.cpp) for an independent port.
+# When ON, builds the game without requiring WR64_WITH_RECOMPILED or WR64_WITH_RUNTIME.
+option(WR64_BUILD_NATIVE   "Build standalone C++ native port (no ROM, no recompiled code)" OFF)
+
 # ---------------------------------------------------------------------------
 #  Compiler policy
 #
@@ -280,7 +285,17 @@ endif()
 # ---------------------------------------------------------------------------
 #  The port itself
 # ---------------------------------------------------------------------------
-set(WR64_SOURCES src/main.cpp src/rom.cpp src/crash_handler.cpp)
+set(WR64_SOURCES src/main.cpp src/rom.cpp)
+
+if(WR64_BUILD_NATIVE AND NOT WR64_WITH_RUNTIME)
+    # Standalone native build: only the C++ reimplementation sources
+    # crash_handler.cpp requires Windows SDK headers - skip for native builds
+    list(APPEND WR64_SOURCES src/engine/gamemain.cpp
+                             src/courses/course_loader.cpp)
+else()
+    # Default: include crash_handler in base list
+    list(APPEND WR64_SOURCES src/crash_handler.cpp)
+endif()
 
 # The harness only makes sense with both the runtime and the generated code, and
 # overlays.cpp cannot even compile without recomp_overlays.inl.
@@ -320,7 +335,25 @@ if(WIN32)
     list(APPEND WR64_SOURCES src/app.rc)
 endif()
 
+# Native standalone build (WR64_BUILD_NATIVE):
+# When ON (and WR64_WITH_RUNTIME is OFF), exclude source files that depend on
+# ultramodern/librecomp and instead compile src/native_main.cpp for a ROM-free
+# native entry point. This must be configured BEFORE add_executable.
+if(WR64_BUILD_NATIVE AND NOT WR64_WITH_RUNTIME)
+    list(FILTER WR64_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    list(FILTER WR64_SOURCES EXCLUDE REGEX "src/rom\\.cpp$")
+    list(FILTER WR64_SOURCES EXCLUDE REGEX "src/callbacks\\.cpp$")
+    list(FILTER WR64_SOURCES EXCLUDE REGEX "src/renderer\\.cpp$")
+    list(FILTER WR64_SOURCES EXCLUDE REGEX "src/inspector\\.cpp$")
+    list(APPEND WR64_SOURCES src/native_main.cpp)
+endif()
+
 add_executable(WaveRace64Recomp ${WR64_SOURCES})
+
+# Define macro for native build so src/native_main.cpp compiles its main()
+if(WR64_BUILD_NATIVE)
+    target_compile_definitions(WaveRace64Recomp PRIVATE WR64_BUILD_NATIVE)
+endif()
 
 # On macOS the product is an application bundle, not a bare executable: it is
 # what the player double-clicks, it is what carries the assets, and it is what
@@ -570,5 +603,45 @@ add_test(NAME CourseLoaderTest
 )
 
 message(STATUS "  tests              ON (test_water_height, test_course_loader)")
+
+# ---------------------------------------------------------------------------
+# Native build SDL2 configuration
+# For WR64_BUILD_NATIVE without WR64_WITH_RUNTIME, we need SDL2 to be
+# discoverable. Try to locate MinGW SDL2 or use downloaded prebuilt.
+# ---------------------------------------------------------------------------
+if(WR64_BUILD_NATIVE AND NOT WR64_WITH_RUNTIME)
+    # Try SDL2 location in common MinGW paths
+    if(EXISTS "/tmp/SDL2-2.30.8/x86_64-w64-mingw32/include/SDL2")
+        set(SDL2_INCLUDE_DIR "/tmp/SDL2-2.30.8/x86_64-w64-mingw32/include")
+        set(SDL2_LIBRARY "/tmp/SDL2-2.30.8/x86_64-w64-mingw32/lib/libSDL2.a")
+    elseif(EXISTS "C:/SDL2/include")
+        set(SDL2_INCLUDE_DIR "C:/SDL2/include")
+        set(SDL2_LIBRARY "C:/SDL2/lib/x64/SDL2.lib")
+    endif()
+    
+    if(SDL2_INCLUDE_DIR AND SDL2_LIBRARY)
+        target_include_directories(WaveRace64Recomp PRIVATE ${SDL2_INCLUDE_DIR})
+        target_link_libraries(WaveRace64Recomp PRIVATE ${SDL2_LIBRARY})
+        # In native standalone build, we provide our own main() so we don't need
+        # SDL2main's entrypoint wrapper.
+        if(NOT WR64_BUILD_NATIVE)
+            target_link_libraries(WaveRace64Recomp PRIVATE 
+                /tmp/SDL2-2.30.8/x86_64-w64-mingw32/lib/libSDL2main.a
+            )
+        else()
+            # Override the default Windows entry point to use our main()
+            # The mingw CRT's crtexewin.o expects WinMain; force console entry
+            # by using -mconsole (links crtexe.o which calls main).
+            # Note: mingw-w64 gcc-posix sometimes still pulls crtexewin.o, so
+            # we also provide a WinMain stub that calls main.
+            target_link_options(WaveRace64Recomp PRIVATE -mconsole)
+        endif()
+        target_link_libraries(WaveRace64Recomp PRIVATE 
+            -lwinmm -lgdi32 -lsetupapi -lole32 -luuid -limm32 -lversion
+        )
+    else()
+        message(WARNING "SDL2 not found for native Windows build. Download from: https://www.libsdl.org/download-2.0.php")
+    endif()
+endif()
 
 
