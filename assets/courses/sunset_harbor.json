@@ -1,0 +1,76 @@
+{
+    "id": 10,
+    "name": "Sunset Harbor",
+    "internal_name": "SUNSET_HARBOR",
+    "draw_distance": 6000.0,
+    "buoy_limit": 32,
+    "difficulty": 1.0,
+    
+    "bounds": {
+        "x_min": -5500.0,
+        "x_max": 5500.0,
+        "z_min": -5000.0,
+        "z_max": 5000.0,
+        "water_level": 0.0
+    },
+    
+    "texture_files": [
+        "affects/texture_01.rgba16",
+        "affects/texture_02.rgba16"
+    ],
+    "model_files": [
+        "affects/course_model.bin",
+        "affects/props.bin"
+    ],
+    "audio_files": [
+        "affects/race_music.bdm"
+    ],
+    "water_profiles": [
+        "water/profiles.json"
+    ],
+    
+    "start_positions": [
+        { "x": 0.0,   "z": -128.0, "heading": 0.0 },
+        { "x": -96.0, "z": -128.0, "heading": 1.57 },
+        { "x": 96.0,  "z": -128.0, "heading": -1.57 },
+        { "x": 0.0,   "z": -208.0, "heading": 0.0 }
+    ],
+    
+    "buoys": [
+        { "x": -200.0, "z": 0.0,   "type": 0 },
+        { "x": 200.0,  "z": 0.0,   "type": 0 },
+        { "x": 0.0,    "z": 400.0, "type": 1 },
+        { "x": -400.0, "z": 400.0, "type": 1 },
+        { "x": 400.0,  "z": 400.0, "type": 1 },
+        { "x": -600.0, "z": 800.0, "type": 1 },
+        { "x": 600.0,  "z": 800.0, "type": 1 },
+        { "x": 0.0,    "z": 1200.0,"type": 1 },
+        { "x": -300.0, "z": 1600.0,"type": 1 },
+        { "x": 300.0,  "z": 1600.0,"type": 1 },
+        { "x": 0.0,    "z": 2000.0,"type": 1 },
+        { "x": 0.0,    "z": 2400.0,"type": 0 }
+    ],
+    
+    "gates": [
+        { "x": 0.0,    "z": 600.0  },
+        { "x": 0.0,    "z": 1400.0 },
+        { "x": 0.0,    "z": 2200.0 }
+    ],
+    
+    "wave_params": {
+        "normal":  { "wave_level": 1.0, "visibility_range": 6000.0 },
+        "hard":    { "wave_level": 1.5, "visibility_range": 6000.0 },
+        "expert":  { "wave_level": 2.0, "visibility_range": 5000.0 }
+    },
+    
+    "laps": {
+        "normal": 3,
+        "hard": 3,
+        "expert": 3
+    },
+    "power_misses": {
+        "normal": 5,
+        "hard": 5,
+        "expert": 5
+    }
+}
