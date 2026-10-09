@@ -521,6 +521,54 @@ message(STATUS "  runtime + RT64    ${WR64_WITH_RUNTIME}")
 message(STATUS "  recompiled code   ${WR64_WITH_RECOMPILED}")
 message(STATUS "  frontend UI       ${WR64_WITH_FRONTEND}")
 message(STATUS "  LAN multiplayer   ${WR64_WITH_NETWORK}")
-message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILER}")
+message(STATUS "  recompiler tool   ${WR64_BUILD_RECOMPILED}")
+
+# ============================================================================
+# Test targets
+# ============================================================================
+
+# Task 5: Water height query verification test
+add_executable(test_water_height
+    tests/test_func_8004D30C.cpp
+    src/engine/gamemain.cpp
+)
+target_include_directories(test_water_height PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+)
+target_compile_features(test_water_height PRIVATE cxx_std_20)
+set_target_properties(test_water_height PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_VISIBILITY_PRESET hidden
+)
+
+# Task 6: Course loader verification
+add_executable(test_course_loader
+    src/courses/verify_course_loader.cpp
+    src/courses/course_loader.cpp
+)
+target_include_directories(test_course_loader PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+)
+target_compile_features(test_course_loader PRIVATE cxx_std_20)
+set_target_properties(test_course_loader PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_VISIBILITY_PRESET hidden
+)
+
+enable_testing()
+
+add_test(NAME WaterHeightQueryTest COMMAND test_water_height)
+
+# The course loader test needs to find assets/courses/sunset_harbor.json.
+# Set WR64_ASSET_DIR env var so the test resolves the path regardless of CWD.
+add_test(NAME CourseLoaderTest
+    COMMAND ${CMAKE_COMMAND} -E env
+        "WR64_ASSET_DIR=${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        $<TARGET_FILE:test_course_loader>
+)
+
+message(STATUS "  tests              ON (test_water_height, test_course_loader)")
 
 

@@ -3,15 +3,28 @@
 #include <cassert>
 #include <filesystem>
 #include <memory>
+#include <cstdlib>
 #include "nlohmann/json.hpp"
 #include "wr64/courses.hpp"
 
 using namespace wr64::courses;
 
+// Resolve the course file path: check WR64_ASSET_DIR env var first (set by
+// CMake during test execution), then fall back to relative path for
+// standalone invocation from the repo root.
+static std::string resolve_asset_path(const std::string& relative) {
+    const char* env = std::getenv("WR64_ASSET_DIR");
+    if (env != nullptr) {
+        return std::string(env) + "/" + relative;
+    }
+    return relative;
+}
+
 int main() {
     // Test 1: Load Sunset Harbor from JSON
     std::cout << "=== Test 1: Load Sunset Harbor from JSON ===\n";
-    auto course = Course::load_from_file("assets/courses/sunset_harbor.json");
+    std::string course_path = resolve_asset_path("courses/sunset_harbor.json");
+    auto course = Course::load_from_file(course_path);
     assert(course != nullptr && "Failed to load Sunset Harbor course");
     assert(course->is_loaded() && "Course not marked as loaded");
     
