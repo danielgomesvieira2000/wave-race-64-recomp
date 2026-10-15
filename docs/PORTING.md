@@ -601,6 +601,49 @@ SDL 2.26 vendored for Windows**. Off Windows, SDL comes from the system and is
 newer, and defining the guard only hides Clang's real `prfchwintrin.h` from
 everything downstream. Scope it to `WIN32`.
 
+### Linux release fails before `main`: `GLIBC_2.43` not found
+
+**Symptom:** the Linux x86-64 release exits with
+`/lib64/libm.so.6: version GLIBC_2.43 not found` on a glibc 2.42 system,
+even though SDL2, GTK, FreeType and Vulkan are installed.
+
+glibc 2.43 changed the default symbol versions of `atan2f`, `asinf`, `acosf`
+and `sqrtf`. A new build picks those defaults at link time; glibc 2.42 has
+the same float call signatures under their longstanding `GLIBC_2.2.5` ABI.
+This was reproduced on Bazzite 43 / glibc 2.42: all four unresolved imports
+in the 1.0.2 release required 2.43. Changing only their ELF version requirement
+to the compatible export let the existing binary load its ROM, reach the title
+screen, initialise RADV Vulkan and produce audio. A complete race was not tested.
+
+`cmake/linux_libm_compat.cmake` force-includes
+`include/wr64/linux_math_compat.h` for C and C++ before adding dependencies.
+Its `.symver` directives select the older exports without wrappers, extra
+libraries or changes to generated game code. The policy reaches RT64 and the
+runtime as well as the port: setting it only on the executable misses libm
+calls compiled into static dependencies. The header is inert on non-glibc,
+non-x86-64 and x32 targets; Windows and macOS receive no forced include.
+glibc is detected during CMake configuration so the forced header does not
+include system headers before source-local feature-test macros take effect.
+
+This selects the older libm implementation, including its compatibility error
+handling; it does not promise bit-identical results to the newer 2.43 math
+implementation. Build with `-DWR64_LINUX_MATH_COMPAT=OFF`, or use
+`WR64_LINUX_MATH_COMPAT=OFF bash tools/build_linux.sh`, to compare the native
+linkage on a system that supports it.
+
+Other calls can still raise the libc requirement. Build releases on an older
+glibc baseline (for example Ubuntu 24.04), and run:
+
+```sh
+python3 tools/check_linux_abi.py build-linux/WaveRace64Recomp
+python3 -m unittest discover -s tests -v
+```
+
+The Linux packager runs the same ABI check before copying the binary. A numeric
+glibc requirement above 2.42 or a dependency on `GLIBC_PRIVATE` stops packaging;
+this does not replace checking the system-library dependencies or running the
+game on the intended distribution. `readelf` from binutils is required.
+
 ### A platform-stubbed file still has to define every symbol
 
 **Symptom:** the Linux build compiles cleanly and then fails at link with four

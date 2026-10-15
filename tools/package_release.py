@@ -36,6 +36,8 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+from check_linux_abi import check_binary_abi
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # Anything that could be part of someone's copy of the game, or their progress
@@ -142,6 +144,10 @@ def stage_linux(build_dir: Path, stage: Path) -> Path:
     binary = build_dir / "WaveRace64Recomp"
     if not binary.is_file():
         fail(f"no executable at {binary} -- build first (see docs/BUILDING.md)")
+    try:
+        check_binary_abi(binary)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        fail(str(error))
     assets = build_dir / "assets"
     if not (assets / "recomp.rcss").is_file():
         fail(f"the frontend's assets are missing from {assets}")
